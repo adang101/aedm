@@ -1,0 +1,14 @@
+{
+  "levels": [
+    { "level": 1, "proficiency": 2, "budget": 30, "perAbilityCap": 13, "maxAverage": 7, "maxRadius": 1, "maxConditionTurns": 1, "maxStunTurns": 1, "weaponTier": 1 },
+    { "level": 2, "proficiency": 2, "budget": 35, "perAbilityCap": 15, "maxAverage": 9, "maxRadius": 1, "maxConditionTurns": 1, "maxStunTurns": 1, "weaponTier": 1 },
+    { "level": 3, "proficiency": 2, "budget": 40, "perAbilityCap": 18, "maxAverage": 11, "maxRadius": 1, "maxConditionTurns": 1, "maxStunTurns": 1, "weaponTier": 2 },
+    { "level": 4, "proficiency": 2, "budget": 45, "perAbilityCap": 20, "maxAverage": 13, "maxRadius": 1, "maxConditionTurns": 1, "maxStunTurns": 1, "weaponTier": 2 },
+    { "level": 5, "proficiency": 3, "budget": 50, "perAbilityCap": 22, "maxAverage": 15, "maxRadius": 2, "maxConditionTurns": 2, "maxStunTurns": 1, "weaponTier": 3 },
+    { "level": 6, "proficiency": 3, "budget": 55, "perAbilityCap": 24, "maxAverage": 17, "maxRadius": 2, "maxConditionTurns": 2, "maxStunTurns": 1, "weaponTier": 3 },
+    { "level": 7, "proficiency": 3, "budget": 60, "perAbilityCap": 27, "maxAverage": 19, "maxRadius": 2, "maxConditionTurns": 2, "maxStunTurns": 2, "weaponTier": 4 },
+    { "level": 8, "proficiency": 3, "budget": 65, "perAbilityCap": 29, "maxAverage": 21, "maxRadius": 2, "maxConditionTurns": 2, "maxStunTurns": 2, "weaponTier": 4 },
+    { "level": 9, "proficiency": 4, "budget": 70, "perAbilityCap": 31, "maxAverage": 23, "maxRadius": 2, "maxConditionTurns": 3, "maxStunTurns": 2, "weaponTier": 5 },
+    { "level": 10, "proficiency": 4, "budget": 75, "perAbilityCap": 33, "maxAverage": 25, "maxRadius": 2, "maxConditionTurns": 3, "maxStunTurns": 2, "weaponTier": 5 }
+  ]
+}

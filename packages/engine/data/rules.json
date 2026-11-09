@@ -1,0 +1,264 @@
+{
+  "version": 0,
+  "abilityModifier": {
+    "base": 10,
+    "divisor": 2
+  },
+  "scores": {
+    "min": 1,
+    "max": 20,
+    "creationMin": 8,
+    "creationMax": 15
+  },
+  "pointBuy": {
+    "budget": 27,
+    "costs": {
+      "8": 0,
+      "9": 1,
+      "10": 2,
+      "11": 3,
+      "12": 4,
+      "13": 5,
+      "14": 7,
+      "15": 9
+    }
+  },
+  "levelCap": 10,
+  "scoreIncreaseLevels": [
+    3,
+    6,
+    9
+  ],
+  "growth": {
+    "perLevel": 100,
+    "milestoneAward": 100,
+    "contextualMin": 1,
+    "contextualMax": 25,
+    "sessionPointCap": 50,
+    "sessionAwardCap": 3
+  },
+  "hp": {
+    "level1Base": 10,
+    "perLevelBase": 6,
+    "perLevelMin": 1
+  },
+  "defense": {
+    "base": 10
+  },
+  "speed": {
+    "base": 6,
+    "hasted": 2,
+    "slowed": -2,
+    "min": 1,
+    "heavyArmor": -1
+  },
+  "checks": {
+    "dcMin": 5,
+    "dcMax": 30,
+    "tagBonus": 2,
+    "diceSides": 20,
+    "partySuccessNum": 1,
+    "partySuccessDen": 2,
+    "dcGuide": {
+      "trivial": 5,
+      "easy": 10,
+      "medium": 15,
+      "hard": 20,
+      "very_hard": 25,
+      "near_impossible": 30
+    },
+    "tags": [
+      "athletics",
+      "stealth",
+      "speed",
+      "perception",
+      "survival",
+      "nature",
+      "medicine",
+      "lore",
+      "crafting",
+      "explosives",
+      "lockpicking",
+      "persuasion",
+      "deception",
+      "intimidation",
+      "performance",
+      "leadership",
+      "tinkering",
+      "animals"
+    ]
+  },
+  "armor": {
+    "0": {
+      "name": "none",
+      "dexCap": null,
+      "speedPenalty": 0
+    },
+    "2": {
+      "name": "light",
+      "dexCap": null,
+      "speedPenalty": 0
+    },
+    "4": {
+      "name": "medium",
+      "dexCap": 2,
+      "speedPenalty": 0
+    },
+    "6": {
+      "name": "heavy",
+      "dexCap": 0,
+      "speedPenalty": 1
+    }
+  },
+  "armorTierBonus": {
+    "1": 2,
+    "2": 4,
+    "3": 6,
+    "4": 6,
+    "5": 6
+  },
+  "weaponTiers": {
+    "1": "1d6",
+    "2": "1d8",
+    "3": "1d10",
+    "4": "2d6",
+    "5": "2d8"
+  },
+  "starting": {
+    "weaponTier": 1,
+    "armorBonus": 2
+  },
+  "attack": {
+    "meleeRange": 1,
+    "rangedRange": 6,
+    "critDiceMultiplier": 2,
+    "rangedKeyAbilities": [
+      "dex",
+      "int",
+      "wis",
+      "cha"
+    ],
+    "pcDamageType": "sharp",
+    "enemyDamageType": "blunt",
+    "minDamage": 1
+  },
+  "draught": {
+    "name": "Healing draught",
+    "dice": "2d4",
+    "bonus": 2,
+    "value": 25,
+    "action": "quick"
+  },
+  "loot": {
+    "base": 20,
+    "perLevel": 10
+  },
+  "damage": {
+    "types": [
+      "fire",
+      "cold",
+      "lightning",
+      "acid",
+      "blunt",
+      "sharp",
+      "psychic",
+      "radiant"
+    ],
+    "weaknessNum": 3,
+    "weaknessDen": 2,
+    "resistanceNum": 1,
+    "resistanceDen": 2
+  },
+  "downed": {
+    "roundsUntilOut": 3,
+    "reviveDc": 10,
+    "reviveAbility": "wis",
+    "reviveHp": 1,
+    "wakeHp": 1,
+    "absentMinHp": 1
+  },
+  "rest": {
+    "hpFractionNum": 1,
+    "hpFractionDen": 2
+  },
+  "turn": {
+    "standCost": 3,
+    "ownTurnConditionExtra": 1
+  },
+  "initiative": {
+    "enemyBonus": 0,
+    "enemyDexScore": 10
+  },
+  "enemySave": {
+    "num": 1,
+    "den": 2,
+    "dcBase": 8
+  },
+  "saveDcBase": 8,
+  "abilityDurationCap": {
+    "conditions": [
+      "stunned"
+    ]
+  },
+  "abilityLimits": {
+    "maxRange": 12,
+    "maxAbilitiesPerCharacter": 3
+  },
+  "powerBudget": {
+    "base": 25,
+    "perLevel": 5,
+    "perAbilityCapPct": 45
+  },
+  "maxAverageEffect": {
+    "base": 5,
+    "perLevel": 2
+  },
+  "log": {
+    "maxEvents": 200
+  },
+  "ai": {
+    "rangedPattern": "\\b(ranged|from afar|from a distance|shoots?|hurls?|throws?|spits?|casts?|sings?|keeps? (its )?distance)\\b",
+    "healBelowPct": 50
+  },
+  "sprites": {
+    "shapes": [
+      "circle",
+      "square",
+      "diamond",
+      "triangle",
+      "hex"
+    ],
+    "palette": [
+      "#c0562b",
+      "#3f7fbf",
+      "#4f8f4a",
+      "#8a5fb5",
+      "#b58a2f",
+      "#2f8f8f",
+      "#a63d5a",
+      "#6b6b6b"
+    ],
+    "accents": [
+      "#3a2a1e",
+      "#f2d45c",
+      "#e8e0c0",
+      "#1e2a3a"
+    ]
+  },
+  "exploration": {
+    "maxMoveTiles": 60
+  },
+  "npc": {
+    "dispositionByRole": {
+      "merchant": "friendly",
+      "quest_giver": "friendly",
+      "ally": "friendly",
+      "bystander": "neutral",
+      "villain": "hostile"
+    },
+    "maxQuests": 50,
+    "maxQuestNotes": 50,
+    "maxInventory": 100,
+    "maxFacts": 1000
+  }
+}

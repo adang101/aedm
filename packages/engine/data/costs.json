@@ -1,0 +1,33 @@
+{
+  "unit": 100,
+  "minCost": 1,
+  "damagePriceDivisor": 2,
+  "healPriceDivisor": 2,
+  "shieldDivisor": 3,
+  "pushPullDivisor": 2,
+  "dashDivisor": 2,
+  "teleportPerTile": 1,
+  "teleportMaxTiles": 6,
+  "revealPrice": 1,
+  "disarmPrice": 1,
+  "markPricePerTurn": 1,
+  "conditionPerTurn": {
+    "stunned": 6, "hasted": 3, "evasive": 3, "slowed": 2, "rooted": 2, "burning": 2,
+    "bleeding": 2, "dazzled": 2, "taunted": 2, "prone": 1, "marked": 1, "shielded": 2
+  },
+  "terrain": { "smoke": 2, "wall": 3, "fire": 3, "trap": 3 },
+  "terrainTimed": ["smoke", "wall", "fire"],
+  "checkBonus": { "low": 2, "high": 5, "lowMaxBonus": 2 },
+  "durationMultipliers": { "1": 100, "2": 160, "3": 220 },
+  "area": { "single": 100, "burst1": 150, "burst2": 200, "line": 150, "cone": 150 },
+  "save": { "save": 75, "none": 100 },
+  "range": [
+    { "maxTiles": 1, "mult": 80 },
+    { "maxTiles": 4, "mult": 100 },
+    { "maxTiles": 8, "mult": 110 },
+    { "maxTiles": 12, "mult": 120 }
+  ],
+  "cooldown": { "0": 150, "1": 120, "2": 100, "3": 85, "4": 70 },
+  "cooldownMaxKey": 4,
+  "uses": { "1": 50, "2": 60, "3": 70 }
+}
