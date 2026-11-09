@@ -1,1 +1,16 @@
-export {};
+export * from "./provider";
+export * from "./errors";
+export { createAnthropicProvider, DEFAULT_MODELS, effortFor, type AnthropicLike, type AnthropicProviderOptions } from "./providers/anthropic";
+export { createFakeProvider, type FakeProvider, type FakeScript, type FakeReply, type FakeOptions } from "./providers/fake";
+export { improvDm, improvAbility, improvEnemy, parseDmUser } from "./providers/fake-improv";
+export { extractJson, formatZodError, type ZodIssueLike } from "./json";
+export { loadPrompt, renderTemplate, renderPrompt, templateKeys } from "./template";
+export { NarrationExtractor } from "./narration-stream";
+export { completeWithRepair, parseText, type SafeParser, type ParseOutcome, type CallOptions } from "./pipeline";
+export { buildDmContext, buildDmSystem, escapeUntrusted, type DmContextPack, type SceneEntity, type PartyMemberContext } from "./context";
+export { runDmTurn, salvageDmResponse, clampNarration, type DmTurnOptions, type DmTurnResult } from "./dm";
+export { forgeAbility, buildForgePrompt, ForgeReplySchema, type ForgeInput, type ForgeResult, type FinalizeResult, type ForgeReply } from "./forge";
+export { buildEnemy, buildEnemyPrompt, type EnemyInput, type EnemyRanges, type EnemyResult, type EnemyFinalizeResult } from "./enemy";
+export { generateStoryBible, type BibleInput } from "./bible";
+export { summarizeTurns } from "./summary";
+export { LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS } from "./default-bible";
