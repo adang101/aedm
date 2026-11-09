@@ -3,7 +3,8 @@ import { GameClient } from "./net/client";
 import { MockServer } from "./net/mock";
 import { MOCK_TILESET } from "./net/mock-world";
 import { webSocketFactory, type TransportFactory } from "./net/transport";
-import { setTileset } from "./render/tileset";
+import tilesetBlocks from "@aedm/engine/data/tileset-blocks.json";
+import { setTileset, type TilesetDesc } from "./render/tileset";
 import { Store, type AppState } from "./state/store";
 import { h, replaceChildren } from "./util/dom";
 import { mountGame } from "./ui/game";
@@ -27,6 +28,7 @@ if (mock) {
   (window as unknown as { __mock: MockServer }).__mock = server; // dev hook: __mock.simulateDisconnect()
   factory = server.factory;
 } else {
+  setTileset(tilesetBlocks as unknown as TilesetDesc);
   factory = webSocketFactory();
 }
 

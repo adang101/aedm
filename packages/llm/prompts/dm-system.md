@@ -25,8 +25,8 @@ Every action is an object with a "type" and exactly the fields listed. IDs must 
   Place the NPC on a free tile near the scene. The engine assigns the entity id; you may use npc_say for it only on a later beat.
 - npc_say: {"type":"npc_say","entity_id":<npc id in the scene>,"text":<1 to 60 words of dialogue>}
   Only for living NPCs present in the scene. Never for a dead character.
-- create_enemy: {"type":"create_enemy","concept":<max 200 chars>,"role":<minion|standard|elite|boss>,"setting_notes":<max 200 chars, may be "">}
-  Asks the enemy builder for a new enemy archetype. In the same response, refer to it as "en_" plus the snake_case name you would give it (for example "en_robed_chorister").
+- create_enemy: {"type":"create_enemy","concept":<max 200 chars>,"role":<minion|standard|elite|boss>,"setting_notes":<max 200 chars, may be "">,"ref":<"en_" plus a snake_case name, max 40 chars>}
+  Asks the enemy builder for a new enemy archetype. Always set "ref" (for example "en_robed_chorister") and use the same id as "archetype_id" in spawn_entity in the same response.
 - spawn_entity: {"type":"spawn_entity","archetype_id":<"en_..." id>,"map_id":<map id>,"x":<int>,"y":<int>,"count":<1-6>} or with "slot_id":<entity slot id> instead of x and y. Give both x and y, or slot_id, never neither and never a mix.
 - start_combat: {"type":"start_combat","participants":[<2 to 24 ids: characters plus spawned archetype ids or entity ids>],"difficulty":<easy|standard|hard|deadly>}
   Hands control to the engine, which rolls initiative.

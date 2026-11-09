@@ -56,6 +56,9 @@ For now every map tile, character and enemy is drawn procedurally as blocks and 
 5. **Biomes:** forest, dungeon, desert, town, interior.
 6. **Level cap 10**, party size 2 to 6 (1 allowed in dev mode).
 7. **Map generation is procedural and deterministic** from the DM's map brief and a seed; the model never emits tiles.
+8. **Server turn loop** (`apps/server`): one serialized async queue per room runs DM turns, AI combat turns and timeouts; player actions that are plain engine calls (a move, an attack on your own turn) apply immediately and synchronously. DM actions are applied one at a time in order. `create_enemy` carries an optional `ref` (`en_` + snake_case) that the server registers the built archetype under, so a later `spawn_entity` and `start_combat` in the same response can name it. The server snaps a blocked spawn tile to the nearest free one and swaps archetype ids in `start_combat` for the spawned entity ids.
+9. **Beats and combat narration:** a beat closes when every online player with a character has spoken in character, or 6 seconds after the first message. A check pauses the beat for exactly one follow-up DM call. In combat the DM narrates once per full round and again when the fight ends; a scene change (including an automatic move to a newly generated map) is a safe break and the engine's `rest` runs.
+10. **Absence:** a player offline for more than 5 seconds is marked offline and their character is protected by the engine's `setAbsent`. If it becomes their combat turn and the turn timer runs out, the other players vote skip, wait or autopilot (majority decides).
 
 ## Roadmap
 

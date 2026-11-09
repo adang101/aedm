@@ -51,6 +51,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@aedm/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
       '@aedm/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas

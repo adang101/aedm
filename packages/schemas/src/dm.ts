@@ -40,6 +40,8 @@ export const CreateEnemyActionSchema = z.strictObject({
   concept: text(200),
   role: EnemyRoleSchema,
   setting_notes: text(200, 0).default(""),
+  /** Optional handle (en_ + snake_case, at most 40 chars). The server registers the built archetype under it so spawn_entity can use it as archetype_id. */
+  ref: z.string().trim().max(40).regex(/^en_[a-z0-9_]+$/, "ref must be en_ plus snake_case").optional(),
 });
 
 export const SpawnEntityActionSchema = z

@@ -17,7 +17,7 @@ function render(e: LogEntry, s: AppState): HTMLElement {
           ...r.dice.map((d) => h("span", { class: "die" }, d)), mod,
           h("span", { class: "total" }, `= ${r.total}`),
           r.target > 0 ? h("span", { class: "muted" }, `vs ${r.target}`) : null,
-          h("span", { class: "pill" }, OUTCOME_LABEL[r.outcome])),
+          r.target > 0 || r.outcome === "crit" || r.outcome === "fumble" ? h("span", { class: "pill" }, OUTCOME_LABEL[r.outcome]) : null),
       );
     }
     case "chat":

@@ -250,13 +250,13 @@ export function improvDm(user: string): string {
     const concept = (lead.text.match(/\b(?:the |a |an )?([a-z]+(?: [a-z]+)?) (?:before|who|that)\b/i)?.[1] ?? "").trim();
     const foe = ctx.entities.find((e) => e.kind === "enemy");
     const name = foe ? foe.name : pick(["marsh brigand", "hollow-eyed cultist", "fog-wreathed lurker", "rusted guardian"], h, 5);
-    const archetype = `en_${slug(concept && !foe ? concept : name)}`;
+    const archetype = `en_${slug(concept && !foe ? concept : name)}`.slice(0, 40);
     const anchor = ctx.entities.find((e) => e.kind === "character") ?? ctx.entities[0] ?? { x: 4, y: 4 };
     const ids = (present.length ? present : ctx.party).map((p) => p.id);
     if (!foe) {
       actions.push({
         type: "create_enemy", concept: `A ${name} met in ${ctx.biome} terrain, hostile and quick to strike`, role: ids.length >= 5 ? "elite" : "standard",
-        setting_notes: ctx.description.slice(0, 120),
+        setting_notes: ctx.description.slice(0, 120), ref: archetype,
       });
     }
     const archId = foe ? foe.id : archetype;
