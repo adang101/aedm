@@ -1,0 +1,109 @@
+import { describe, expect, it } from "vitest";
+import { DM_ACTION_TYPES, DmActionSchema, DmResponseLooseSchema, DmResponseSchema } from "./dm";
+
+const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
+
+const brief = {
+  biome: "interior", theme_tags: [], size_class: "small",
+  rooms: [{ id: "r1", type: "hall", size: "small", connects_to: [] }],
+  points_of_interest: [], entity_slots: [], exits: [{ side: "south", label: "Door" }],
+};
+
+const actions = [
+  { type: "request_check", target: "party", ability: "wis", dc: 15, tags: ["perception"], reason: "Spot the watcher" },
+  { type: "create_npc", name: "Odalys Brand", concept: "Friendly innkeeper", role: "quest_giver", map_id: "m_inn", x: 3, y: 4, sprite_tags: ["apron"] },
+  { type: "npc_say", entity_id: "npc_odalys", text: "Three of them, walking in their sleep." },
+  { type: "create_enemy", concept: "A robed chorister", role: "standard" },
+  { type: "spawn_entity", archetype_id: "en_chorister", map_id: "m_inn", slot_id: "slot_1", count: 2 },
+  { type: "start_combat", participants: ["ch_tamsin", "en_1"], difficulty: "standard" },
+  { type: "end_combat", reason: "victory" },
+  { type: "apply_condition", target: "en_1", condition: "stunned", turns: 1 },
+  { type: "grant_item", recipient: "ch_orrin", item: { name: "Brass key", kind: "quest", value: 0 } },
+  { type: "update_quest", quest_id: "q1", status: "active", note: "Found the ledger" },
+  { type: "set_fact", subject: "Odalys Brand", predicate: "is_alive", object: "true" },
+  { type: "generate_map", brief },
+  { type: "change_scene", map_id: "m_marsh", entry: "party_start" },
+  { type: "award_growth", character_id: "ch_tamsin", amount: 20, reason: "Showed mercy" },
+  { type: "complete_milestone", milestone_id: "m1" },
+  { type: "suggest_actions", chips: ["Search the desk", "Talk to Odalys"] },
+];
+
+describe("DmAction", () => {
+  it("every action type in contracts parses", () => {
+    for (const a of actions) {
+      const r = DmActionSchema.safeParse(a);
+      expect(r.success, `${a.type}: ${JSON.stringify(r.error?.issues)}`).toBe(true);
+    }
+    expect(DM_ACTION_TYPES.sort()).toEqual(actions.map((a) => a.type).sort());
+  });
+  it("rejects unknown type and unknown fields", () => {
+    expect(DmActionSchema.safeParse({ type: "give_gold", amount: 5000 }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[6], extra: 1 }).success).toBe(false);
+  });
+  it("applies defaults", () => {
+    const a = DmActionSchema.parse(actions[0]);
+    expect(a).toMatchObject({ advantage: "none" });
+  });
+  it("field limits", () => {
+    expect(DmActionSchema.safeParse({ ...actions[0], tags: ["lore", "stealth", "speed"] }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[0], tags: ["parkour"] }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[0], reason: "x".repeat(121) }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[2], text: words(61) }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[4], count: 7 }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[13], amount: 26 }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[7], turns: 4 }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[15], chips: ["only one"] }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[15], chips: ["a", "b", "five words in this chip here"] }).success).toBe(false);
+  });
+  it("spawn_entity needs coords xor slot", () => {
+    const { slot_id: _s, ...noSlot } = actions[4] as Record<string, unknown>;
+    expect(DmActionSchema.safeParse(noSlot).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...noSlot, x: 1, y: 0 }).success).toBe(true);
+    expect(DmActionSchema.safeParse({ ...noSlot, x: 1 }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[4], x: 1, y: 1 }).success).toBe(false);
+  });
+  it("reserved set_fact predicates", () => {
+    expect(DmActionSchema.safeParse({ ...actions[10], object: "maybe" }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[10], predicate: "disposition", object: "grumpy" }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[10], predicate: "mood", object: "grumpy" }).success).toBe(true);
+    expect(DmActionSchema.safeParse({ ...actions[10], predicate: "p".repeat(41) }).success).toBe(false);
+  });
+});
+
+describe("DmResponse", () => {
+  const ok = { v: 1, narration: words(60), actions, importance: 3 };
+  it("parses a valid response with several action types", () => {
+    const r = DmResponseSchema.safeParse({ ...ok, actions: actions.slice(0, 8), dm_notes: "secret" });
+    expect(r.success, JSON.stringify(r.error?.issues)).toBe(true);
+    expect(r.data?.high_stakes).toBe(false);
+  });
+  it("max 8 actions", () => {
+    expect(DmResponseSchema.safeParse(ok).success).toBe(false);
+    expect(DmResponseSchema.safeParse({ ...ok, actions: [] }).success).toBe(true);
+  });
+  it("narration word bounds", () => {
+    const a = { ...ok, actions: [] };
+    expect(DmResponseSchema.safeParse({ ...a, narration: words(39) }).success).toBe(false);
+    expect(DmResponseSchema.safeParse({ ...a, narration: words(40) }).success).toBe(true);
+    expect(DmResponseSchema.safeParse({ ...a, narration: words(150) }).success).toBe(true);
+    expect(DmResponseSchema.safeParse({ ...a, narration: words(151) }).success).toBe(false);
+    expect(DmResponseSchema.safeParse({ ...a, narration: `<b>${words(50)}</b>` }).success).toBe(false);
+  });
+  it("dm_notes, importance, v, unknown fields", () => {
+    const a = { ...ok, actions: [] };
+    expect(DmResponseSchema.safeParse({ ...a, dm_notes: words(101) }).success).toBe(false);
+    expect(DmResponseSchema.safeParse({ ...a, importance: 0 }).success).toBe(false);
+    expect(DmResponseSchema.safeParse({ ...a, importance: 6 }).success).toBe(false);
+    expect(DmResponseSchema.safeParse({ ...a, v: 2 }).success).toBe(false);
+    expect(DmResponseSchema.safeParse({ ...a, mood: "x" }).success).toBe(false);
+  });
+  it("loose schema salvages shape and actions individually", () => {
+    const raw = { v: 1, narration: "short", actions: [actions[0], { type: "bogus" }], importance: 9, extra: true };
+    expect(DmResponseSchema.safeParse(raw).success).toBe(false);
+    const loose = DmResponseLooseSchema.parse(raw);
+    const good = loose.actions.filter((a) => DmActionSchema.safeParse(a).success);
+    expect(good).toHaveLength(1);
+    expect(DmResponseLooseSchema.safeParse({ narration: 3, actions: [] }).success).toBe(false);
+    expect(DmResponseLooseSchema.safeParse({ narration: "x", actions: "no" }).success).toBe(false);
+  });
+});

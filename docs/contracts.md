@@ -123,8 +123,12 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `abilities` | array | 1 to 3 ability objects at creation, total cost within the level's power budget |
 | `weapon_tier`, `armor_bonus` | integer | Within the level's allowance |
 | `level`, `growth`, `hp`, `hp_max` | integer | Engine-owned. Clients cannot set them. |
-| `sprite_recipe` | object | Part IDs and palettes, validated against the asset catalog |
+| `sprite_recipe` | object | Discriminated on `kind`. For now only `shape`: shape (circle, square, diamond, triangle, hex), color and accent (`#rrggbb`), glyph (1 to 2 characters). A `parts` variant (part IDs and palettes, validated against the asset catalog) comes later. |
 | `inventory` | array | Engine-owned |
+
+**Character create (client submits for a new character)**
+
+`v`, name, title, description, key_ability, scores (each 8 to 15; the engine checks the 27-point cost), trait_tags (exactly 2, different), sprite_recipe, and exactly one of `ability_texts` (1 to 3 strings, each at most 300 characters, sent to the forge) or `abilities` (1 to 3 prebuilt ability drafts). Engine-owned fields are rejected.
 
 **WebSocket messages**
 
@@ -132,7 +136,14 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 
 | `type` | Direction | Payload |
 | --- | --- | --- |
-| `join_room` | Client to server | invite_code, auth_token |
+| `create_room` | Client to server | display_name (1 to 24 characters) |
+| `room_created` | Server to client | room_id, invite_code |
+| `join_room` | Client to server | invite_code, display_name (1 to 24), auth_token (optional; the reconnect token from `joined`) |
+| `joined` | Server to client | player_id, auth_token, room_id |
+| `lobby_state` | Server to client | room_id, invite_code, host_player_id, phase (lobby, playing), settings (content_rating family, teen or mature; campaign_pitch at most 300 characters; dev_solo boolean), players (player_id, display_name, status online, away, offline or autopilot, ready, character_id or null) |
+| `set_ready` | Client to server | ready |
+| `update_settings` | Client to server | Host only. Any subset of the `settings` fields |
+| `start_game` | Client to server | Host only. None |
 | `claim_character` | Client to server | character_id, or "new" plus a character object |
 | `move_intent` | Client to server | target tile (x, y) or direction (n, s, e, w) |
 | `act` | Client to server | verb (interact, examine, talk), target_id |
@@ -145,11 +156,11 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `request_save` | Client to server | name (at most 30 characters) |
 | `load_save` | Client to server | save_id (owner only) |
 | `ping` | Client to server | none |
-| `state_snapshot` | Server to client | Full scene state and `seq` |
-| `state_diff` | Server to client | tick, changed entities, removed IDs, ack_seq |
+| `state_snapshot` | Server to client | seq, mode (exploration, combat), map (Map JSON), entities (EntityView), party (CharacterView), quests, combat (optional CombatState) |
+| `state_diff` | Server to client | seq, ack_seq (optional), changed (EntityView list), removed (entity IDs), mode (optional), combat (optional CombatState) |
 | `narration_chunk` | Server to client | turn_id, text, done |
-| `roll_result` | Server to client | who, label, dice, total, target number (DC or Defense), outcome |
-| `combat_state` | Server to client | round, initiative order, active ID |
+| `roll_result` | Server to client | who, label, dice (list of rolled die values), modifier, total, target (DC or Defense), outcome (success, failure, crit, fumble) |
+| `combat_state` | Server to client | CombatState: round, order (entity_id and initiative, in turn order), active_id |
 | `turn_timer` | Server to client | entity_id, seconds_left |
 | `vote_state` | Server to client | vote_id, topic, options, tally, seconds_left |
 | `map_load` | Server to client | map_id, url, content_hash |
@@ -157,8 +168,14 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `character_claimed` | Server to client | character_id, player_id |
 | `save_created` | Server to client | save_id, name |
 | `chips` | Server to client | 2 to 4 suggested quick replies |
-| `error` | Server to client | code, message, ack_id |
+| `chat` | Server to client | from_id, from_name, channel (ic, ooc, system), text |
+| `log` | Server to client | kind (narration, system, roll, engine), text, turn_id (optional) |
+| `error` | Server to client | code, message, ack_id (optional) |
 | `pong` | Server to client | none |
+
+Shared payload types: `EntityView` is id, kind (pc, npc, enemy), name, x, y, hp, hp_max, conditions (condition and turns), sprite (sprite recipe), and optional disposition and owner_player_id. `CharacterView` is the Character minus the private fields `user_id`, `campaign_id` and `inventory`. `CombatState` is round, order and active_id.
+
+The 8 KB limit applies to client-to-server messages. A `state_snapshot` carries a whole map and may be larger.
 
 **Map JSON**
 
@@ -178,7 +195,7 @@ Object types in the `objects` layer, all positioned in tiles:
 | --- | --- |
 | `spawn` | name. Exactly one named `party_start`. |
 | `exit` | name, to (map ID or "pending"), target_entry (spawn name) |
-| `entity_slot` | role (enemy, npc, boss, loot), count (1 to 6) |
+| `entity_slot` | id (so `spawn_entity` can name it as `slot_id`), role (enemy, npc, boss, loot), count (1 to 6) |
 | `interactable` | id, kind (chest, door, lever, sign, altar), state (open, closed, locked) |
 | `trigger` | id, radius (1 to 3 tiles), on_enter (event name) |
 
