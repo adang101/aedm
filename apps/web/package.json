@@ -1,0 +1,13 @@
+{
+  "name": "@aedm/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": { "@aedm/schemas": "workspace:*" },
+  "devDependencies": { "vite": "^8.0.0" }
+}
