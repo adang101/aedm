@@ -1,4 +1,4 @@
-import { addCharacter, cloneState, validatePointBuy } from "@aedm/engine";
+import { addCharacter, cloneState, validatePixelSprite, validatePointBuy } from "@aedm/engine";
 import type { CharacterCreate, ClientMessage } from "@aedm/schemas";
 import { AccountHandlers } from "./accounts/handlers";
 import { forgeCharacterAbilities, ForgeError } from "./forge";
@@ -268,6 +268,10 @@ export class Handlers {
     } else {
       if (!("character" in p)) return reply("error", "bad_message", "Missing character.");
       create = p.character;
+    }
+    if (create.sprite_recipe?.kind === "pixel") {
+      const px = validatePixelSprite(create.sprite_recipe);
+      if (!px.ok) return reply("error", "invalid_sprite", `That painted sprite was refused: ${px.errors.map((e) => e.message).join(" ")}`);
     }
     const pb = validatePointBuy(create.scores);
     if (!pb.ok) return reply("error", "invalid_state", pb.errors.join(" "));
