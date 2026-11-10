@@ -2,10 +2,8 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { PALETTE_HEX, PIXEL_COUNT, PIXEL_WIDTH, encodePixels, type PixelSprite, type SpriteSpec } from "@aedm/schemas";
-import { designSpriteOffline } from "@aedm/engine";
 import { JsonWorkshopStore, type WorkshopInput } from "../src/accounts/workshop";
-import { startHarness, type Harness, type TestClient } from "./helpers";
+import { pixelSprite, specSprite, startHarness, type Harness, type TestClient } from "./helpers";
 
 let h: Harness | undefined;
 const dirs: string[] = [];
@@ -14,12 +12,8 @@ afterEach(async () => {
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
 });
 
-export function pixel(rect: [number, number, number, number] = [16, 10, 31, 60]): PixelSprite {
-  const a = new Uint8Array(PIXEL_COUNT);
-  for (let y = rect[1]; y <= rect[3]; y++) for (let x = rect[0]; x <= rect[2]; x++) a[y * PIXEL_WIDTH + x] = 1;
-  return { kind: "pixel", v: 1, width: 48, height: 64, palette: [PALETTE_HEX[5]!], pixels: encodePixels(a), size: "medium", traits: "painted" };
-}
-const spec = (concept = "a heron ferryman"): SpriteSpec => designSpriteOffline({ concept, name: "Heron", role: "npc", kind: "npc" }, 3);
+const pixel = pixelSprite;
+const spec = specSprite;
 const input = (over: Partial<WorkshopInput> = {}): WorkshopInput => ({ name: "Heron", role_hint: "npc", concept: "a ferryman", tags: [], recipe: spec(), source: "designed", ...over });
 
 async function register(c: TestClient, username: string) {

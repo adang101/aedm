@@ -22,7 +22,11 @@ export interface ContextInput {
   sceneNote?: string;
   /** Max recent turns handed to the DM (default 12). */
   recentLimit?: number;
+  /** Usable cast entries (approved, npc or enemy). Listed to the DM by id, name, kind and a short concept. */
+  cast?: { assetId: string; name: string; roleHint: string; concept: string }[];
 }
+
+const MAX_CAST_LISTED = 20;
 
 const MAX_SCENE_ENTITIES = 40;
 
@@ -123,5 +127,10 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     partyLevel,
     lootRemaining: Math.max(0, lootCap(partyLevel) - state.session.lootValueThisEncounter),
     growthRemaining,
+    ...(input.cast?.length ? {
+      cast: input.cast.filter((c) => c.roleHint === "npc" || c.roleHint === "enemy").slice(0, MAX_CAST_LISTED).map((c) => ({
+        assetId: c.assetId, name: c.name, kind: c.roleHint as "npc" | "enemy", concept: c.concept.slice(0, 120),
+      })),
+    } : {}),
   };
 }

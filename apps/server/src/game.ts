@@ -11,7 +11,7 @@ import {
   buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn, summarizeTurns,
   type DmTurnResult,
 } from "@aedm/llm";
-import type { Ability, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteSpec } from "@aedm/schemas";
+import type { Ability, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
 import { ForgeError, forgeOneAbility } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import type { Player, Room } from "./rooms";
@@ -990,6 +990,7 @@ export class GameSession {
       summaries: opts.note ? [...this.summaries, opts.note] : this.summaries,
       sceneNote: this.sceneNote,
       recentLimit: this.cfg.recentTurnLimit,
+      cast: this.room.usableCast().map((c) => ({ assetId: c.assetId, name: c.name, roleHint: c.roleHint, concept: c.concept })),
     });
     for (const i of opts.intents) this.recent.push({ speaker: i.characterName, text: i.text, kind: "player", channel: "ic" });
 
@@ -1049,7 +1050,7 @@ export class GameSession {
           continue;
         }
         let a: DmAction = action;
-        let sprites: Record<string, SpriteSpec> | undefined;
+        let sprites: Record<string, SpriteRecipe> | undefined;
         if (a.type === "create_npc") sprites = await this.designNpcSprite(a);
         if (a.type === "spawn_entity") a = this.prepareSpawn(a, unreferenced);
         if (a.type === "start_combat") a = this.prepareCombat(a);
@@ -1087,7 +1088,9 @@ export class GameSession {
   }
 
   /** Server pre-pass for create_npc: the engine stays pure, the server hands it the designed look. */
-  private async designNpcSprite(a: Extract<DmAction, { type: "create_npc" }>): Promise<Record<string, SpriteSpec> | undefined> {
+  private async designNpcSprite(a: Extract<DmAction, { type: "create_npc" }>): Promise<Record<string, SpriteRecipe> | undefined> {
+    const cast = this.castLook(a.asset_ref, "npc");
+    if (cast) return { [a.name.trim().toLowerCase()]: cast };
     try {
       const r = await this.deps.sprites.getOrCreateSprite({
         concept: a.concept, ...(a.appearance ? { appearance: a.appearance } : {}), name: a.name, role: a.role, kind: "npc",
@@ -1097,6 +1100,17 @@ export class GameSession {
       this.deps.logger.warn("[sprite] npc design failed:", err instanceof Error ? err.message : String(err));
       return undefined;
     }
+  }
+
+  /**
+   * The look of an approved cast entry the DM named with `asset_ref`, or undefined. A ref that is not in this
+   * room's usable cast, or whose role hint does not fit the action, is ignored (the designed sprite is used) and never fails the beat.
+   */
+  private castLook(ref: string | undefined, kind: "npc" | "enemy"): SpriteRecipe | undefined {
+    if (!ref) return undefined;
+    const hit = this.room.usableCast(kind).find((c) => c.assetId === ref);
+    if (!hit && this.cfg.devLog) this.deps.logger.info(`[dm] asset_ref ${ref} ignored: not an approved ${kind} cast entry`);
+    return hit?.recipe;
   }
 
   private async createEnemy(a: CreateEnemyAction): Promise<string | null> {
@@ -1121,15 +1135,21 @@ export class GameSession {
         },
       });
       const enemy = { ...built.enemy };
-      try {
-        const look = await this.deps.sprites.getOrCreateSprite({
-          concept: a.concept, ...(a.appearance ?? enemy.appearance ? { appearance: (a.appearance ?? enemy.appearance) as string } : {}),
-          name: enemy.name, role: a.role, kind: "enemy",
-        });
-        enemy.sprite = look.spec;
+      const castLook = this.castLook(a.asset_ref, "enemy");
+      if (castLook) {
+        enemy.sprite = castLook;
         if (a.appearance) enemy.appearance = a.appearance;
-      } catch (err) {
-        this.deps.logger.warn("[sprite] enemy design failed:", err instanceof Error ? err.message : String(err));
+      } else {
+        try {
+          const look = await this.deps.sprites.getOrCreateSprite({
+            concept: a.concept, ...(a.appearance ?? enemy.appearance ? { appearance: (a.appearance ?? enemy.appearance) as string } : {}),
+            name: enemy.name, role: a.role, kind: "enemy",
+          });
+          enemy.sprite = look.spec;
+          if (a.appearance) enemy.appearance = a.appearance;
+        } catch (err) {
+          this.deps.logger.warn("[sprite] enemy design failed:", err instanceof Error ? err.message : String(err));
+        }
       }
       if (a.ref && !this.state.archetypes[a.ref]) enemy.id = a.ref;
       else delete enemy.id;

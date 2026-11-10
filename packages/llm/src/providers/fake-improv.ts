@@ -53,6 +53,8 @@ export interface ParsedDmContext {
   engine: string[];
   facts: string[];
   rating: string;
+  /** Approved cast entries listed in the <cast> block. */
+  cast: { assetRef: string; kind: string; name: string }[];
 }
 
 export function parseDmUser(user: string): ParsedDmContext {
@@ -79,6 +81,7 @@ export function parseDmUser(user: string): ParsedDmContext {
     engine: tag(user, "engine_results").split("\n").filter((l) => l.startsWith("[engine")),
     facts: tag(user, "canonical_facts").split("\n").filter((l) => l.startsWith("- ")),
     rating: /Content rating: (\w+)/.exec(user)?.[1] ?? "family",
+    cast: [...tag(user, "cast").matchAll(/^- asset_ref=(\S+) kind=(\S+) name="([^"]*)"/gm)].map((m) => ({ assetRef: m[1]!, kind: m[2]!, name: m[3]! })),
   };
 }
 
@@ -312,6 +315,15 @@ export function improvDm(user: string): string {
     if (target && primary !== "combat") {
       actions.push({ type: "npc_say", entity_id: target.id, text: pick(NPC_LINES, h, 3) });
     }
+    // With a cast look on offer and nobody to talk to, a new face turns up wearing it.
+    const castNpc = ctx.cast.find((c) => c.kind === "npc" && !dead.has(c.name.toLowerCase()) && !ctx.entities.some((e) => e.name.toLowerCase() === c.name.toLowerCase()));
+    if (castNpc && !target && primary !== "combat" && ctx.engine.length === 0) {
+      const at = ctx.entities.find((e) => e.kind === "character") ?? { x: 4, y: 4 };
+      actions.push({
+        type: "create_npc", name: castNpc.name.slice(0, 40), concept: `A local met in ${ctx.setting}, curious about the newcomers`.slice(0, 200), role: "bystander",
+        map_id: ctx.mapId, x: Math.min(255, at.x + 2), y: Math.min(255, at.y), sprite_tags: [], asset_ref: castNpc.assetRef,
+      });
+    }
   }
 
   if (primary === "combat") {
@@ -321,11 +333,13 @@ export function improvDm(user: string): string {
     const archetype = `en_${slug(concept && !foe ? concept : name)}`.slice(0, 40);
     const anchor = ctx.entities.find((e) => e.kind === "character") ?? ctx.entities[0] ?? { x: 4, y: 4 };
     const ids = (present.length ? present : ctx.party).map((p) => p.id);
+    const castEnemy = ctx.cast.find((c) => c.kind === "enemy");
     if (!foe) {
       actions.push({
         type: "create_enemy", concept: `A ${name} met in ${ctx.setting}, hostile and quick to strike`, // a lone hero's encounter budget (10 + 3 x level) is smaller than a standard enemy's threat, so a solo party gets a minion
         role: ids.length >= 5 ? "elite" : ids.length === 1 ? "minion" : "standard",
         setting_notes: ctx.description.slice(0, 120), ref: archetype,
+        ...(castEnemy ? { asset_ref: castEnemy.assetRef } : {}),
         appearance: `${pick(["wiry", "hulking", "gaunt", "bristling"], h, 6)} ${name} in ${pick(["mud-brown", "ash-grey", "dark-red", "pale-blue"], h, 7)} rags, ${pick(["glowing eyes", "a notched blade", "bone trinkets", "a patched hood"], h, 8)}`.slice(0, 160),
       });
     }

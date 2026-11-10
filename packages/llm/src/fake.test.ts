@@ -67,6 +67,21 @@ describe("fake improv DM", () => {
     return (await runDmTurn(createFakeProvider(), pack)).response.actions;
   };
 
+  it("offers an enemy cast look to a new fight, and an NPC cast look when nobody is around to talk to", async () => {
+    const withCast = (p: ReturnType<typeof makeLanternPack>) => {
+      p.cast = [
+        { assetId: "as_wren", name: "Wren", kind: "npc", concept: "a heron ferryman" },
+        { assetId: "as_hag", name: "Bog Hag", kind: "enemy", concept: "reeds and mud" },
+      ];
+    };
+    const fight = await types("I attack the shape in the fog", withCast);
+    expect(fight.find((a) => a.type === "create_enemy")).toMatchObject({ asset_ref: "as_hag" });
+    const quiet = await types("I look at the lanterns", (p) => { withCast(p); p.scene.entities = p.scene.entities.filter((e) => e.kind !== "npc"); });
+    expect(quiet.find((a) => a.type === "create_npc")).toMatchObject({ name: "Wren", asset_ref: "as_wren", role: "bystander" });
+    const plain = await types("I attack the shape in the fog");
+    expect(JSON.stringify(plain)).not.toContain("asset_ref");
+  });
+
   it("requests checks with tags for skill words", async () => {
     const a = await types("I sneak past the guard");
     expect(a[0]).toMatchObject({ type: "request_check", target: "ch_tamsin", ability: "dex", tags: ["stealth"] });

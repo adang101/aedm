@@ -1,4 +1,4 @@
-import { CHECK_TAGS, DIFFICULTIES, type Difficulty, type DmAction, type Item, type MapBrief, type NpcRecord, type SpriteSpec } from "@aedm/schemas";
+import { CHECK_TAGS, DIFFICULTIES, type Difficulty, type DmAction, type Item, type MapBrief, type NpcRecord, type SpriteRecipe } from "@aedm/schemas";
 import { clampDc, type CheckRequest } from "./checks.ts";
 import { endCombatM, startCombatM } from "./combat.ts";
 import { PLOTS, RULES } from "./data.ts";
@@ -26,8 +26,8 @@ export interface DmContext {
   partyLevel: number;
   /** Difficulty the encounter budget is checked against when spawning. Default: standard. */
   difficulty?: Difficulty;
-  /** Sprites the server designed, keyed by lowercase NPC name. create_npc uses one if present, else designs offline. */
-  sprites?: Record<string, SpriteSpec>;
+  /** Sprites the server designed or took from the approved cast (already validated), keyed by lowercase NPC name. create_npc uses one if present, else designs offline. */
+  sprites?: Record<string, SpriteRecipe>;
 }
 
 export interface DmApplyResult {

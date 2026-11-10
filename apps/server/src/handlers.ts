@@ -1,5 +1,5 @@
 import { addCharacter, cloneState, validatePixelSprite, validatePointBuy } from "@aedm/engine";
-import type { CharacterCreate, ClientMessage } from "@aedm/schemas";
+import { MAX_CAST_ENTRIES, type CharacterCreate, type ClientMessage } from "@aedm/schemas";
 import { AccountHandlers } from "./accounts/handlers";
 import { WorkshopHandlers } from "./accounts/workshop-handlers";
 import { forgeCharacterAbilities, ForgeError } from "./forge";
@@ -10,6 +10,9 @@ import { readSave, readSaveExact } from "./saves";
 import type { Deps } from "./types";
 
 type Msg<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
+
+/** One player cannot fill the whole cast. */
+const MAX_CAST_PER_PLAYER = 10;
 
 /** Everything that happens when a validated client message arrives. */
 export class Handlers {
@@ -54,6 +57,8 @@ export class Handlers {
       case "update_settings": return this.updateSettings(room, player, msg as Msg<"update_settings">, reply);
       case "start_game": return this.startGame(room, player, reply);
       case "claim_character": return this.claimCharacter(room, player, conn, msg as Msg<"claim_character">, reply);
+      case "offer_to_cast": return this.offerToCast(room, player, msg as Msg<"offer_to_cast">, reply);
+      case "cast_decision": return this.castDecision(room, player, msg as Msg<"cast_decision">, reply);
       case "say": return this.say(room, player, msg as Msg<"say">, reply);
       case "request_save": return this.requestSave(room, player, conn, msg as Msg<"request_save">, reply);
       case "load_save": return this.loadSave(room, player, msg as Msg<"load_save">, reply);
@@ -170,6 +175,7 @@ export class Handlers {
     conn.send("joined", { player_id: player.id, auth_token: player.token, room_id: room.id }, msg.id);
     if (player.status !== "online") room.setStatus(player, "online");
     room.broadcastLobby();
+    if (room.cast.length > 0) conn.send("cast_state", room.castPayload());
     room.game?.sendFullState(player.id);
   }
 
@@ -228,10 +234,61 @@ export class Handlers {
 
   private updateSettings(room: Room, player: Player, msg: Msg<"update_settings">, reply: Reply): void {
     if (player.id !== room.hostId) return reply("error", "not_host", "Only the host can change settings.");
-    if (room.phase !== "lobby") return reply("error", "invalid_state", "The game has already started.");
+    // once playing, only the sprite safety switches stay in the host's hands
+    const midGame = Object.keys(msg.payload).every((k) => k === "custom_cast" || k === "custom_paintings");
+    if (room.phase !== "lobby" && !midGame) return reply("error", "invalid_state", "The game has already started.");
     room.settings = { ...room.settings, ...msg.payload };
+    if (msg.payload.custom_cast === "open") {
+      for (const c of room.cast) c.status = "approved"; // open means no approval step: what was waiting is in
+    }
     reply("ok");
     room.broadcastLobby();
+    if (msg.payload.custom_cast !== undefined || msg.payload.custom_paintings !== undefined) room.broadcastCast();
+  }
+
+  // ---------- campaign cast ----------
+
+  private async offerToCast(room: Room, player: Player, msg: Msg<"offer_to_cast">, reply: Reply): Promise<void> {
+    if (!player.userId) return reply("error", "forbidden", "Log in to offer a sprite from your Workshop.");
+    const mode = room.settings.custom_cast ?? "host_approval";
+    if (mode === "off") return reply("error", "forbidden", "The host has turned custom sprites off for this room.");
+    const existing = room.cast.find((c) => c.assetId === msg.payload.asset_id);
+    if (existing) {
+      if (existing.ownerPlayerId !== player.id) return reply("error", "invalid_state", "That sprite is already in the cast.");
+      return reply("ok"); // idempotent: the entry is already there
+    }
+    const asset = await this.deps.workshop.get(player.userId, msg.payload.asset_id);
+    if (!asset) return reply("error", "not_found", "No such sprite in your Workshop.");
+    if (asset.role_hint !== "npc" && asset.role_hint !== "enemy") return reply("error", "invalid_state", "Only NPC and enemy looks can join the cast.");
+    if (asset.recipe.kind === "pixel" && room.settings.custom_paintings === false) return reply("error", "forbidden", "The host has turned painted sprites off for this room.");
+    if (room.cast.length >= MAX_CAST_ENTRIES) return reply("error", "invalid_state", "The cast is full.");
+    if (room.cast.filter((c) => c.ownerPlayerId === player.id).length >= MAX_CAST_PER_PLAYER) {
+      return reply("error", "invalid_state", `You can offer at most ${MAX_CAST_PER_PLAYER} sprites to one campaign.`);
+    }
+    if (room.cast.some((c) => c.assetId === asset.id)) return reply("ok"); // raced with another offer of the same asset
+    room.cast.push({
+      assetId: asset.id, ownerPlayerId: player.id, name: asset.name, roleHint: asset.role_hint, concept: asset.concept, recipe: asset.recipe,
+      status: mode === "open" || player.id === room.hostId ? "approved" : "pending",
+    });
+    reply("ok");
+    room.broadcastCast();
+  }
+
+  private castDecision(room: Room, player: Player, msg: Msg<"cast_decision">, reply: Reply): void {
+    const entry = room.cast.find((c) => c.assetId === msg.payload.asset_id);
+    if (!entry) return reply("error", "not_found", "That sprite is not in the cast.");
+    const isHost = player.id === room.hostId;
+    if (!msg.payload.approve) {
+      // the host denies or removes; the owner may withdraw their own offer
+      if (!isHost && entry.ownerPlayerId !== player.id) return reply("error", "not_host", "Only the host can remove a sprite from the cast.");
+      room.cast.splice(room.cast.indexOf(entry), 1);
+    } else {
+      if (!isHost) return reply("error", "not_host", "Only the host can approve a sprite for the cast.");
+      if ((room.settings.custom_cast ?? "host_approval") === "off") return reply("error", "invalid_state", "Custom sprites are turned off for this room.");
+      entry.status = "approved";
+    }
+    reply("ok");
+    room.broadcastCast();
   }
 
   private say(room: Room, player: Player, msg: Msg<"say">, reply: Reply): void {
@@ -274,6 +331,7 @@ export class Handlers {
       create = p.character;
     }
     if (create.sprite_recipe?.kind === "pixel") {
+      if (room.settings.custom_paintings === false) return reply("error", "forbidden", "The host has turned painted sprites off for this room.");
       const px = validatePixelSprite(create.sprite_recipe);
       if (!px.ok) return reply("error", "invalid_sprite", `That painted sprite was refused: ${px.errors.map((e) => e.message).join(" ")}`);
     }
