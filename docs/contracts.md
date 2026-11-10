@@ -275,7 +275,7 @@ Object types in the `objects` layer, all positioned in tiles:
 | `interactable` | id, kind (chest, door, lever, sign, altar), state (open, closed, locked) |
 | `trigger` | id, radius (1 to 3 tiles), on_enter (event name) |
 
-A map is valid only if all of these hold. If any fails, regenerate with a new seed, up to 3 tries.
+A map is valid only if all of these hold. If any fails, regenerate with a new seed, up to 3 tries, then fall back (simplified rooms, the preset's own layout, one plain chamber).
 
 1. Every layer's `data` length equals width times height.
 2. Every non-zero tile ID has a TileDef in the inline tileset (the schema enforces this too, and that gids are unique).
@@ -284,6 +284,9 @@ A map is valid only if all of these hold. If any fails, regenerate with a new se
 5. No two objects share a tile.
 6. Exits sit on walkable tiles on the map boundary or in a door tile.
 7. The serialized map is at most 250 KB before compression.
+8. Hazards are never the only way through: every exit, entity slot and interactable is reachable from `party_start` without stepping on a tile whose ground `TileDef` has role `hazard`. (A hazard's damage type and dice come from its material, found by `material_id` in the engine library.)
+
+The validator also warns, without failing, about `TileDef`s no layer uses; the generator never emits any. Tile layer placement: floor, path, door, hazard and walkable liquid go on `ground`; wall, obstacle and non-walkable liquid on `walls` (the collision layer, so a tree blocks sight as well as movement); decor props on `decor`; tree canopies on `above`. A `TileDef`'s `walkable` is false exactly when its layer is `walls`.
 
 **Accounts**
 

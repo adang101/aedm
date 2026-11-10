@@ -1,0 +1,261 @@
+{
+  "presets": {
+    "forest": {
+      "layout": "open_field", "environment": "outdoor", "mood": "neutral",
+      "density": { "obstacles": 2, "liquid": 1, "hazards": 0 },
+      "materials": {
+        "floor": ["forest_grass", "meadow_grass", "leaf_litter"], "path": ["dirt_path"], "wall": ["hedge_wall", "mossy_stone_wall"],
+        "obstacle": ["oak_tree", "pine_tree", "boulder"], "liquid": ["water", "shallow_water"], "hazard": ["thorn_patch", "quicksand"],
+        "decor": ["wildflowers", "mushrooms", "fallen_log", "scattered_bones", "campfire"], "door": ["wooden_door"]
+      },
+      "keywords": ["forest", "woods", "woodland", "grove", "thicket", "jungle", "wilderness"],
+      "starter": { "name": "Marsh forest", "tags": ["marsh", "fog"], "pois": ["statue", "chest", "mushrooms"] }
+    },
+    "dungeon": {
+      "layout": "rooms_and_corridors", "environment": "underground", "mood": "dark",
+      "density": { "obstacles": 1, "liquid": 0, "hazards": 1 },
+      "materials": {
+        "floor": ["dungeon_flags", "cave_rock"], "path": ["worn_stone"], "wall": ["rough_stone_wall", "stone_brick_wall"],
+        "obstacle": ["stone_pillar", "crate", "barrel"], "liquid": ["water", "shallow_water"], "hazard": ["spike_trap", "loose_rubble"],
+        "decor": ["scattered_bones", "rubble", "cobweb", "wall_torch", "candles"], "door": ["iron_door", "wooden_door"]
+      },
+      "keywords": ["dungeon", "oubliette", "prison", "jail", "mineshaft", "quarry"],
+      "starter": { "name": "Old dungeon", "tags": ["ruin"], "pois": ["altar", "lever", "chest", "statue"] }
+    },
+    "desert": {
+      "layout": "open_field", "environment": "outdoor", "mood": "bright",
+      "density": { "obstacles": 2, "liquid": 0, "hazards": 1 },
+      "materials": {
+        "floor": ["dune_sand", "sand", "dry_grass"], "path": ["sand_trail"], "wall": ["sandstone_wall"],
+        "obstacle": ["dune_ridge", "cactus", "boulder"], "liquid": ["water", "shallow_water"], "hazard": ["quicksand", "hot_coals"],
+        "decor": ["scattered_bones", "rubble", "driftwood", "skull_pile"], "door": ["wooden_door"]
+      },
+      "keywords": ["desert", "dune", "dunes", "oasis", "wasteland", "badlands", "sahara", "steppe"],
+      "starter": { "name": "Dune oasis", "tags": ["dunes"], "pois": ["well", "statue", "chest"] }
+    },
+    "town": {
+      "layout": "settlement", "environment": "outdoor", "mood": "neutral",
+      "density": { "obstacles": 1, "liquid": 1, "hazards": 0 },
+      "materials": {
+        "floor": ["meadow_grass", "dirt"], "path": ["cobble_road", "brick_road"], "wall": ["plaster_wall", "brick_wall", "wooden_wall"],
+        "obstacle": ["oak_tree", "barrel", "crate", "market_stall"], "liquid": ["water", "shallow_water"], "hazard": ["loose_rubble"],
+        "decor": ["wildflowers", "banner", "lantern_post", "stone_well", "signpost", "cargo_sacks"], "door": ["wooden_door"]
+      },
+      "keywords": ["town", "village", "hamlet", "city", "harbor", "harbour", "port", "settlement", "streets", "district", "lighthouse", "inn", "tavern"],
+      "starter": { "name": "Harbor town", "tags": ["coastal", "fog"], "pois": ["well", "sign", "door", "barrel"] }
+    },
+    "interior": {
+      "layout": "rooms_and_corridors", "environment": "indoor", "mood": "dim",
+      "density": { "obstacles": 1, "liquid": 0, "hazards": 0 },
+      "materials": {
+        "floor": ["wooden_planks", "polished_wood"], "path": ["carpet_runner", "worn_stone"], "wall": ["paneled_wall", "plaster_wall", "stone_brick_wall"],
+        "obstacle": ["crate", "barrel", "bookshelf"], "liquid": ["water"], "hazard": ["fire_patch"],
+        "decor": ["wooden_table", "bed", "woven_rug", "candles", "wall_torch"], "door": ["wooden_door"]
+      },
+      "keywords": ["interior", "house", "manor", "mansion", "cottage", "cellar", "basement", "attic", "estate", "chamber", "tower"],
+      "starter": { "name": "Old house", "tags": ["quiet"], "pois": ["chest", "door", "table", "lever"] }
+    },
+    "cave": {
+      "layout": "cave", "environment": "underground", "mood": "dark",
+      "density": { "obstacles": 2, "liquid": 1, "hazards": 1 },
+      "materials": {
+        "floor": ["cave_rock", "moss", "gravel"], "path": ["worn_stone", "dirt_path"], "wall": ["cave_wall"],
+        "obstacle": ["stalagmite", "boulder", "giant_mushroom"], "liquid": ["water", "shallow_water"], "hazard": ["caustic_seep", "loose_rubble"],
+        "decor": ["mushrooms", "glow_crystals", "scattered_bones", "puddle"], "door": ["wooden_door"]
+      },
+      "keywords": ["cave", "caves", "cavern", "caverns", "grotto", "burrow", "tunnels", "underdark", "den", "lair"],
+      "starter": { "name": "Echoing cavern", "tags": ["damp"], "pois": ["mushroom", "chest", "bones"] }
+    },
+    "swamp": {
+      "layout": "open_field", "environment": "outdoor", "mood": "dim",
+      "density": { "obstacles": 2, "liquid": 3, "hazards": 1 },
+      "materials": {
+        "floor": ["peat", "mud", "moss"], "path": ["mud_track", "plank_walkway"], "wall": ["hedge_wall"],
+        "obstacle": ["willow_tree", "mangrove", "dead_tree"], "liquid": ["swamp_water", "marsh_shallows"], "hazard": ["quicksand", "poison_gas"],
+        "decor": ["reeds", "mushrooms", "puddle", "fallen_log", "scattered_bones"], "door": ["wooden_door"]
+      },
+      "keywords": ["swamp", "marsh", "bog", "fen", "mire", "bayou", "wetland", "wetlands", "morass"],
+      "starter": { "name": "Mirewood bog", "tags": ["marsh", "fog"], "pois": ["reeds", "chest", "bones"] }
+    },
+    "snowfield": {
+      "layout": "open_field", "environment": "outdoor", "mood": "bright",
+      "density": { "obstacles": 2, "liquid": 1, "hazards": 1 },
+      "materials": {
+        "floor": ["snow", "ice"], "path": ["snow_trail"], "wall": ["ice_wall"],
+        "obstacle": ["snowy_pine", "snow_drift", "boulder", "ice_spire"], "liquid": ["water", "shallow_water"], "hazard": ["frost_vent", "spike_trap"],
+        "decor": ["ice_crystals", "scattered_bones", "campfire", "fallen_log", "rubble"], "door": ["wooden_door"]
+      },
+      "keywords": ["snowfield", "snow", "snowy", "tundra", "glacier", "glaciers", "arctic", "frozen", "ice", "icy", "frost", "winter", "blizzard", "permafrost"],
+      "starter": { "name": "Frozen tundra", "tags": ["cold", "wind"], "pois": ["campfire", "chest", "bones"] }
+    },
+    "mountain_pass": {
+      "layout": "trail", "environment": "outdoor", "mood": "neutral",
+      "density": { "obstacles": 3, "liquid": 0, "hazards": 1 },
+      "materials": {
+        "floor": ["gravel", "dirt", "dry_grass"], "path": ["gravel_path", "dirt_path"], "wall": ["cliff_rock"],
+        "obstacle": ["boulder", "pine_tree", "dead_tree"], "liquid": ["water", "shallow_water"], "hazard": ["loose_rubble", "thorn_patch"],
+        "decor": ["rubble", "scattered_bones", "campfire", "signpost", "fallen_log"], "door": ["wooden_door"]
+      },
+      "keywords": ["mountain", "mountains", "canyon", "ravine", "gorge", "cliffs", "highlands", "crag", "peak", "ridge", "rift"],
+      "starter": { "name": "High mountain pass", "tags": ["windy"], "pois": ["sign", "campfire", "chest"] }
+    },
+    "ruins": {
+      "layout": "open_field", "environment": "outdoor", "mood": "dim",
+      "density": { "obstacles": 2, "liquid": 1, "hazards": 1 },
+      "materials": {
+        "floor": ["rubble_floor", "forest_grass", "moss"], "path": ["worn_stone"], "wall": ["mossy_stone_wall"],
+        "obstacle": ["broken_pillar", "boulder", "oak_tree", "statue"], "liquid": ["water", "shallow_water"], "hazard": ["loose_rubble", "thorn_patch", "arcane_sigil"],
+        "decor": ["rubble", "scattered_bones", "stone_altar", "fallen_log", "candles"], "door": ["stone_arch", "iron_door"]
+      },
+      "keywords": ["ruins", "ruin", "ruined", "overgrown", "abandoned", "wreck"],
+      "starter": { "name": "Overgrown ruins", "tags": ["ancient"], "pois": ["altar", "statue", "chest"] }
+    },
+    "temple": {
+      "layout": "rooms_and_corridors", "environment": "indoor", "mood": "dim",
+      "density": { "obstacles": 2, "liquid": 0, "hazards": 1 },
+      "materials": {
+        "floor": ["marble_floor", "flagstone", "tile_mosaic"], "path": ["carpet_runner", "flagstone_path"], "wall": ["marble_wall", "stone_brick_wall"],
+        "obstacle": ["stone_pillar", "statue", "broken_pillar"], "liquid": ["water", "shallow_water"], "hazard": ["arcane_sigil", "radiant_ward", "fire_patch"],
+        "decor": ["stone_altar", "candles", "brazier", "banner", "rune_circle", "woven_rug"], "door": ["wooden_door", "stone_arch"]
+      },
+      "keywords": ["temple", "cathedral", "church", "shrine", "monastery", "abbey", "sanctum", "chapel", "basilica", "sanctuary", "ziggurat"],
+      "starter": { "name": "Forgotten temple", "tags": ["holy"], "pois": ["altar", "lever", "chest", "statue"] }
+    },
+    "castle": {
+      "layout": "rooms_and_corridors", "environment": "indoor", "mood": "neutral",
+      "density": { "obstacles": 1, "liquid": 0, "hazards": 1 },
+      "materials": {
+        "floor": ["flagstone", "marble_floor"], "path": ["carpet_runner", "flagstone_path"], "wall": ["stone_brick_wall"],
+        "obstacle": ["stone_pillar", "statue", "crate", "barrel"], "liquid": ["water"], "hazard": ["spike_trap", "fire_patch"],
+        "decor": ["banner", "wall_torch", "wooden_table", "weapon_rack", "brazier", "woven_rug"], "door": ["iron_door", "portcullis", "wooden_door"]
+      },
+      "keywords": ["castle", "fortress", "citadel", "stronghold", "palace", "fort", "bastion", "throne", "barracks", "garrison"],
+      "starter": { "name": "Border castle", "tags": ["stone"], "pois": ["table", "chest", "lever", "banner"] }
+    },
+    "ship_deck": {
+      "layout": "arena", "environment": "outdoor", "mood": "bright",
+      "density": { "obstacles": 2, "liquid": 1, "hazards": 1 },
+      "materials": {
+        "floor": ["hull_planks", "wooden_planks"], "path": ["plank_walkway"], "wall": ["hull_wall", "iron_bulkhead"],
+        "obstacle": ["mast_rigging", "crate", "barrel", "wreckage"], "liquid": ["deep_water", "water"], "hazard": ["fire_patch", "hot_coals"],
+        "decor": ["coiled_rope", "fishing_nets", "cargo_sacks", "driftwood", "ship_wheel"], "door": ["hatch", "wooden_door"]
+      },
+      "keywords": ["ship", "ships", "airship", "galleon", "deck", "vessel", "boat", "frigate", "schooner", "ferry", "sloop", "barge", "ironclad"],
+      "starter": { "name": "Merchant ship deck", "tags": ["sea", "wind"], "pois": ["chest", "lever", "barrel"] }
+    },
+    "sewer": {
+      "layout": "rooms_and_corridors", "environment": "underground", "mood": "dark",
+      "density": { "obstacles": 1, "liquid": 2, "hazards": 2 },
+      "materials": {
+        "floor": ["slick_stone", "dungeon_flags"], "path": ["worn_stone", "plank_walkway"], "wall": ["sewer_brick_wall"],
+        "obstacle": ["barrel", "crate", "stone_pillar"], "liquid": ["sewage", "marsh_shallows"], "hazard": ["poison_gas", "caustic_seep"],
+        "decor": ["scattered_bones", "puddle", "cobweb", "rubble", "mushrooms"], "door": ["iron_door", "hatch"]
+      },
+      "keywords": ["sewer", "sewers", "drain", "drains", "cistern", "undercity", "catacomb", "aqueduct", "culvert"],
+      "starter": { "name": "Flooded sewers", "tags": ["damp", "dark"], "pois": ["lever", "chest", "bones"] }
+    },
+    "volcanic": {
+      "layout": "cave", "environment": "underground", "mood": "dark",
+      "density": { "obstacles": 2, "liquid": 2, "hazards": 2 },
+      "materials": {
+        "floor": ["basalt", "ash"], "path": ["gravel_path"], "wall": ["obsidian_wall", "cave_wall"],
+        "obstacle": ["lava_rock", "boulder", "stalagmite"], "liquid": ["lava"], "hazard": ["fire_patch", "hot_coals"],
+        "decor": ["rubble", "scattered_bones", "steam_vent", "glow_crystals"], "door": ["iron_door"]
+      },
+      "keywords": ["volcano", "volcanic", "lava", "magma", "forge", "foundry", "smelter", "furnace", "caldera", "crater", "ashen", "ember"],
+      "starter": { "name": "Lava caverns", "tags": ["heat"], "pois": ["lever", "chest", "bones"] }
+    },
+    "crypt": {
+      "layout": "rooms_and_corridors", "environment": "underground", "mood": "eerie",
+      "density": { "obstacles": 1, "liquid": 0, "hazards": 2 },
+      "materials": {
+        "floor": ["crypt_slabs", "dungeon_flags"], "path": ["worn_stone"], "wall": ["rough_stone_wall", "bone_wall"],
+        "obstacle": ["tombstone", "sarcophagus", "stone_pillar"], "liquid": ["water"], "hazard": ["arcane_sigil", "spike_trap"],
+        "decor": ["scattered_bones", "skull_pile", "candles", "cobweb", "stone_altar", "brazier"], "door": ["iron_door", "stone_arch"]
+      },
+      "keywords": ["crypt", "crypts", "tomb", "tombs", "mausoleum", "graveyard", "cemetery", "necropolis", "ossuary", "burial", "haunted", "undead"],
+      "starter": { "name": "Old crypt", "tags": ["crypt"], "pois": ["altar", "lever", "chest", "statue"] }
+    },
+    "library": {
+      "layout": "rooms_and_corridors", "environment": "indoor", "mood": "dim",
+      "density": { "obstacles": 2, "liquid": 0, "hazards": 0 },
+      "materials": {
+        "floor": ["polished_wood", "wooden_planks", "red_carpet"], "path": ["carpet_runner"], "wall": ["paneled_wall"],
+        "obstacle": ["bookshelf", "statue", "stone_pillar"], "liquid": ["water"], "hazard": ["arcane_sigil", "fire_patch"],
+        "decor": ["candles", "wooden_table", "woven_rug", "open_book", "lantern_post"], "door": ["wooden_door"]
+      },
+      "keywords": ["library", "archive", "archives", "scriptorium", "athenaeum", "bookshop", "academy", "observatory", "laboratory"],
+      "starter": { "name": "Dusty library", "tags": ["quiet", "books"], "pois": ["lever", "chest", "table", "book"] }
+    },
+    "market": {
+      "layout": "settlement", "environment": "outdoor", "mood": "bright",
+      "density": { "obstacles": 2, "liquid": 0, "hazards": 0 },
+      "materials": {
+        "floor": ["dirt", "cobblestone"], "path": ["cobble_road", "brick_road"], "wall": ["plaster_wall", "wooden_wall"],
+        "obstacle": ["market_stall", "crate", "barrel"], "liquid": ["water"], "hazard": ["loose_rubble"],
+        "decor": ["banner", "cargo_sacks", "lantern_post", "fountain", "signpost"], "door": ["wooden_door", "curtain_door"]
+      },
+      "keywords": ["market", "bazaar", "marketplace", "souk", "plaza", "square", "festival", "caravanserai"],
+      "starter": { "name": "Busy market", "tags": ["crowded"], "pois": ["fountain", "sign", "barrel", "door"] }
+    },
+    "farmland": {
+      "layout": "settlement", "environment": "outdoor", "mood": "bright",
+      "density": { "obstacles": 1, "liquid": 1, "hazards": 0 },
+      "materials": {
+        "floor": ["farm_soil", "meadow_grass", "dry_grass"], "path": ["dirt_path"], "wall": ["wooden_wall"],
+        "obstacle": ["hay_bale", "wooden_fence", "oak_tree", "boulder"], "liquid": ["water", "shallow_water"], "hazard": ["thorn_patch"],
+        "decor": ["wildflowers", "cargo_sacks", "fallen_log", "signpost", "stone_well"], "door": ["wooden_door"]
+      },
+      "keywords": ["farm", "farmland", "farmstead", "fields", "field", "meadow", "pasture", "orchard", "ranch", "barn", "plantation", "vineyard", "countryside"],
+      "starter": { "name": "Quiet farmstead", "tags": ["rural"], "pois": ["well", "sign", "chest"] }
+    },
+    "beach": {
+      "layout": "islands", "environment": "outdoor", "mood": "bright",
+      "density": { "obstacles": 1, "liquid": 3, "hazards": 1 },
+      "materials": {
+        "floor": ["sand", "wet_sand"], "path": ["plank_walkway", "sand_trail"], "wall": ["cliff_rock"],
+        "obstacle": ["palm_tree", "sea_rock", "boulder", "wreckage"], "liquid": ["water", "shallow_water", "deep_water"], "hazard": ["quicksand", "thorn_patch"],
+        "decor": ["seashells", "driftwood", "coiled_rope", "fishing_nets", "scattered_bones", "campfire"], "door": ["wooden_door", "hatch"]
+      },
+      "keywords": ["beach", "cove", "coast", "coastal", "shore", "shoreline", "island", "islands", "archipelago", "lagoon", "atoll", "reef", "sandbar", "bay", "smuggler", "smugglers", "pirate"],
+      "starter": { "name": "Smugglers' cove", "tags": ["coastal", "tide"], "pois": ["chest", "campfire", "barrel"] }
+    }
+  },
+  "fallbacks": {
+    "rooms_and_corridors": { "indoor": "interior", "underground": "dungeon", "outdoor": "ruins" },
+    "cave": { "indoor": "cave", "underground": "cave", "outdoor": "mountain_pass" },
+    "open_field": { "indoor": "temple", "underground": "cave", "outdoor": "forest" },
+    "settlement": { "indoor": "market", "underground": "dungeon", "outdoor": "town" },
+    "trail": { "indoor": "dungeon", "underground": "cave", "outdoor": "mountain_pass" },
+    "arena": { "indoor": "castle", "underground": "crypt", "outdoor": "ruins" },
+    "maze": { "indoor": "castle", "underground": "dungeon", "outdoor": "forest" },
+    "islands": { "indoor": "ruins", "underground": "cave", "outdoor": "beach" }
+  },
+  "accents": {
+    "clockwork": { "keywords": ["clockwork", "gear", "gears", "automaton", "mechanical", "foundry", "factory", "steam", "steampunk", "industrial", "workshop", "engine", "boiler"],
+      "materials": { "floor": ["metal_grate"], "wall": ["iron_bulkhead"], "obstacle": ["iron_machinery", "steam_boiler"], "hazard": ["storm_arc"], "decor": ["gear_cluster", "steam_vent", "anvil"] } },
+    "ice": { "keywords": ["glacier", "ice", "icy", "frozen", "frost", "arctic", "crystalline ice"],
+      "materials": { "floor": ["ice"], "wall": ["ice_wall"], "obstacle": ["ice_spire"], "hazard": ["frost_vent"], "decor": ["ice_crystals"] } },
+    "fungal": { "keywords": ["fungal", "fungus", "mushroom", "spore", "spores", "myconid"],
+      "materials": { "floor": ["moss"], "obstacle": ["giant_mushroom"], "decor": ["mushrooms"] } },
+    "sunken": { "keywords": ["sunken", "drowned", "flooded", "submerged", "underwater", "waterlogged"],
+      "materials": { "floor": ["slick_stone", "moss"], "liquid": ["deep_water", "shallow_water"], "decor": ["puddle", "seashells"] }, "density": { "liquid": 2 } },
+    "crystal": { "keywords": ["crystal", "crystals", "crystalline", "gem", "geode", "prismatic"],
+      "materials": { "floor": ["crystal_floor"], "wall": ["crystal_wall"], "obstacle": ["crystal_cluster"], "decor": ["glow_crystals"] } },
+    "undead": { "keywords": ["haunted", "cursed", "undead", "ghost", "ghostly", "graveyard", "necromancer", "lich", "bone", "bones"],
+      "materials": { "decor": ["scattered_bones", "cobweb", "skull_pile"], "hazard": ["arcane_sigil"] } },
+    "storm": { "keywords": ["storm", "stormy", "tempest", "thunder", "lightning"],
+      "materials": { "hazard": ["storm_arc"] } },
+    "sky": { "keywords": ["airship", "sky", "cloud", "clouds", "floating", "aerial"],
+      "materials": { "liquid": ["cloud_sea"], "decor": ["coiled_rope", "lantern_post"] } },
+    "arcane": { "keywords": ["arcane", "magic", "magical", "wizard", "ritual", "occult", "eldritch"],
+      "materials": { "floor": ["arcane_floor"], "hazard": ["arcane_sigil"], "decor": ["rune_circle", "candles"] } },
+    "toxic": { "keywords": ["toxic", "poison", "poisoned", "acid", "plague", "blighted"],
+      "materials": { "liquid": ["acid_pool"], "hazard": ["poison_gas", "caustic_seep"] } },
+    "chasm": { "keywords": ["chasm", "abyss", "pit", "rift valley", "fissure"],
+      "materials": { "liquid": ["chasm"] } },
+    "tar": { "keywords": ["tar", "pitch", "oily"],
+      "materials": { "liquid": ["tar_pit"] } }
+  },
+  "mood_decor": { "dark": ["cobweb"], "eerie": ["cobweb", "candles"], "bright": [], "neutral": [], "dim": [] }
+}

@@ -29,6 +29,8 @@ export interface PartyMemberContext {
 }
 
 export interface DmContextPack {
+  /** Material ids the DM may name in a map brief (the engine's library). Omitted: a short placeholder list. */
+  materialIds?: readonly string[];
   storyDigest: string;
   contentRating: string;
   linesAndVeils: string;
@@ -203,5 +205,5 @@ export function buildDmContext(pack: DmContextPack): { system: string; user: str
   }
   s.push("Reminder: respond with the single JSON object only. Narrate engine results exactly as given.");
 
-  return { system: buildDmSystem(), user: s.join("\n") };
+  return { system: buildDmSystem(pack.materialIds ? { materialIds: pack.materialIds } : {}), user: s.join("\n") };
 }
