@@ -234,7 +234,12 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
     const id = ctx.client.send("claim_character", { character_id: "new", character: r.value });
     if (id) {
       ctx.store.update((s) => { s.myCharacterName = r.value.name; });
-      if (ctx.store.state.auth.user && saveChk.checked) ctx.client.send("save_character_template", { character: r.value });
+      if (ctx.store.state.auth.user && saveChk.checked) {
+        // only once the claim has worked (the forge can refuse or fail)
+        ctx.client.afterReply(id, (type) => {
+          if (type === "character_claimed") ctx.client.send("save_character_template", { character: r.value });
+        });
+      }
       onClaimed?.();
     }
   });

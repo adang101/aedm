@@ -36,6 +36,8 @@ export class GameClient {
   private resumeAck: string | null = null;
   /** Ack id of the last create_room, resume_campaign or join_room, so only its failure kicks us back to the home screen. */
   private entryAck: string | null = null;
+  private wantCampaigns = false;
+  private readonly replyWaiters = new Map<string, (type: string) => void>();
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private readonly acks = new AckTracker();
@@ -77,7 +79,9 @@ export class GameClient {
   }
 
   refreshCampaigns(): void {
-    if (this.store.state.auth.user) this.send("list_campaigns", {});
+    if (!this.store.state.auth.user) return;
+    if (this.afterAuth) this.wantCampaigns = true; // the connection is not logged in yet: ask once it is
+    else this.send("list_campaigns", {});
   }
 
   /** Open a lobby for a saved campaign; the host presses Load there. */
@@ -126,6 +130,11 @@ export class GameClient {
     return id;
   }
 
+  /** Run `fn` once, with the type of the server's reply to message `id` (its ack). */
+  afterReply(id: string, fn: (replyType: string) => void): void {
+    this.replyWaiters.set(id, fn);
+  }
+
   get pendingAcks(): number {
     return this.acks.size;
   }
@@ -162,6 +171,7 @@ export class GameClient {
     this.gen++;
     clearTimeout(this.authTimer);
     this.afterAuth = null;
+    this.replyWaiters.clear();
     clearTimeout(this.reconnectTimer);
     clearInterval(this.pingTimer);
     this.transport?.close();
@@ -173,17 +183,17 @@ export class GameClient {
 
   private handleOpen(): void {
     this.attempt = 0;
+    const token = loadSessionToken();
+    if (token) this.afterAuth = () => this.runEntry(); // set before subscribers see "open", so they wait for the login
     this.store.update((s) => { s.conn = "open"; });
     clearInterval(this.pingTimer);
     this.pingTimer = setInterval(() => {
       this.acks.expire(Date.now(), 60_000);
       this.send("ping", {});
     }, PING_MS);
-    const token = loadSessionToken();
     if (token) {
       // bind the account before anything else, so create/join/reconnect see it
       this.store.update((s) => { s.auth.pending = !s.auth.user; });
-      this.afterAuth = () => this.runEntry();
       clearTimeout(this.authTimer);
       this.authTimer = setTimeout(() => this.flushAfterAuth(), 4000);
       this.resumeAck = this.send("resume_session", { session_token: token });
@@ -198,6 +208,10 @@ export class GameClient {
     const fn = this.afterAuth;
     this.afterAuth = null;
     fn?.();
+    if (this.wantCampaigns) {
+      this.wantCampaigns = false;
+      if (this.store.state.auth.user) this.send("list_campaigns", {});
+    }
   }
 
   private runEntry(): void {
@@ -273,7 +287,11 @@ export class GameClient {
       return;
     }
     const msg = parsed.data;
-    if (msg.ack_id) this.acks.ack(msg.ack_id);
+    if (msg.ack_id) {
+      this.acks.ack(msg.ack_id);
+      const waiter = this.replyWaiters.get(msg.ack_id);
+      if (waiter) { this.replyWaiters.delete(msg.ack_id); waiter(msg.type); }
+    }
     this.store.apply(msg, Date.now());
 
     switch (msg.type) {
@@ -285,12 +303,15 @@ export class GameClient {
         if (msg.ack_id && msg.ack_id === this.resumeAck) {
           // a stale stored session is not an error worth showing
           if (msg.payload.code === "invalid_credentials") clearSessionToken();
-          this.store.update((s) => { s.auth.error = null; });
+          this.store.update((s) => { s.auth = createAuthState(); });
         }
         this.flushAfterAuth();
         break;
       case "logged_out":
         clearSessionToken();
+        break;
+      case "save_created":
+        this.hooks.notify(`Saved "${msg.payload.name}"`, "info");
         break;
       case "room_created":
         // The creator then joins its own room like any other player.

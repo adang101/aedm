@@ -51,8 +51,16 @@ For now every map tile, character and enemy is drawn procedurally as blocks and 
 
 1. **Spikes are not a gate.** The spike kit's fixtures and evals are reused as tests and eval scenarios, but `apps/web` and `apps/server` are built alongside them. (Diverges from the original phase plan.)
 2. **Renderer:** Canvas 2D for placeholder shapes. Revisit a game framework when real art lands.
-3. **Persistence:** in-memory rooms with JSON-file saves on the server. A database comes later.
-4. **Auth:** anonymous display names plus a per-browser token. Accounts come later.
+3. **Persistence:** in-memory rooms. Save states stay JSON files (`<data>/saves/<room>/<save>.json`), and accounts are JSON files too (`<data>/accounts/`), behind an `AccountStore` interface so a database can replace them later. `AEDM_DATA_DIR` sets the data folder (default `data/`); `AEDM_SAVE_DIR` still overrides the save folder.
+4. **Accounts (optional):** guests still play with an anonymous display name and the per-room reconnect token, so friends can join in seconds. An account (username, password, display name) unlocks saved characters, a "My campaigns" list with resume, and ownership of saves.
+   - *Passwords:* scrypt (N=16384, r=8, p=1, 16-byte salt, 64-byte key), stored as `scrypt$N$r$p$saltB64$hashB64`, compared in constant time. Unknown user and wrong password give the same `auth_error` and take the same time (a dummy hash is checked). Usernames are 3 to 20 characters of `[a-z0-9_-]`, case-insensitive and unique.
+   - *Sessions:* a random 32-byte token (base64url) is returned once by `register`/`login`; only its sha256 is stored (`sessions.json`) with a 30-day expiry that slides on use. At most 10 sessions per user (oldest dropped). The browser keeps the token in localStorage and sends `resume_session` on every connect. `logout` deletes it.
+   - *Limits:* 5 register/login attempts per connection per minute, and 5 failed logins per username per minute (then `rate_limited`, even for the right password until the window passes).
+   - *Connection-level auth:* the login belongs to the WebSocket connection, so account messages work before joining a room. A logged-in player's seat carries `user_id`; reconnecting to a room they sit in rebinds them even without the room token.
+   - *Characters:* `Character.user_id` stays the in-room player id (the engine, views and `owner_player_id` all key on it). The account link lives on the server-side player record and in save metadata (`player_user_ids`).
+   - *Saved characters:* a template is the creator's `CharacterCreate` plus an id and, once used, the forged abilities (display only). Claiming one (`claim_character` with `character_id: "template"`) re-runs the normal forge path.
+   - *Saves:* save files carry `owner_user_id` (the host's account at save time; null for guest rooms), `campaign_title`, and `room.player_user_ids`. `list_campaigns` scans the save folders for saves the account owns (latest autosave per campaign plus named saves). `resume_campaign` opens a new lobby; the host loads the save with `load_save`, and logged-in players get their own characters back by account. An account-owned save can only be loaded by its owner. Guest-hosted saves belong to nobody and appear in no list.
+   - *Not built yet:* email and password reset, OAuth, per-IP rate limits, changing the password or display name, deleting an account.
 5. **Biomes:** forest, dungeon, desert, town, interior.
 6. **Level cap 10**, party size 2 to 6 (1 allowed in dev mode).
 7. **Map generation is procedural and deterministic** from the DM's map brief and a seed; the model never emits tiles.
