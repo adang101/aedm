@@ -100,7 +100,8 @@ export const CharacterCreateSchema = z
     key_ability: AbilityScoreKeySchema,
     scores: CreationScoresSchema,
     trait_tags: traitTags,
-    sprite_recipe: SpriteRecipeSchema,
+    /** Optional since v1.1: when absent the server designs a spec from title and description. */
+    sprite_recipe: SpriteRecipeSchema.optional(),
     ability_texts: z.array(text(300)).min(1).max(3).optional(),
     abilities: z.array(AbilityDraftSchema).min(1).max(3).optional(),
   })

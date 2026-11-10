@@ -11,7 +11,7 @@ import {
   buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn, summarizeTurns,
   type DmTurnResult,
 } from "@aedm/llm";
-import type { Ability, Biome, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus } from "@aedm/schemas";
+import type { Ability, Biome, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SpriteSpec } from "@aedm/schemas";
 import { ForgeError, forgeOneAbility } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import type { Player, Room } from "./rooms";
@@ -1045,9 +1045,11 @@ export class GameSession {
           continue;
         }
         let a: DmAction = action;
+        let sprites: Record<string, SpriteSpec> | undefined;
+        if (a.type === "create_npc") sprites = await this.designNpcSprite(a);
         if (a.type === "spawn_entity") a = this.prepareSpawn(a, unreferenced);
         if (a.type === "start_combat") a = this.prepareCombat(a);
-        const ctx = this.dmContext();
+        const ctx = { ...this.dmContext(), ...(sprites ? { sprites } : {}) };
         const r = applyDmActions(this.state, this.rng(), [a], ctx);
         this.commit(r.state);
         this.publish(r.events);
@@ -1080,6 +1082,19 @@ export class GameSession {
     return { presentCharacterIds: present, partyLevel: computePartyLevel(this.state, present) };
   }
 
+  /** Server pre-pass for create_npc: the engine stays pure, the server hands it the designed look. */
+  private async designNpcSprite(a: Extract<DmAction, { type: "create_npc" }>): Promise<Record<string, SpriteSpec> | undefined> {
+    try {
+      const r = await this.deps.sprites.getOrCreateSprite({
+        concept: a.concept, ...(a.appearance ? { appearance: a.appearance } : {}), name: a.name, role: a.role, kind: "npc",
+      });
+      return { [a.name.trim().toLowerCase()]: r.spec };
+    } catch (err) {
+      this.deps.logger.warn("[sprite] npc design failed:", err instanceof Error ? err.message : String(err));
+      return undefined;
+    }
+  }
+
   private async createEnemy(a: CreateEnemyAction): Promise<string | null> {
     if (a.ref && this.state.archetypes[a.ref]) return a.ref;
     const level = this.dmContext().partyLevel;
@@ -1102,6 +1117,16 @@ export class GameSession {
         },
       });
       const enemy = { ...built.enemy };
+      try {
+        const look = await this.deps.sprites.getOrCreateSprite({
+          concept: a.concept, ...(a.appearance ?? enemy.appearance ? { appearance: (a.appearance ?? enemy.appearance) as string } : {}),
+          name: enemy.name, role: a.role, kind: "enemy",
+        });
+        enemy.sprite = look.spec;
+        if (a.appearance) enemy.appearance = a.appearance;
+      } catch (err) {
+        this.deps.logger.warn("[sprite] enemy design failed:", err instanceof Error ? err.message : String(err));
+      }
       if (a.ref && !this.state.archetypes[a.ref]) enemy.id = a.ref;
       else delete enemy.id;
       const reg = registerArchetype(this.state, enemy, level);

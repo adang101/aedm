@@ -263,7 +263,15 @@ export class Handlers {
         sleep: (ms) => new Promise((r) => { this.deps.timers.setTimeout(() => r(), ms); }),
         retryBackoffMs: this.cfg.retryBackoffMs,
       });
-      const { ability_texts: _t, abilities: _a, ...rest } = create;
+      const { ability_texts: _t, abilities: _a, ...rest0 } = create;
+      // A character without a usable look gets one designed from its title and description (shape recipes are kept as they are).
+      let rest = rest0;
+      if (!rest.sprite_recipe) {
+        const look = await this.deps.sprites.getOrCreateSprite({
+          concept: `${create.title} ${create.description}`.trim() || create.name, name: create.name, role: "pc", kind: "pc",
+        });
+        rest = { ...rest, sprite_recipe: look.spec };
+      }
       const scratch = cloneState(room.scratch);
       if (player.characterId) delete scratch.characters[player.characterId];
       const added = addCharacter(scratch, { ...rest, abilities: forged.abilities }, player.id);

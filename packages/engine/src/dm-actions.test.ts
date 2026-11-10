@@ -3,8 +3,9 @@ import { fixtures, type DmAction, type MapBrief } from "@aedm/schemas";
 import { applyDmActions, computePartyLevel, type DmContext } from "./dm-actions.ts";
 import { describeEvent } from "./events.ts";
 import { createRng } from "./rng.ts";
+import { designSpriteOffline } from "./sprites.ts";
 import { addMap, type GameState } from "./state.ts";
-import { PARTY_IDS, makeTestMap, makeWorld, withArchetype } from "./testkit.ts";
+import { PARTY_IDS, chorister, makeTestMap, makeWorld, withArchetype } from "./testkit.ts";
 
 const CTX: DmContext = { presentCharacterIds: PARTY_IDS, partyLevel: 1 };
 const apply = (state: GameState, actions: DmAction[], ctx: DmContext = CTX, seed = 3) => applyDmActions(state, createRng(seed), actions, ctx);
@@ -351,5 +352,30 @@ describe("general behavior", () => {
     expect(computePartyLevel(state, PARTY_IDS)).toBe(1);
     expect(computePartyLevel(state, [])).toBe(1);
     expect(fixtures.SPIKE_PARTY).toHaveLength(3);
+  });
+});
+
+describe("designed sprites", () => {
+  const designed = designSpriteOffline({ concept: "a knight", name: "Sir X", role: "ally", kind: "npc" }, 9);
+
+  it("create_npc uses the server's sprite when given, else designs a spec offline from concept and appearance", () => {
+    const { state } = makeWorld();
+    const act = { ...npc("Odalys Brand"), concept: "A robed ferry keeper", appearance: "carries a lantern" } as DmAction;
+    const offline = apply(state, [act]);
+    const e = Object.values(offline.state.entities).find((x) => x.kind === "npc")!;
+    expect(e.sprite.kind).toBe("spec");
+    if (e.sprite.kind === "spec") expect(e.sprite.parts.map((p) => p.part)).toEqual(expect.arrayContaining(["robe", "lantern"]));
+    expect(Object.values(offline.state.npcs)[0]!.appearance).toBe("carries a lantern");
+    const given = apply(state, [act], { ...CTX, sprites: { "odalys brand": designed } });
+    expect(Object.values(given.state.entities).find((x) => x.kind === "npc")!.sprite).toEqual(designed);
+  });
+
+  it("spawn_entity uses the archetype's sprite for every spawned entity", () => {
+    const w = makeWorld();
+    const a = withArchetype(w.state, { ...chorister, sprite: designed });
+    const r = apply(a.state, [{ type: "spawn_entity", archetype_id: a.id, map_id: "m_lighthouse", x: 8, y: 5, count: 2 }]);
+    const enemies = Object.values(r.state.entities).filter((e) => e.kind === "enemy");
+    expect(enemies).toHaveLength(2);
+    for (const e of enemies) expect(e.sprite).toEqual(designed);
   });
 });

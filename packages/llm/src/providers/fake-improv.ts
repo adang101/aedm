@@ -541,6 +541,63 @@ export function improvEnemy(user: string, system: string): string {
   });
 }
 
+// ---------- sprite designer ----------
+
+/** Small keyword table (the llm package must not import the engine). Hash picks the colors and fills gaps. */
+const FAKE_BODIES: [RegExp, string][] = [
+  [/\b(wolf|wolves|bear|hound|dog|boar|fox|rat|stag|cat)s?\b/, "beast"],
+  [/\b(bird|harpy|bat|crow|raven|owl|hawk|eagle)s?\b/, "avian"],
+  [/\b(snake|eel|wyrm|serpent|worm|viper)s?\b/, "serpent"],
+  [/\b(spider|beetle|scorpion|mantis|crab|wasp)s?\b/, "insectoid"],
+  [/\b(slime|ooze|jelly|blob)s?\b/, "amorphous"],
+  [/\b(golem|automaton|clockwork|construct)s?\b/, "construct"],
+  [/\b(ghost|wraith|spirit|specter|phantom|shade|choir)s?\b/, "spirit"],
+  [/\b(treant|vine|fungus|mushroom|bramble)s?\b/, "plant"],
+  [/\b(statue|chest|totem|mimic|idol)s?\b/, "object"],
+];
+const FAKE_PARTS: [RegExp, string][] = [
+  [/\b(robed|robe|priest|chorister|mage|wizard)\b/, "robe"],
+  [/\b(hooded|hood|cultist)\b/, "hood"],
+  [/\b(knight|armored|guard|soldier)\b/, "armor"],
+  [/\b(sword|blade|knight)\b/, "sword"],
+  [/\b(staff|wizard|mage)\b/, "staff"],
+  [/\b(horned|horns?|demon)\b/, "horns"],
+  [/\b(glowing|eyes|ghost|wraith)\b/, "glowing_eyes"],
+  [/\b(drowned|dripping|wet)\b/, "drips"],
+  [/\b(fire|flame|burning)\b/, "flames"],
+  [/\b(winged|wings|harpy|bat)\b/, "wings"],
+];
+const FAKE_COLORS: [RegExp, string[]][] = [
+  [/\b(drowned|sea|water|river|ice|frost)\b/, ["#2f6bb5", "#5c6380", "#9fd4f5"]],
+  [/\b(fire|flame|burning|demon|ember)\b/, ["#c0392b", "#3b3f55", "#f5a65b"]],
+  [/\b(undead|ghost|wraith|spirit|choir|lich)\b/, ["#5c6380", "#6a45a8", "#cbb0f0"]],
+  [/\b(forest|vine|moss|fungus|druid|wolf)\b/, ["#4f8a3c", "#70472f", "#e8c95a"]],
+];
+
+export function improvSprite(user: string): string {
+  const concept = unescape(tag(user, "concept")).toLowerCase();
+  const appearance = unescape(tag(user, "appearance")).toLowerCase();
+  const role = tag(user, "role").toLowerCase();
+  const text = `${concept} ${appearance}`;
+  const h = hash32(text);
+  const body = FAKE_BODIES.find(([re]) => re.test(text))?.[1] ?? "humanoid";
+  const parts = FAKE_PARTS.filter(([re]) => re.test(text)).map(([, p]) => p);
+  const fill = ["cloak", "tool", "lantern"];
+  for (let i = 0; parts.length < 2 && i < 3; i++) {
+    const p = pick(fill, h, i);
+    if (!parts.includes(p)) parts.push(p);
+  }
+  const palette = FAKE_COLORS.find(([re]) => re.test(text))?.[1] ??
+    pick([["#9a6a3f", "#4f8a3c", "#e8c95a"], ["#2f6bb5", "#70472f", "#f6e8a0"], ["#9b72d8", "#3b3f55", "#f5a65b"]], h);
+  const size = role === "boss" ? "large" : role === "minion" ? "small" : "medium";
+  return JSON.stringify({
+    body, size,
+    palette: { primary: palette[0], secondary: palette[1], accent: palette[2], detail: "#1b1626" },
+    parts: parts.slice(0, 4).map((part, i) => ({ part, color: (["primary", "secondary", "accent", "detail"] as const)[i] })),
+    traits: (appearance || concept).slice(0, 160),
+  });
+}
+
 // ---------- bible / summary ----------
 
 export function improvBible(): string {
@@ -562,6 +619,7 @@ export function improvFor(req: ModelRequest): string {
   if (first.includes("<player_input") || first.includes("<scene ")) return improvDm(first);
   if (first.includes("<ability_text>")) return improvForge(first, req.system);
   if (first.includes("<enemy_concept>")) return improvEnemy(first, req.system);
+  if (req.purpose === "sprite" || (first.includes("<concept>") && first.includes("<appearance>"))) return improvSprite(first);
   if (first.includes("<story_pitch>")) return improvBible();
   if (first.includes("<turns>")) return improvSummary(first);
   return improvDm(first);
