@@ -313,3 +313,25 @@ Optional; guests use none of this. The login belongs to the connection and works
 | `resume_campaign` | Client to server | save_id, room_id. Opens a new lobby for a save the account owns and answers `room_created`; the client joins it, then the host sends `load_save`. |
 
 Stored template (`data/accounts/users.json`, per user): id (`ch_...`), saved_at, character (the Character create object), forged_abilities (optional). Save files add `owner_user_id`, `campaign_title` and `room.player_user_ids` (player_id to account id); older saves without them are guest saves.
+
+**Planned contracts (designed in `design.md`, not yet implemented)**
+
+These become Zod schemas when the features are built; shapes may still change.
+
+| Contract | Fields |
+| --- | --- |
+| `PixelSprite` (recipe kind `pixel`) | `kind: "pixel"`, `v: 1`, `width: 48`, `height: 64`, `palette` (1 to 32 master-palette colors), `pixels` (run-length encoded palette indices, 0 transparent), `size` (tiny to huge), `base?` (`SpriteSpec` it was painted over), `traits` (at most 160) |
+| Workshop asset | `id` (`as_`), `owner_user_id`, `name` (at most 40), `role_hint` (pc, npc, enemy, prop), `concept` (at most 200), `recipe` (shape, spec or pixel), `source` (designed, painted_over, painted), `created_at`, `updated_at` |
+| `create_npc` / `create_enemy` | gain optional `asset_ref` (an approved cast asset id from the context pack) |
+| Story bible | gains `plot: { pattern, arc, stages: [{ id, title (at most 60), goal (at most 300) }] }`; each milestone gains `stage` |
+| `adjust_plot` DM action | `stages` (replacement goals and milestones for stages not yet started) |
+| Room settings | gain `custom_cast` (off, host_approval, open), `custom_paintings` (boolean), `plot_pattern` and `plot_arc` (or `surprise`) |
+
+| WS `type` | Direction | Payload |
+| --- | --- | --- |
+| `design_sprite` | Client to server | prompt (at most 300), role_hint, seed? |
+| `sprite_designed` | Server to client | spec, notes |
+| `save_sprite_asset` / `delete_sprite_asset` | Client to server | asset fields / id (account only) |
+| `list_sprite_assets` / `sprite_assets_list` | Both | Workshop summaries |
+| `offer_to_cast` / `cast_decision` | Client to server | asset_id / asset_id, approve (host) |
+| `cast_state` | Server to client | approved and pending cast entries (name, role hint, concept, recipe) |

@@ -61,6 +61,82 @@ The DM can ask for any place or creature the story needs. It never draws tiles o
 - A **sprite designer** step turns a concept ("a robed chorister who borrows the voices of the drowned") into a spec: a fast-tier model call through `ModelProvider`, validated by schema, with a deterministic keyword designer as the offline fallback. The web client composes the spec procedurally on the 48 x 64 canvas.
 - **Asset store:** specs (settings, materials, sprites) are cached by a hash of their concept, so recurring places and creatures reuse their look across a campaign. An `image_asset_id` slot on each spec is where generated art will plug in (M3).
 
+## Player-made sprites (planned)
+
+Players can make the look of their own character, and of NPCs and enemies they offer to a campaign, in three ways. Every way ends in the same sprite recipe, so the renderer, the DM and the asset store treat all of them alike.
+
+| Way | What the player does | Result |
+| --- | --- | --- |
+| Describe | Writes up to 300 characters ("a lanky heron-folk ferryman with a lantern and a patched blue coat") and picks a role | The sprite designer (the same pipeline the DM uses: fast-tier model, offline keyword fallback, engine finalizer) returns a `SpriteSpec`. The player can regenerate (a new seed), then fine-tune it in the parts builder. |
+| Paint over | Opens any spec sprite in the pixel editor | The composed front idle frame is rasterized to a 48 x 64 grid and becomes editable. Saving keeps the original spec as `base` (for traits, fallbacks and the image model). |
+| Paint from scratch | Opens a blank 48 x 64 canvas | A pixel sprite with no base spec. |
+
+**Pixel sprite.** A new recipe kind, `pixel`: 48 x 64 pixels, a palette of at most 32 colors drawn from the master palette plus the outline color, and pixels stored as palette indices (0 is transparent) in a run-length encoded string. Alpha is therefore only 0 or 255, as the style bible requires. Facing left mirrors the image; the idle bob, shadow, HP bar and rings are added by the renderer as for spec sprites. Large and huge sizes scale it with nearest-neighbor. The encoded sprite must fit in a client message (8 KB).
+
+**Validation (engine, pure).** Exact size; every index inside the palette; every palette color on the master palette; at least 60 opaque pixels; no opaque pixel within 2 pixels of the canvas edge (style bible margins); feet within 4 pixels of y = 60 (auto-shifted if not). Failing sprites are rejected with the reason shown in the editor's "Check" panel before saving.
+
+**Pixel editor (web).** Pencil, eraser, bucket fill, eyedropper, line and rectangle, a mirror-symmetry toggle (useful for front-facing chibis), undo and redo (50 steps), grid zoom from 4x to 12x, the master palette grouped by ramp with recent colors, an onion-skin of the base spec when painting over, and a live preview at 1x, on a floor tile and in both facings. Works with mouse, touch and pen. Keyboard shortcuts: B pencil, E eraser, G fill, I eyedropper, M mirror, Ctrl+Z and Ctrl+Y.
+
+**Workshop and campaign cast.**
+
+- Each account has a **Workshop**: a library of its own sprite assets, each with a name, role hint (pc, npc, enemy, prop), a short concept, the recipe and its source (designed, painted over, painted).
+- A player can offer a Workshop asset to the current campaign's **cast**. Room setting `custom_cast`: off, host approval (default) or open.
+- The DM's context lists the approved cast (name, role hint, concept) and may use an entry with `create_npc` or `create_enemy` by setting `asset_ref`. Looks and concept come from the player; the enemy builder and engine still decide every number, exactly as for DM-invented creatures.
+- A character's own sprite can be any recipe kind, including a pixel sprite.
+
+**Safety.** Painted images can contain anything, so: the host can turn custom paintings off for the room, anyone can hide a custom sprite for themselves, the host can remove one from the campaign, and painted sprites are only visible inside rooms the owner plays in. The automated image gates from the style bible (including the classifier) apply when the image pipeline lands (M3). Prompts follow the same rule as all text: no names of real people, other games or franchises; the finalizer strips them from traits.
+
+**Limits.** 200 Workshop assets and 5 MB per account; sprite design calls are rate limited per account (they cost money once a real model is attached).
+
+## Story structure (planned)
+
+Every campaign follows one of seven classic **plot patterns** and one of six **emotional arcs**. The pattern decides *what kind* of story it is and its stages; the arc decides whether the party's fortunes trend up or down between them. Both guide pacing; player choices still win, and the DM re-aligns the plan rather than railroading.
+
+**Plot patterns** (stages in order):
+
+| Id | Shape | Stages |
+| --- | --- | --- |
+| `overcoming_the_monster` | A threat grows until the heroes confront and destroy it | call, early success, frustration, nightmare, final confrontation |
+| `rags_to_riches` | The humble rise, lose everything, and earn it back for real | humble start, early rise, central crisis, independence, final union |
+| `the_quest` | A long journey toward a goal through trials and temptations | call, journey, arrival and frustration, final ordeals, goal |
+| `voyage_and_return` | Into a strange world, then a hard escape home, changed | fall into the strange, fascination, frustration, nightmare, escape and return |
+| `comedy` | Confusion and misunderstandings pile up, then untangle | order disturbed, confusion, peak of muddle, revelation, reconciliation |
+| `tragedy` | Ambition or a flaw leads to ruin (softened to loss at "family") | anticipation, dream, frustration, nightmare, downfall |
+| `rebirth` | A dark spell or flaw holds sway until redemption breaks it | shadow falls, apparent calm, tightening grip, darkest hour, awakening |
+
+**Emotional arcs** (fortune curve across the campaign; player-facing names are descriptive):
+
+| Id | Shown as | Curve |
+| --- | --- | --- |
+| `rise` | Steady climb | up |
+| `fall` | Long descent | down |
+| `fall_rise` | Into the pit and out | down then up |
+| `rise_fall` | Soaring, then falling | up then down |
+| `rise_fall_rise` | Rise, fall, rise again | up, down, up |
+| `fall_rise_fall` | Hope between two falls | down, up, down |
+
+**Data.** `packages/engine/data/plots.json` holds, for each pattern, its stages (id, purpose, tension target 0 to 10, a suggested encounter difficulty, typical scene kinds and milestone templates), and for each arc a fortune curve sampled per stage. Recommended pairings are listed per pattern (for example `tragedy` with `rise_fall`), but any pairing is allowed.
+
+**Flow.**
+
+1. In the lobby the host picks a pattern and an arc, or "Surprise me". Surprise picks deterministically from the pitch keywords and the seed.
+2. The story bible prompt receives the stage list and the fortune curve. The bible gains `plot: { pattern, arc, stages: [{ id, title, goal }] }` and every milestone carries a `stage` id. The engine validates that every stage has at least one milestone, in stage order.
+3. During play the context pack adds a pacing block: current stage and its purpose, tension target, fortune trend ("this stretch should leave the party worse off"), and the suggested difficulty. The current stage is the stage of the first incomplete milestone; completing the last milestone of a stage advances it.
+4. Suggested difficulty only sets the default for encounters; the engine's threat budgets still apply.
+5. If the party abandons the planned path, the DM may re-plan the remaining stages with an `adjust_plot` action (new stage goals and milestones for stages not yet started; completed milestones never change).
+
+**Evals.** New scenarios check that the DM respects the current stage and fortune trend (rated), never completes a milestone out of stage order, and keeps "tragedy" within the content rating.
+
+## Capability check (as of this branch)
+
+| Request | Today | Gap |
+| --- | --- | --- |
+| Players create their own sprite from a prompt | Partly: the creator has a parts builder; the server designs a look from title and description only when no sprite is sent | A "Describe your look" prompt with preview and regenerate |
+| Players create enemy and NPC sprites | No | Workshop, campaign cast, `asset_ref` on `create_npc` and `create_enemy` |
+| Paint over an existing sprite | No | `pixel` recipe kind, rasterizer, pixel editor |
+| Paint from scratch | No | Same editor with a blank canvas |
+| Stories follow classic plots and emotional arcs | No: the story bible has acts and milestones but no pattern, stage or arc | `plots.json`, bible `plot` field, milestone stages, pacing block, `adjust_plot` |
+
 ## Decisions and MVP scope
 
 1. **Spikes are not a gate.** The spike kit's fixtures and evals are reused as tests and eval scenarios, but `apps/web` and `apps/server` are built alongside them. (Diverges from the original phase plan.)
@@ -94,3 +170,4 @@ The DM can ask for any place or creature the story needs. It never draws tiles o
 - **M1:** full combat loop in the client, ability forge UI, enemy builder, saves and reload.
 - **M2:** memory (summaries, retrieval), evals in CI, content safety pass, mobile polish.
 - **M3:** image generation pipeline and acceptance gates from the style bible.
+- **Next (designed, not built):** player-made sprites (describe, paint over, paint from scratch; Workshop and campaign cast) and story structure (plot patterns, emotional arcs, pacing). See the sections above.
