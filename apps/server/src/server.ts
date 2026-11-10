@@ -5,6 +5,8 @@ import type { ModelProvider } from "@aedm/llm";
 import { join } from "node:path";
 import { WebSocketServer, type RawData } from "ws";
 import { JsonAccountStore, type AccountStore } from "./accounts/store";
+import { createSpriteAssets } from "./assets/sprites";
+import { JsonAssetStore, type AssetStore } from "./assets/store";
 import { Handlers } from "./handlers";
 import { Conn } from "./net";
 import type { RoomRegistry } from "./rooms";
@@ -22,6 +24,10 @@ export interface GameServerOptions {
   dataDir?: string;
   /** Replace the JSON-file account storage (a database, or a fake in tests). */
   accounts?: AccountStore;
+  /** Replace the JSON-file asset storage (<dataDir>/assets/assets.json). */
+  assets?: AssetStore;
+  /** How long the sprite designer model gets before the offline designer answers (default 4000). */
+  spriteTimeoutMs?: number;
   clock?: () => number;
   random?: () => number;
   timers?: Timers;
@@ -51,8 +57,13 @@ export async function createGameServer(opts: GameServerOptions): Promise<GameSer
     ...opts.config,
     limits: { ...DEFAULT_CONFIG.limits, ...opts.config?.limits },
   };
+  const clock = opts.clock ?? Date.now;
+  const timers = opts.timers ?? realTimers;
+  const logger = opts.logger ?? consoleLogger;
+  const assets = opts.assets ?? new JsonAssetStore({ dir: join(opts.dataDir ?? join(opts.saveDir, ".data"), "assets") });
   const deps: Deps = {
     provider: opts.provider,
+    sprites: createSpriteAssets({ store: assets, provider: opts.provider, timers, clock, logger, ...(opts.spriteTimeoutMs ? { timeoutMs: opts.spriteTimeoutMs } : {}) }),
     saveDir: opts.saveDir,
     accounts: opts.accounts ?? new JsonAccountStore({ dir: join(opts.dataDir ?? join(opts.saveDir, ".data"), "accounts"), clock: opts.clock }),
     clock: opts.clock ?? Date.now,

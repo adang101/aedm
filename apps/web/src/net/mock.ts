@@ -55,7 +55,8 @@ export function mockCharacterFrom(c: CharacterCreate): CharacterView {
     v: 1, id: ME_CHAR, name: c.name, title: c.title, description: c.description, key_ability: c.key_ability,
     scores: { ...c.scores }, trait_tags: c.trait_tags,
     abilities: texts.map((t, i) => mockAbilityFrom(t, `ab_me_${i + 1}`, i)),
-    weapon_tier: 1, armor_bonus: 2, level: 1, growth: 0, hp, hp_max: hp, sprite_recipe: c.sprite_recipe,
+    weapon_tier: 1, armor_bonus: 2, level: 1, growth: 0, hp, hp_max: hp,
+    sprite_recipe: c.sprite_recipe ?? { kind: "shape", shape: "circle", color: "#9a6a3f", accent: "#e8c95a", glyph: (c.name.trim()[0] ?? "?").toUpperCase() },
   };
 }
 
@@ -72,7 +73,8 @@ function mockAbilityNames(c: CharacterCreate): string[] {
 
 const summaryOf = (t: MockTemplate): CharacterSummary => ({
   id: t.id, name: t.character.name, title: t.character.title, key_ability: t.character.key_ability,
-  sprite_recipe: t.character.sprite_recipe, ability_names: mockAbilityNames(t.character), forged: t.forged, saved_at: t.saved_at,
+  sprite_recipe: t.character.sprite_recipe ?? { kind: "shape", shape: "circle", color: "#9a6a3f", accent: "#e8c95a", glyph: (t.character.name.trim()[0] ?? "?").toUpperCase() },
+  ability_names: mockAbilityNames(t.character), forged: t.forged, saved_at: t.saved_at,
 });
 
 /**

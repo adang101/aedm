@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createFakeProvider, type FakeProvider, type ModelProvider, type ModelRequest } from "@aedm/llm";
 import { ServerMessageSchema, WS_VERSION, type CharacterCreate, type ServerMessage } from "@aedm/schemas";
 import WebSocket from "ws";
+import type { AssetStore } from "../src/assets/store";
 import { createGameServer, type GameServer, type GameServerOptions } from "../src/server";
 import { silentLogger } from "../src/types";
 
@@ -58,7 +59,7 @@ export interface Harness {
   stop(): Promise<void>;
 }
 
-export async function startHarness(opts: { provider?: ModelProvider; config?: GameServerOptions["config"]; random?: () => number } = {}): Promise<Harness> {
+export async function startHarness(opts: { provider?: ModelProvider; config?: GameServerOptions["config"]; random?: () => number; assets?: AssetStore; spriteTimeoutMs?: number } = {}): Promise<Harness> {
   const dataDir = await mkdtemp(join(tmpdir(), "aedm-data-"));
   const saveDir = join(dataDir, "saves");
   const provider = opts.provider ?? createFakeProvider();
@@ -66,6 +67,8 @@ export async function startHarness(opts: { provider?: ModelProvider; config?: Ga
     port: 0, host: "127.0.0.1", provider, saveDir, dataDir, logger: silentLogger,
     config: { ...FAST, ...opts.config, limits: { ...FAST.limits, ...opts.config?.limits } },
     ...(opts.random ? { random: opts.random } : {}),
+    ...(opts.assets ? { assets: opts.assets } : {}),
+    ...(opts.spriteTimeoutMs ? { spriteTimeoutMs: opts.spriteTimeoutMs } : {}),
   });
   const url = `ws://127.0.0.1:${server.port}`;
   const clients: TestClient[] = [];

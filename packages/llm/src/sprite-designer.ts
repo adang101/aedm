@@ -6,6 +6,7 @@ export interface SpriteDesignInput {
   appearance?: string;
   /** npc, enemy, boss, minion, character, prop... */
   role: string;
+  name?: string;
 }
 
 /** System and user text for the sprite designer call (a fast-tier model call returning a SpriteSpecDraft). */
@@ -15,6 +16,7 @@ export function buildSpriteDesignerPrompt(input: SpriteDesignInput): { system: s
     `<concept>\n${escapeUntrusted(input.concept, 400)}\n</concept>`,
     `<appearance>\n${escapeUntrusted(input.appearance ?? "", 400)}\n</appearance>`,
     `<role>\n${escapeUntrusted(input.role, 40)}\n</role>`,
+    ...(input.name ? [`<name>\n${escapeUntrusted(input.name, 60)}\n</name>`] : []),
   ].join("\n");
   return { system, user };
 }

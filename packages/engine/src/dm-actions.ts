@@ -1,4 +1,4 @@
-import { CHECK_TAGS, DIFFICULTIES, type Difficulty, type DmAction, type Item, type MapBrief, type NpcRecord } from "@aedm/schemas";
+import { CHECK_TAGS, DIFFICULTIES, type Difficulty, type DmAction, type Item, type MapBrief, type NpcRecord, type SpriteSpec } from "@aedm/schemas";
 import { clampDc, type CheckRequest } from "./checks.ts";
 import { endCombatM, startCombatM } from "./combat.ts";
 import { RULES } from "./data.ts";
@@ -8,9 +8,10 @@ import { applyCondition, archetypeOf, isStanding, removeEntity } from "./mutate.
 import type { Rng } from "./rng.ts";
 import { levelCaps, lootCap } from "./rules.ts";
 import {
-  cloneState, emit, finish, isFactTrue, newId, occupiedTiles, placePartyInternal, randomSprite, tileKey,
+  cloneState, emit, finish, isFactTrue, newId, occupiedTiles, placePartyInternal, tileKey,
   type Entity, type GameState, type Mut,
 } from "./state.ts";
+import { designSpriteOffline, spriteSeed } from "./sprites.ts";
 import { bossThreatCap, encounterBudget, enemyThreat } from "./threat.ts";
 import { findFreeTileNear, getObjects, isWalkable } from "./map/index.ts";
 
@@ -24,6 +25,8 @@ export interface DmContext {
   partyLevel: number;
   /** Difficulty the encounter budget is checked against when spawning. Default: standard. */
   difficulty?: Difficulty;
+  /** Sprites the server designed, keyed by lowercase NPC name. create_npc uses one if present, else designs offline. */
+  sprites?: Record<string, SpriteSpec>;
 }
 
 export interface DmApplyResult {
@@ -85,12 +88,16 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       const disposition = RULES.npc.dispositionByRole[a.role];
       const rec: NpcRecord = {
         id, name, concept: a.concept, role: a.role, map_id: a.map_id, x: a.x, y: a.y, sprite_tags: a.sprite_tags,
+        ...(a.appearance ? { appearance: a.appearance } : {}),
         alive: true, ...(disposition ? { disposition } : {}),
       };
       s.npcs[id] = rec;
       const ent: Entity = {
         id, kind: "npc", name, mapId: a.map_id, x: a.x, y: a.y, hp: 1, hpMax: 1, conditions: [], shield: 0,
-        sprite: randomSprite(m.rng, name, a.sprite_tags), refId: id, cooldowns: {}, usesLeft: {}, checkBonuses: [],
+        sprite: ctx.sprites?.[norm(name)] ?? designSpriteOffline(
+          { concept: `${a.concept} ${a.sprite_tags.join(" ")}`.trim(), ...(a.appearance ? { appearance: a.appearance } : {}), name, role: a.role, kind: "npc" },
+          spriteSeed(m.rng),
+        ), refId: id, cooldowns: {}, usesLeft: {}, checkBonuses: [],
         ...(disposition ? { disposition } : {}),
       };
       s.entities[id] = ent;
@@ -154,7 +161,10 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
         const id = newId(s, "ei");
         s.entities[id] = {
           id, kind: "enemy", name, mapId: a.map_id, x: spot.x, y: spot.y, hp: arch.stats.hp, hpMax: arch.stats.hp,
-          conditions: [], shield: 0, sprite: randomSprite(m.rng, arch.name, arch.sprite_tags), refId: arch.id as string,
+          conditions: [], shield: 0, sprite: arch.sprite ?? designSpriteOffline(
+            { concept: `${arch.concept} ${arch.sprite_tags.join(" ")}`.trim(), ...(arch.appearance ? { appearance: arch.appearance } : {}), name: arch.name, role: arch.role, kind: "enemy" },
+            spriteSeed(m.rng),
+          ), refId: arch.id as string,
           disposition: "hostile", cooldowns: {},
           usesLeft: Object.fromEntries(arch.abilities.filter((ab) => ab.id && ab.uses_per_rest !== undefined).map((ab) => [ab.id as string, ab.uses_per_rest as number])),
           checkBonuses: [],

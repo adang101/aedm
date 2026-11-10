@@ -85,8 +85,10 @@ The DM can ask for any place or creature the story needs. It never draws tiles o
 ## Roadmap
 
 - **M0 (this slice):** schemas, engine core (rules, cost, threat, mapgen), LLM layer with fake provider, server with lobbies and the exploration loop, web client with lobby, map, chat and shapes.
-- **Content model contracts (done):** schemas, contracts and prompts for `SpriteSpec`, materials, palette, map brief v2 (`setting`), map v2 (inline tileset) and asset records are defined.
-- **Map generator and materials library (done):** `packages/engine/data/materials.json` (about 170 materials across all roles, with aliases), `data/settings.json` (20 setting presets, keyword accents, layout fallbacks), eight layout generators in `packages/engine/src/map/layouts/`, tile assembly into an inline tileset, and `generateMap` with a seed-then-fallback chain. The old compatibility generator (`compat.ts`) is gone. Pending, in parallel: sprite designer pipeline and the web renderer for `spec` sprites and inline tilesets.
+- **Content model (done):** schemas, contracts and prompts for `SpriteSpec`, materials, palette, map brief v2 (`setting`), map v2 (inline tileset) and asset records.
+  - Map generator: `packages/engine/data/materials.json` (about 170 materials with aliases), `data/settings.json` (20 setting presets, keyword accents, layout fallbacks), eight layout generators in `packages/engine/src/map/layouts/`, inline tilesets, and a seed-then-fallback chain.
+  - Sprite designer: `finalizeSpriteSpec` and `designSpriteOffline` (engine), `designSprite` (llm), and the server asset store in `apps/server/src/assets/` (cached per concept, 4 s timeout to the offline designer).
+  - Web renderer: all 19 patterns with role treatments and mood, the sprite composer (10 body plans, 45 parts, poses), the creator sprite builder, and a QA gallery at `?mock=1&gallery=1`.
 - **M0 level-up (done):** engine `levelUpView`, `spendScorePoint`, `addAbilityToCharacter`, `replaceAbility`, `skipAbilityPick`, `addGrowth`; server `level_up_choice`; web modal, character sheet and mock scenario. Known gaps: no undo or respec; the power budget is not re-validated when an ability's level caps change; abilities can only be reforged one at a time (one pick each); `/dev grow` is the only way to level without the DM awarding growth; enemies do not scale to the extra abilities.
 - **M1:** full combat loop in the client, ability forge UI, enemy builder, saves and reload.
 - **M2:** memory (summaries, retrieval), evals in CI, content safety pass, mobile polish.

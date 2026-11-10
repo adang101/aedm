@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AbilityDraftSchema, AbilitySchema } from "./ability";
 import { ConditionSchema, DamageTypeSchema, EnemyRoleSchema } from "./enums";
-import { AppearanceSchema } from "./sprite";
+import { AppearanceSchema, SpriteSpecSchema } from "./sprite";
 import { DiceSchema, EnemyIdSchema, shortWord, text } from "./common";
 
 export const EnemyStatsSchema = z.strictObject({
@@ -36,6 +36,8 @@ export const EnemySchema = z
     id: EnemyIdSchema.optional(),
     ...enemyFields,
     abilities: z.array(AbilitySchema).max(3),
+    /** Designed look, set by the server after the sprite designer runs. Every spawned entity uses it. */
+    sprite: SpriteSpecSchema.optional(),
     /** Computed by the engine; ignored on input. */
     threat: z.number().optional(),
   })

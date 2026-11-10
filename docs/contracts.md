@@ -114,15 +114,17 @@ A **Sprite spec draft** is the sprite designer model's output: `kind`, `v`, `siz
 
 `sprite_recipe` (characters) and an entity's `sprite` (views) are a union discriminated on `kind`: `spec` (above) or `shape` (circle, square, diamond, triangle or hex with color, accent, glyph). New content uses `spec`; `shape` stays valid for older saves and as a fallback drawing. Character create accepts either.
 
-**Asset record** (server-side asset store; schema only for now)
+**Asset record** (server-side asset store; sprites are stored in `<data>/assets/assets.json`, materials and settings are schema only)
 
 | Field | Rules |
 | --- | --- |
 | `id` | `as_` plus an id |
 | `kind` | material, setting or sprite |
-| `key` | Hash of the normalized concept (lowercase, collapsed whitespace) |
+| `key` | `sha256(kind + normalized concept + normalized appearance)` as hex (normalized: lowercase, collapsed whitespace). The same concept and appearance get the same sprite across sessions. A sprite that came from the offline fallback (model failed or timed out after 4 s) is not stored, so the next request tries the model again. |
 | `spec` | A Material, a setting spec (name, preset, layout, environment, mood) or a Sprite spec, matching `kind` |
 | `created_at`, `uses` | ISO timestamp; integer 0 or more, how often it was handed out |
+
+**Sprite pipeline.** `finalizeSpriteSpec` (engine) turns a draft into a valid spec: colors snapped, unknown parts dropped (aliases such as horn, cape, wizard hat map to catalog parts), duplicates removed, at most 6 parts, contradictions removed (one of hood/hat/helmet, crown never with hat or helmet but allowed with hood, one of horns/antlers, one of robe/armor, one of fur/scales/shell, one held item per hand), size clamped by role and body (minions at most medium, non-boss humanoids at most large, bosses at least medium), glyph from the name, traits cleaned. `designSpriteOffline` (engine) is the deterministic keyword designer used as the fallback. The model call uses purpose `sprite`, tier fast, and one repair at most.
 
 **Ability**
 
@@ -176,6 +178,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `loot_hint` | string | 0 to 80 characters |
 | `sprite_tags` | array | 0 to 5 short words |
 | `appearance` | string | Optional, 0 to 160 characters. Look hint for the sprite designer, together with `concept`. |
+| `sprite` | object | Optional Sprite spec, set by the server after the sprite designer runs (cached per concept). Every entity spawned from the archetype uses it; without it the engine designs one offline. |
 | `threat` | number | Computed by the engine from `rules-numbers.md`. Ignored on input. |
 
 **Character**
@@ -197,7 +200,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 
 **Character create (client submits for a new character)**
 
-`v`, name, title, description, key_ability, scores (each 8 to 15; the engine checks the 27-point cost), trait_tags (exactly 2, different), sprite_recipe, and exactly one of `ability_texts` (1 to 3 strings, each at most 300 characters, sent to the forge) or `abilities` (1 to 3 prebuilt ability drafts). Engine-owned fields are rejected.
+`v`, name, title, description, key_ability, scores (each 8 to 15; the engine checks the 27-point cost), trait_tags (exactly 2, different), sprite_recipe (optional; when absent the server designs a Sprite spec from title and description at claim time), and exactly one of `ability_texts` (1 to 3 strings, each at most 300 characters, sent to the forge) or `abilities` (1 to 3 prebuilt ability drafts). Engine-owned fields are rejected.
 
 **WebSocket messages**
 

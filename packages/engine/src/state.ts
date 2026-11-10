@@ -12,6 +12,7 @@ import { createRng, fromState, type Rng } from "./rng.ts";
 import { hpMax as computeHpMax, levelFromGrowth, levelCaps, validatePointBuy } from "./rules.ts";
 import { enemyThreat, validateEnemy } from "./threat.ts";
 import { findFreeTileNear, getSpawn } from "./map/index.ts";
+import { designSpriteOffline } from "./sprites.ts";
 
 // ---------- types ----------
 
@@ -234,16 +235,6 @@ export function isFactTrue(s: GameState, subject: string, predicate: string, obj
   return s.facts.some((f) => f.subject.trim().toLowerCase() === sub && f.predicate === predicate && f.object.trim().toLowerCase() === object);
 }
 
-// ---------- sprites ----------
-
-export function randomSprite(rng: Rng, name: string, tags: readonly string[] = []): SpriteRecipe {
-  const shape = rng.pick(RULES.sprites.shapes) as "circle" | "square" | "diamond" | "triangle" | "hex";
-  const color = rng.pick(RULES.sprites.palette);
-  const accent = rng.pick(RULES.sprites.accents);
-  const glyph = ([...(tags[0] ?? name)][0] ?? "?").toUpperCase();
-  return { kind: "shape", shape, color, accent, glyph };
-}
-
 // ---------- characters ----------
 
 export type AddCharacterResult =
@@ -268,7 +259,7 @@ export function addCharacter(state: GameState, input: CharacterCreate | Characte
   const errors: string[] = [];
   let base: {
     id?: string; name: string; title: string; description: string; key_ability: AbilityScoreKey;
-    scores: Character["scores"]; trait_tags: Character["trait_tags"]; sprite_recipe: SpriteRecipe;
+    scores: Character["scores"]; trait_tags: Character["trait_tags"]; sprite_recipe?: SpriteRecipe | undefined;
     abilities: (Ability | AbilityDraft)[]; weapon_tier: number; armor_bonus: number; growth: number; hp?: number;
     inventory: Item[];
   };
@@ -339,7 +330,10 @@ export function addCharacter(state: GameState, input: CharacterCreate | Characte
     growth,
     hp,
     hp_max: hpMaxV,
-    sprite_recipe: base.sprite_recipe,
+    sprite_recipe: base.sprite_recipe ?? designSpriteOffline(
+      { concept: `${base.title} ${base.description}`.trim() || base.name, name: base.name, role: "pc", kind: "pc" },
+      Math.max(1, s.rngState >>> 1),
+    ),
     inventory: base.inventory ?? [],
   };
   s.characters[id] = character;

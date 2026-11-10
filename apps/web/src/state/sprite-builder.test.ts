@@ -36,7 +36,7 @@ describe("sprite builder", () => {
     for (const p of premadeForms()) {
       const r = buildCreate(p.form);
       expect(r.ok).toBe(true);
-      if (r.ok) expect(r.value.sprite_recipe.kind).toBe("spec");
+      if (r.ok) expect(r.value.sprite_recipe?.kind).toBe("spec");
     }
     expect(emptyForm().sprite.body).toBe("humanoid");
   });
