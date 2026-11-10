@@ -4,16 +4,17 @@ import { DM_ACTION_TYPES, DmActionSchema, DmResponseLooseSchema, DmResponseSchem
 const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
 
 const brief = {
-  biome: "interior", theme_tags: [], size_class: "small",
+  setting: { name: "Lighthouse interior", preset: "interior", layout: "rooms_and_corridors", environment: "indoor", mood: "dim" },
+  theme_tags: [], size_class: "small",
   rooms: [{ id: "r1", type: "hall", size: "small", connects_to: [] }],
   points_of_interest: [], entity_slots: [], exits: [{ side: "south", label: "Door" }],
 };
 
 const actions = [
   { type: "request_check", target: "party", ability: "wis", dc: 15, tags: ["perception"], reason: "Spot the watcher" },
-  { type: "create_npc", name: "Odalys Brand", concept: "Friendly innkeeper", role: "quest_giver", map_id: "m_inn", x: 3, y: 4, sprite_tags: ["apron"] },
+  { type: "create_npc", name: "Odalys Brand", concept: "Friendly innkeeper", role: "quest_giver", map_id: "m_inn", x: 3, y: 4, sprite_tags: ["apron"], appearance: "stout woman in a flour-dusted apron" },
   { type: "npc_say", entity_id: "npc_odalys", text: "Three of them, walking in their sleep." },
-  { type: "create_enemy", concept: "A robed chorister", role: "standard" },
+  { type: "create_enemy", concept: "A robed chorister", role: "standard", appearance: "pale figure in drowned-blue robes, dripping" },
   { type: "spawn_entity", archetype_id: "en_chorister", map_id: "m_inn", slot_id: "slot_1", count: 2 },
   { type: "start_combat", participants: ["ch_tamsin", "en_1"], difficulty: "standard" },
   { type: "end_combat", reason: "victory" },
@@ -105,5 +106,31 @@ describe("DmResponse", () => {
     expect(good).toHaveLength(1);
     expect(DmResponseLooseSchema.safeParse({ narration: 3, actions: [] }).success).toBe(false);
     expect(DmResponseLooseSchema.safeParse({ narration: "x", actions: "no" }).success).toBe(false);
+  });
+
+  it("generate_map accepts a free-text setting with inline materials and rejects the old biome field", () => {
+    const custom = {
+      type: "generate_map",
+      brief: {
+        ...brief,
+        setting: {
+          name: "Sunken cathedral", layout: "rooms_and_corridors", environment: "underground", mood: "eerie",
+          materials: { floor: ["stone_floor"], liquid: [{ name: "Black water", role: "liquid", color: "#101030", pattern: "waves" }] },
+          density: { obstacles: 1, liquid: 2, hazards: 0 },
+        },
+      },
+    };
+    expect(DmActionSchema.safeParse(custom).success).toBe(true);
+    expect(DmActionSchema.safeParse({ type: "generate_map", brief: { ...brief, biome: "forest" } }).success).toBe(false);
+    const { setting: _s, ...noSetting } = brief;
+    expect(DmActionSchema.safeParse({ type: "generate_map", brief: noSetting }).success).toBe(false);
+  });
+  it("create_npc and create_enemy appearance is optional and at most 160 chars", () => {
+    const npc = { type: "create_npc", name: "A", concept: "c", role: "ally", map_id: "m_a", x: 1, y: 1, sprite_tags: [] };
+    expect(DmActionSchema.safeParse(npc).success).toBe(true);
+    expect(DmActionSchema.safeParse({ ...npc, appearance: "x".repeat(161) }).success).toBe(false);
+    const en = { type: "create_enemy", concept: "c", role: "minion" };
+    expect(DmActionSchema.safeParse({ ...en, appearance: "x".repeat(160) }).success).toBe(true);
+    expect(DmActionSchema.safeParse({ ...en, appearance: "x".repeat(161) }).success).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import {
   addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, basicAttack, clampEnemy, cloneState, combatOutcome,
   computePartyLevel, createGameState, currentMap, describeEvent, endCombat, endTurn, enemyRangesForLevel,
-  enemyTakeTurn, entitiesOnMap, findFreeTileNear, findPath, generateMap, isWalkable, levelUpView, moveEntity, occupiedTiles,
+  enemyTakeTurn, entitiesOnMap, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
   placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
   skipAbilityPick, spendScorePoint, STARTER_BRIEFS, toCharacterView,
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
@@ -11,7 +11,7 @@ import {
   buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn, summarizeTurns,
   type DmTurnResult,
 } from "@aedm/llm";
-import type { Ability, Biome, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus } from "@aedm/schemas";
+import type { Ability, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteSpec } from "@aedm/schemas";
 import { ForgeError, forgeOneAbility } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import type { Player, Room } from "./rooms";
@@ -193,13 +193,14 @@ export class GameSession {
       if (!r.ok) throw new Error(`character ${ch.name} was refused: ${r.errors.join("; ")}`);
       state = r.state;
     }
-    const biome = pickBiome(pitch);
+    const preset = pickSetting(pitch);
+    const startBrief = STARTER_BRIEFS[preset];
     const rng = rngFromState(state);
-    const map = generateMap(STARTER_BRIEFS[biome], { seed: rng.int(1, 0x7ffffffe), id: "m_start", generatedAt: new Date(deps.clock()).toISOString() }).map;
+    const map = generateMap(startBrief, { seed: rng.int(1, 0x7ffffffe), id: "m_start", generatedAt: new Date(deps.clock()).toISOString() }).map;
     state = addMap(state, map).state;
     state = placePartyOnMap(state, map.id, "party_start").state;
     this.state = state;
-    this.sceneNote = startingNote(bible.digest, biome);
+    this.sceneNote = startingNote(bible.digest, startBrief.setting.name);
     this.refreshAbsent();
   }
 
@@ -386,7 +387,9 @@ export class GameSession {
         default:
           break;
       }
-      if (!SILENT_EVENTS.has(e.type)) this.room.broadcast("log", { kind: "engine", text: humanLine(e).slice(0, 4000) });
+      // a rest that healed nobody is noise for the players; the DM still sees it
+      const quiet = SILENT_EVENTS.has(e.type) || (e.type === "rest" && e.hpRestored === 0);
+      if (!quiet) this.room.broadcast("log", { kind: "engine", text: humanLine(e).slice(0, 4000) });
       if (!DM_SKIP_EVENTS.has(e.type)) lines.push(describeEvent(e));
     }
     if (opts.toDm !== false) {
@@ -1045,9 +1048,11 @@ export class GameSession {
           continue;
         }
         let a: DmAction = action;
+        let sprites: Record<string, SpriteSpec> | undefined;
+        if (a.type === "create_npc") sprites = await this.designNpcSprite(a);
         if (a.type === "spawn_entity") a = this.prepareSpawn(a, unreferenced);
         if (a.type === "start_combat") a = this.prepareCombat(a);
-        const ctx = this.dmContext();
+        const ctx = { ...this.dmContext(), ...(sprites ? { sprites } : {}) };
         const r = applyDmActions(this.state, this.rng(), [a], ctx);
         this.commit(r.state);
         this.publish(r.events);
@@ -1080,6 +1085,19 @@ export class GameSession {
     return { presentCharacterIds: present, partyLevel: computePartyLevel(this.state, present) };
   }
 
+  /** Server pre-pass for create_npc: the engine stays pure, the server hands it the designed look. */
+  private async designNpcSprite(a: Extract<DmAction, { type: "create_npc" }>): Promise<Record<string, SpriteSpec> | undefined> {
+    try {
+      const r = await this.deps.sprites.getOrCreateSprite({
+        concept: a.concept, ...(a.appearance ? { appearance: a.appearance } : {}), name: a.name, role: a.role, kind: "npc",
+      });
+      return { [a.name.trim().toLowerCase()]: r.spec };
+    } catch (err) {
+      this.deps.logger.warn("[sprite] npc design failed:", err instanceof Error ? err.message : String(err));
+      return undefined;
+    }
+  }
+
   private async createEnemy(a: CreateEnemyAction): Promise<string | null> {
     if (a.ref && this.state.archetypes[a.ref]) return a.ref;
     const level = this.dmContext().partyLevel;
@@ -1102,6 +1120,16 @@ export class GameSession {
         },
       });
       const enemy = { ...built.enemy };
+      try {
+        const look = await this.deps.sprites.getOrCreateSprite({
+          concept: a.concept, ...(a.appearance ?? enemy.appearance ? { appearance: (a.appearance ?? enemy.appearance) as string } : {}),
+          name: enemy.name, role: a.role, kind: "enemy",
+        });
+        enemy.sprite = look.spec;
+        if (a.appearance) enemy.appearance = a.appearance;
+      } catch (err) {
+        this.deps.logger.warn("[sprite] enemy design failed:", err instanceof Error ? err.message : String(err));
+      }
       if (a.ref && !this.state.archetypes[a.ref]) enemy.id = a.ref;
       else delete enemy.id;
       const reg = registerArchetype(this.state, enemy, level);
@@ -1134,7 +1162,7 @@ export class GameSession {
       const added = addMap(s, map);
       this.commit(added.state);
       this.publish(added.events);
-      this.room.broadcast("log", { kind: "system", text: `The way ahead takes shape: a ${map.meta.biome} area.` });
+      this.room.broadcast("log", { kind: "system", text: `The way ahead takes shape: ${map.meta.setting.name}.` });
       return id;
     } catch (err) {
       this.deps.logger.warn("[dm] map generation failed:", err instanceof Error ? err.message : String(err));
@@ -1154,14 +1182,14 @@ export class GameSession {
   /** A scene change is a safe break: the engine's rest restores HP and abilities. Also refreshes the scene note. */
   private afterSceneChange(): void {
     const map = currentMap(this.state);
-    if (map) this.sceneNote = `A ${map.meta.biome} location${map.meta.theme_tags.length ? ` (${map.meta.theme_tags.join(", ")})` : ""}, just reached by the party.`;
+    if (map) this.sceneNote = `The party has just reached ${map.meta.setting.name}${map.meta.theme_tags.length ? ` (${map.meta.theme_tags.join(", ")})` : ""}.`;
     if (this.state.combat) return;
     const r = rest(this.state, this.rng());
     if (r.ok) {
       this.commit(r.state);
       this.publish(r.events);
     }
-    this.pendingLines.push(`[engine: the party arrives at a new ${map?.meta.biome ?? ""} area (map ${map?.id ?? "?"})]`);
+    this.pendingLines.push(`[engine: the party arrives at a new area, ${map?.meta.setting.name ?? "unknown"} (map ${map?.id ?? "?"})]`);
   }
 
   /** Spawn positions are a placement detail, not a rules number: snap a blocked tile to the nearest free one. */
@@ -1257,18 +1285,15 @@ export class GameSession {
   get status(): PlayerStatus[] { return this.room.players.map((p) => p.status); }
 }
 
-function pickBiome(pitch: string): Biome {
-  const t = pitch.toLowerCase();
-  if (/\b(desert|dunes?|oasis)\b/.test(t)) return "desert";
-  if (/\b(dungeon|crypt|catacombs?|mine|cave)\b/.test(t)) return "dungeon";
-  if (/\b(forest|woods?|grove)\b/.test(t)) return "forest";
-  return "town";
+/** The starting setting preset for a campaign pitch: the engine's keyword match, else a town. */
+function pickSetting(pitch: string): SettingPreset {
+  return inferPreset(pitch) ?? "town";
 }
 
-function startingNote(digest: string, biome: Biome): string {
+function startingNote(digest: string, settingName: string): string {
   const sentences = digest.split(/(?<=[.!?])\s+/);
   const start = sentences.find((s) => /\bstarts?\b/i.test(s));
-  return (start ?? `The party's adventure begins in a ${biome}.`).slice(0, 200);
+  return (start ?? `The party's adventure begins at ${settingName.toLowerCase()}.`).slice(0, 200);
 }
 
 export type { GameMap };

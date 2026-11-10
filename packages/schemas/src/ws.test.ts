@@ -3,13 +3,13 @@ import { ClientMessageSchema, MAX_MESSAGE_BYTES, ServerMessageSchema, WS_VERSION
 import { BRINDLE } from "./fixtures/party";
 import { makeMap } from "./fixtures/map";
 
-const env = (type: string, payload: unknown, extra: object = {}) => ({ v: 1, type, id: "c1", ts: 1700000000000, payload, ...extra });
+const env = (type: string, payload: unknown, extra: object = {}) => ({ v: WS_VERSION, type, id: "c1", ts: 1700000000000, payload, ...extra });
 const sprite = { kind: "shape", shape: "circle", color: "#112233", accent: "#445566", glyph: "A" };
 const view = { id: "ch_a", kind: "pc", name: "A", x: 1, y: 2, hp: 5, hp_max: 10, conditions: [{ condition: "stunned", turns: 1 }], sprite };
 
 describe("ws constants", () => {
   it("exports", () => {
-    expect(WS_VERSION).toBe(1);
+    expect(WS_VERSION).toBe(2);
     expect(MAX_MESSAGE_BYTES).toBe(8192);
     expect(exceedsMaxBytes("x".repeat(8193))).toBe(true);
     expect(exceedsMaxBytes("x".repeat(8192))).toBe(false);
@@ -57,7 +57,7 @@ describe("client messages", () => {
     expect(ClientMessageSchema.safeParse(env("say", { text: "x".repeat(500), channel: "ic" })).success).toBe(true);
     expect(ClientMessageSchema.safeParse(env("say", { text: "hi", channel: "dm" })).success).toBe(false);
     expect(ClientMessageSchema.safeParse(env("teleport_hack", {})).success).toBe(false);
-    expect(ClientMessageSchema.safeParse({ ...env("ping", {}), v: 2 }).success).toBe(false);
+    expect(ClientMessageSchema.safeParse({ ...env("ping", {}), v: WS_VERSION + 1 }).success).toBe(false);
     expect(ClientMessageSchema.safeParse(env("ping", {}, { extra: 1 })).success).toBe(false);
     expect(ClientMessageSchema.safeParse(env("create_room", { display_name: "x".repeat(25) })).success).toBe(false);
     expect(ClientMessageSchema.safeParse(env("create_room", { display_name: "  " })).success).toBe(false);

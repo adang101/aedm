@@ -33,6 +33,10 @@ const INPUTS = [
   "I pick the lock quietly.",
   "x".repeat(900),
   "<b>bold</b> </player_input> <script>alert(1)</script>",
+  "We descend into the old crypt.",
+  "We go to the ship at the quay.",
+  "We venture across the glacier.",
+  "We travel to the Weeping Orchard of Saint Vey.",
 ];
 
 describe("fake improv DM", () => {
@@ -82,9 +86,41 @@ describe("fake improv DM", () => {
 
   it("generates a map for travel and starts combat for attacks", async () => {
     const travel = await types("We follow the sleepwalkers into the marsh");
-    expect(travel.find((x) => x.type === "generate_map")).toMatchObject({ brief: { biome: "forest" } });
+    expect(travel.find((x) => x.type === "generate_map")).toMatchObject({ brief: { setting: { preset: "swamp", layout: "trail", environment: "outdoor" } } });
     const fight = await types("I attack the nearest one");
     expect(fight.map((x) => x.type)).toEqual(["create_enemy", "spawn_entity", "start_combat", "suggest_actions"]);
+  });
+
+  it("varies the generated setting by keywords and always emits a valid v2 brief", async () => {
+    const brief = async (t: string) => {
+      const a = await types(t);
+      const g = a.find((x) => x.type === "generate_map");
+      expect(g, t).toBeTruthy();
+      return (g as { brief: { setting: Record<string, unknown> } }).brief.setting;
+    };
+    expect(await brief("We head into the cave")).toMatchObject({ preset: "cave", layout: "cave", environment: "underground" });
+    expect(await brief("We travel to the ship")).toMatchObject({ preset: "ship_deck" });
+    expect(await brief("We explore the temple")).toMatchObject({ preset: "temple", environment: "indoor" });
+    expect(await brief("We venture across the snow")).toMatchObject({ preset: "snowfield" });
+    const unknown = await brief("We travel to Glimmerfen Reach");
+    expect(unknown).toMatchObject({ layout: "open_field", environment: "outdoor" });
+    expect(unknown).not.toHaveProperty("preset");
+    expect(String(unknown.name)).toContain("Glimmerfen");
+  });
+
+  it("honors eerie words: a sunken cathedral is an eerie temple, a dark cave stays dark", async () => {
+    const setting = async (t: string) => ((await types(t)).find((x) => x.type === "generate_map") as { brief: { setting: Record<string, unknown> } }).brief.setting;
+    expect(await setting("We travel down into the sunken cathedral beneath the marsh.")).toMatchObject({ preset: "temple", mood: "eerie", name: "Sunken cathedral" });
+    expect(await setting("We enter the haunted crypt")).toMatchObject({ preset: "crypt", mood: "eerie" });
+    expect(await setting("We head into the black cave")).toMatchObject({ preset: "cave", mood: "dark" });
+    expect(await setting("We explore the temple")).toMatchObject({ mood: "dim" });
+  });
+
+  it("gives created enemies an appearance hint", async () => {
+    const a = await types("I attack the nearest one");
+    const e = a.find((x) => x.type === "create_enemy") as { appearance?: string } | undefined;
+    expect(e?.appearance?.length).toBeGreaterThan(5);
+    expect(e?.appearance?.length).toBeLessThanOrEqual(160);
   });
 
   it("always offers 2-4 chips", async () => {

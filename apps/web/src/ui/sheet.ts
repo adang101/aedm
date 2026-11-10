@@ -1,3 +1,4 @@
+import { spriteSwatch } from "@aedm/schemas";
 import { modifier, SCORE_KEYS, SCORE_NAMES, signed } from "../util/describe";
 import { h, replaceChildren } from "../util/dom";
 import { armorName, defenseOf, growthProgress } from "../util/sheet";
@@ -33,7 +34,7 @@ export function createSheetModal(ctx: Ctx): SheetModal {
     const mine = s.claimed[c.id] === s.playerId || e?.owner_player_id === s.playerId;
     replaceChildren(body,
       h("div", { class: "row" },
-        h("span", { class: "init-dot big", style: `background:${c.sprite_recipe.color};border-color:${c.sprite_recipe.accent}` }, c.sprite_recipe.glyph),
+        h("span", { class: "init-dot big", style: `background:${spriteSwatch(c.sprite_recipe, c.name).color};border-color:${spriteSwatch(c.sprite_recipe, c.name).accent}` }, spriteSwatch(c.sprite_recipe, c.name).glyph),
         h("div", { class: "stack tight grow" },
           h("div", { class: "row between" }, h("h2", null, c.name), h("span", { class: "badge" }, `Level ${c.level}`)),
           c.title ? h("div", { class: "muted" }, c.title) : null)),

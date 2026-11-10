@@ -26,9 +26,9 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | Action `type` | Fields | Engine validation |
 | --- | --- | --- |
 | `request_check` | target (character ID or "party"), ability (str, dex, con, int, wis, cha), dc, tags (0 to 2), advantage (none, advantage, disadvantage), reason (at most 120) | DC clamped to 5 through 30; tags from the allowed list; target is present |
-| `create_npc` | name, concept (at most 200), role (merchant, quest_giver, ally, bystander, villain), map_id, x, y, sprite_tags (0 to 5) | Tile walkable and free; name not already used by a living NPC |
+| `create_npc` | name, concept (at most 200), role (merchant, quest_giver, ally, bystander, villain), map_id, x, y, sprite_tags (0 to 5), appearance (optional, at most 160: look hint for the sprite designer) | Tile walkable and free; name not already used by a living NPC |
 | `npc_say` | entity_id, text (at most 60 words) | Entity exists, is in the scene, and is not dead according to `world_facts` |
-| `create_enemy` | concept (at most 200), role (minion, standard, elite, boss), setting_notes (at most 200), ref (optional; `en_` plus snake_case, at most 40) | Runs the enemy builder; the result is validated and registered as an archetype under `ref` (or a generated ID), so a later `spawn_entity` in the same response can use `ref` as its `archetype_id` |
+| `create_enemy` | concept (at most 200), role (minion, standard, elite, boss), setting_notes (at most 200), ref (optional; `en_` plus snake_case, at most 40), appearance (optional, at most 160: look hint for the sprite designer) | Runs the enemy builder; the result is validated and registered as an archetype under `ref` (or a generated ID), so a later `spawn_entity` in the same response can use `ref` as its `archetype_id` |
 | `spawn_entity` | archetype_id, map_id, x and y or slot_id, count (1 to 6) | Archetype exists; tiles walkable; the encounter's threat total stays inside the budget for its difficulty |
 | `start_combat` | participants (entity and character IDs), difficulty (easy, standard, hard, deadly) | Participants present; the engine rolls initiative |
 | `end_combat` | reason (victory, flee, truce) | A combat is active |
@@ -36,7 +36,7 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | `grant_item` | recipient, item (name, kind, value, tier) | Kind is consumable, weapon, armor, trinket or quest; value within the remaining loot cap; weapon and armor tier within the party's level |
 | `update_quest` | quest_id, status (new, active, done, failed), note (at most 120) | Quest exists in the story bible, or status is new |
 | `set_fact` | subject, predicate, object | Must not contradict `world_facts`. Reserved predicates: is_alive (true or false), located_at (map ID), disposition (friendly, neutral, wary, hostile), owns (item ID). Other predicates are free text up to 40 characters. |
-| `generate_map` | brief (see Map brief) | Biome from the allowed list, at most 12 rooms, size class limits |
+| `generate_map` | brief (see Map brief) | `setting.layout` and `setting.environment` from the allowed lists, at most 12 rooms, size class limits. Unknown material ids resolve by id, then tag, then role. **Shape change (v2): `biome` is replaced by `setting`; the DM response `v` stays 1.** |
 | `change_scene` | map_id, entry (spawn name) | Map exists; the party is at an exit, or the DM narrates the travel |
 | `award_growth` | character_id, amount (1 to 25), reason (at most 120) | Session caps from `rules-numbers.md` |
 | `complete_milestone` | milestone_id | Exists in the story bible and is not yet completed; the engine grants 100 growth to each present character |
@@ -44,17 +44,87 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 
 The DM never changes HP, stats, dice results or inventory directly. Those change only as results of engine rules.
 
-**Map brief (inside `generate_map`)**
+**Map brief (inside `generate_map`, v2)**
+
+The brief describes a place in open-ended terms. The DM never writes tiles: the engine resolves the setting to a layout generator and a set of materials, and builds the map from a seed. (v1 briefs, with a `biome` field, are rejected.)
 
 | Field | Rules |
 | --- | --- |
-| `biome` | forest, dungeon, desert, town or interior (the five starter biomes) |
+| `setting` | Object, see below. Required. |
 | `theme_tags` | 0 to 4 short words, such as marsh or fog, used for flavor and asset matching |
 | `size_class` | small (20 to 30 tiles per side), medium (30 to 45) or large (45 to 60) |
-| `rooms` | 1 to 12 objects: id, type (hall, chamber, corridor, courtyard, cave, outdoor), size (small, medium, large), connects_to (room IDs) |
-| `points_of_interest` | 0 to 8 objects: kind (for example altar, statue, well), room_id |
+| `rooms` | 1 to 12 objects: id, type (hall, chamber, corridor, courtyard, cave, outdoor, street, deck, vault, garden, shore), size (small, medium, large), connects_to (room IDs) |
+| `points_of_interest` | 0 to 8 objects: kind (free text, at most 24 characters, such as altar or "drowned pipe organ"; the engine maps it to a decor material or an interactable), room_id |
 | `entity_slots` | 0 to 8 objects: role (enemy, npc, boss, loot), room_id, count (1 to 6) |
 | `exits` | 1 to 4 objects: side (north, south, east, west), label |
+
+`setting`:
+
+| Field | Rules |
+| --- | --- |
+| `name` | Free text, 1 to 40 characters ("sunken cathedral", "airship deck") |
+| `preset` | Optional shortcut that fills any missing materials: forest, dungeon, desert, town, interior, cave, swamp, snowfield, mountain_pass, ruins, temple, castle, ship_deck, sewer, volcanic, crypt, library, market, farmland, beach. Preset data lives in the engine. |
+| `layout` | Required. The layout generator: rooms_and_corridors, cave, open_field, settlement, trail, arena, maze or islands |
+| `environment` | Required: indoor, outdoor or underground |
+| `mood` | Required: bright, neutral, dim, dark or eerie |
+| `materials` | Optional object. Per role, a list of entries, each a material id (snake_case) or a Material draft: `floor`, `path`, `wall`, `obstacle` (each 0 to 3), `liquid`, `hazard` (each 0 to 3), `decor` (0 to 6) |
+| `density` | Optional: obstacles, liquid, hazards, each an integer 0 to 3 |
+
+A brief with only `setting` (name, preset, layout, environment, mood) is valid. Whatever a role lacks is filled from the preset, then from role defaults.
+
+**Palette**
+
+The 33 master palette colors of `style-bible.md`, exported from `packages/schemas/src/palette.ts` as `PALETTE` (ramps grass, stone, earth, sand, water, fire, magic, skin, each `[dark, midDark, midLight, light]`), `OUTLINE_HEX` and `PALETTE_HEX`. `snapToPalette(hex)` returns the nearest palette color (weighted RGB distance, ties to the earlier entry) and `isHex` tests `#rrggbb`. The engine snaps every color a model proposes before storing it; stored materials, tiles and sprite palettes hold palette colors only.
+
+**Material**
+
+| Field | Rules |
+| --- | --- |
+| `id` | snake_case, starts with a letter, at most 32 characters |
+| `name` | 1 to 40 characters |
+| `role` | floor, path, wall, obstacle, liquid, hazard, decor or door |
+| `color`, `accent` | `#rrggbb` (palette colors once the engine has resolved it) |
+| `pattern` | none, dots, stripes, cross, bricks, planks, cobbles, tiles, waves, cracks, grain, grass, sand, speckle, rings, scales, runes, glow or lattice. Each is drawn by one small canvas routine. |
+| `walkable`, `blocks_sight` | boolean. Role defaults: floor, path, hazard, decor, door are walkable and clear; wall is solid and blocks sight; obstacle and liquid are solid and clear. |
+| `hazard` | Optional, hazard role only: damage_type, dice (NdM) |
+| `tags` | 0 to 6 short words |
+| `prompt_traits` | 0 to 120 characters, for the image model |
+
+A **Material draft** (what the DM may write inline in a brief) differs in being lenient: `id` is optional (derived from `name`), `accent` is optional (derived from `color`), `pattern` is any word of at most 24 characters (the engine picks the closest allowed pattern, else none), `walkable` and `blocks_sight` are optional (role defaults), `tags` and `prompt_traits` default to empty, and colors are any `#rrggbb` (snapped).
+
+**Sprite spec**
+
+The standard for every NPC, enemy, character and prop sprite. The strict form is what is stored and sent; the web client composes it on the 48 x 64 canvas.
+
+| Field | Rules |
+| --- | --- |
+| `kind`, `v` | "spec", 1 |
+| `body` | humanoid, beast, avian, serpent, insectoid, amorphous, construct, spirit, plant or object |
+| `size` | tiny, small, medium, large or huge |
+| `palette` | primary, secondary, accent, detail: `#rrggbb` (palette colors once snapped) |
+| `parts` | 0 to 6 objects: part (from the catalog), color (optional: primary, secondary, accent or detail), side (optional: left, right or both) |
+| `glyph` | Optional, 1 to 2 characters |
+| `pose` | Optional: idle, aggressive, cowering or floating |
+| `traits` | 0 to 160 characters of image prompt traits. No names of real people, franchises or artists. |
+| `image_asset_id` | Optional. Where generated art plugs in later. |
+
+Part catalog, exported as `PART_GROUPS` and `PART_CATALOG`: **head** horns, antlers, hood, hat, helmet, crown, mask, halo, beard, long_hair, ears_pointed, glowing_eyes, extra_eyes; **body** robe, cloak, armor, scales, fur, shell, spikes, tentacles, wings, tail, fins, mane, roots, leaves, gears, crystals; **held** sword, axe, spear, bow, staff, wand, shield, lantern, book, tool, orb; **aura** aura, smoke, flames, sparkles, drips.
+
+A **Sprite spec draft** is the sprite designer model's output: `kind`, `v`, `size`, `traits` are optional (size defaults to medium), colors are any `#rrggbb` (snapped), and `parts` entries take any `part` string of at most 24 characters, up to 12 entries. The engine drops names outside the catalog, keeps the first 6 parts and snaps colors; `body` must be valid.
+
+`sprite_recipe` (characters) and an entity's `sprite` (views) are a union discriminated on `kind`: `spec` (above) or `shape` (circle, square, diamond, triangle or hex with color, accent, glyph). New content uses `spec`; `shape` stays valid for older saves and as a fallback drawing. Character create accepts either.
+
+**Asset record** (server-side asset store; sprites are stored in `<data>/assets/assets.json`, materials and settings are schema only)
+
+| Field | Rules |
+| --- | --- |
+| `id` | `as_` plus an id |
+| `kind` | material, setting or sprite |
+| `key` | `sha256(kind + normalized concept + normalized appearance)` as hex (normalized: lowercase, collapsed whitespace). The same concept and appearance get the same sprite across sessions. A sprite that came from the offline fallback (model failed or timed out after 4 s) is not stored, so the next request tries the model again. |
+| `spec` | A Material, a setting spec (name, preset, layout, environment, mood) or a Sprite spec, matching `kind` |
+| `created_at`, `uses` | ISO timestamp; integer 0 or more, how often it was handed out |
+
+**Sprite pipeline.** `finalizeSpriteSpec` (engine) turns a draft into a valid spec: colors snapped, unknown parts dropped (aliases such as horn, cape, wizard hat map to catalog parts), duplicates removed, at most 6 parts, contradictions removed (one of hood/hat/helmet, crown never with hat or helmet but allowed with hood, one of horns/antlers, one of robe/armor, one of fur/scales/shell, one held item per hand), size clamped by role and body (minions at most medium, non-boss humanoids at most large, bosses at least medium), glyph from the name, traits cleaned. `designSpriteOffline` (engine) is the deterministic keyword designer used as the fallback. The model call uses purpose `sprite`, tier fast, and one repair at most.
 
 **Ability**
 
@@ -107,6 +177,8 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `behavior` | array | 2 to 3 strings, each at most 80 characters, turned into a simple behavior tree |
 | `loot_hint` | string | 0 to 80 characters |
 | `sprite_tags` | array | 0 to 5 short words |
+| `appearance` | string | Optional, 0 to 160 characters. Look hint for the sprite designer, together with `concept`. |
+| `sprite` | object | Optional Sprite spec, set by the server after the sprite designer runs (cached per concept). Every entity spawned from the archetype uses it; without it the engine designs one offline. |
 | `threat` | number | Computed by the engine from `rules-numbers.md`. Ignored on input. |
 
 **Character**
@@ -123,16 +195,16 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `abilities` | array | 1 to 3 ability objects at creation, up to 6 after level-ups (`abilityLimits.maxAbilitiesPerCharacter`), total cost within the level's power budget |
 | `weapon_tier`, `armor_bonus` | integer | Within the level's allowance |
 | `level`, `growth`, `hp`, `hp_max` | integer | Engine-owned. Clients cannot set them. |
-| `sprite_recipe` | object | Discriminated on `kind`. For now only `shape`: shape (circle, square, diamond, triangle, hex), color and accent (`#rrggbb`), glyph (1 to 2 characters). A `parts` variant (part IDs and palettes, validated against the asset catalog) comes later. |
+| `sprite_recipe` | object | Discriminated on `kind`: `spec` (see Sprite spec; standard for new content) or `shape` (shape: circle, square, diamond, triangle, hex; color and accent `#rrggbb`; glyph 1 to 2 characters; kept for backward compatibility) |
 | `inventory` | array | Engine-owned |
 
 **Character create (client submits for a new character)**
 
-`v`, name, title, description, key_ability, scores (each 8 to 15; the engine checks the 27-point cost), trait_tags (exactly 2, different), sprite_recipe, and exactly one of `ability_texts` (1 to 3 strings, each at most 300 characters, sent to the forge) or `abilities` (1 to 3 prebuilt ability drafts). Engine-owned fields are rejected.
+`v`, name, title, description, key_ability, scores (each 8 to 15; the engine checks the 27-point cost), trait_tags (exactly 2, different), sprite_recipe (optional; when absent the server designs a Sprite spec from title and description at claim time), and exactly one of `ability_texts` (1 to 3 strings, each at most 300 characters, sent to the forge) or `abilities` (1 to 3 prebuilt ability drafts). Engine-owned fields are rejected.
 
 **WebSocket messages**
 
-Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second.
+Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 2: the envelopes are unchanged, but the Map payload changed shape (v2 map), so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second.
 
 | `type` | Direction | Payload |
 | --- | --- | --- |
@@ -182,17 +254,19 @@ Shared payload types: `EntityView` is id, kind (pc, npc, enemy), name, x, y, hp,
 
 The 8 KB limit applies to client-to-server messages. A `state_snapshot` carries a whole map and may be larger.
 
-**Map JSON**
+**Map JSON (v2)**
 
 | Field | Rules |
 | --- | --- |
-| `v`, `id` | Version 1; `id` prefix `m_` |
+| `v`, `id` | Version 2; `id` prefix `m_` |
 | `width`, `height` | 20 to 60 tiles each |
 | `tile_size` | 48 |
-| `tilesets` | 1 to 4 objects: asset_id, first_gid |
+| `tileset` | Inline: `first_gid` (1) and `tiles` (1 to 256 TileDef objects). Replaces the v1 `tilesets` references, so the client can draw any map with no fixed catalog. |
 | `layers` | Tile layers named `ground`, `walls`, `decor` and `above` (drawn over characters), plus one object layer named `objects` |
-| Tile layer `data` | Array of width times height integers; 0 is empty, other values are tile IDs from the tilesets. `walls` is the only collision layer: any non-zero value blocks movement and sight. |
-| `meta` | biome, theme_tags, seed (integer), template_id (optional), generated_at |
+| Tile layer `data` | Array of width times height integers; 0 is empty, other values are `gid`s from the inline tileset. `walls` is the only collision layer: any non-zero value blocks movement and sight. |
+| `meta` | setting (name, preset (optional), layout, environment, mood), theme_tags, seed (integer), template_id (optional), generated_at |
+
+`TileDef`: gid (unique, 1 or more), material_id (snake_case), role (as Material), color and accent (`#rrggbb`), pattern (as Material), walkable, blocks_sight, variant (0 to 3, a visual variant of the same material), layer (ground, walls, decor or above), image_asset_id (optional).
 
 Object types in the `objects` layer, all positioned in tiles:
 
@@ -204,15 +278,18 @@ Object types in the `objects` layer, all positioned in tiles:
 | `interactable` | id, kind (chest, door, lever, sign, altar), state (open, closed, locked) |
 | `trigger` | id, radius (1 to 3 tiles), on_enter (event name) |
 
-A map is valid only if all of these hold. If any fails, regenerate with a new seed, up to 3 tries.
+A map is valid only if all of these hold. If any fails, regenerate with a new seed, up to 3 tries, then fall back (simplified rooms, the preset's own layout, one plain chamber).
 
 1. Every layer's `data` length equals width times height.
-2. Every non-zero tile ID falls inside a tileset's range.
+2. Every non-zero tile ID has a TileDef in the inline tileset (the schema enforces this too, and that gids are unique).
 3. `party_start` sits on a walkable tile.
 4. Flood fill with 8-direction movement through non-wall tiles reaches every exit, entity slot and interactable from `party_start`.
 5. No two objects share a tile.
 6. Exits sit on walkable tiles on the map boundary or in a door tile.
 7. The serialized map is at most 250 KB before compression.
+8. Hazards are never the only way through: every exit, entity slot and interactable is reachable from `party_start` without stepping on a tile whose ground `TileDef` has role `hazard`. (A hazard's damage type and dice come from its material, found by `material_id` in the engine library.)
+
+The validator also warns, without failing, about `TileDef`s no layer uses; the generator never emits any. Tile layer placement: floor, path, door, hazard and walkable liquid go on `ground`; wall, obstacle and non-walkable liquid on `walls` (the collision layer, so a tree blocks sight as well as movement); decor props on `decor`; tree canopies on `above`. A `TileDef`'s `walkable` is false exactly when its layer is `walls`.
 
 **Accounts**
 

@@ -33,7 +33,7 @@ describe("buildContextPack", () => {
       sceneNote: "Hollowmere at dusk.",
     });
     expect(pack.scene.mapId).toBe("m_start");
-    expect(pack.scene.biome).toBe("town");
+    expect(pack.scene.setting).toBe("Harbor town");
     expect(pack.scene.description).toBe("Hollowmere at dusk.");
     const pcs = pack.scene.entities.filter((e) => e.kind === "character");
     expect(pcs.map((e) => e.id).sort()).toEqual(["ch_brindle", "ch_tamsin"]);

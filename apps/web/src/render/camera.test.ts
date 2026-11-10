@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DESKTOP_SCALE, baseScale, clampAxis, clampCamera, screenToTile, tileToScreen } from "./camera";
 import { paletteColorForGid, PALETTE } from "./palette";
-import { clearTileset, setTileset, tileStyle } from "./tileset";
 
 describe("camera", () => {
   it("fits about 11 tiles across on phones", () => {
@@ -27,19 +26,9 @@ describe("camera", () => {
   });
 });
 
-describe("tileset", () => {
-  it("falls back to a deterministic palette color for unknown gids", () => {
-    clearTileset();
-    expect(tileStyle(99).color).toBe(paletteColorForGid(99));
-    expect(PALETTE).toContain(tileStyle(99).color);
-    expect(tileStyle(99)).toEqual(tileStyle(99));
-  });
-
-  it("uses an installed tileset, offset by first_gid", () => {
-    clearTileset();
-    setTileset({ first_gid: 10, tiles: [{ id: 1, name: "a", color: "#112233", pattern: "dots" }, { id: 2, color: "bad" }] });
-    expect(tileStyle(10)).toMatchObject({ color: "#112233", pattern: "dots" });
-    expect(tileStyle(11).color).toBe(paletteColorForGid(11));
-    clearTileset();
+describe("palette fallback", () => {
+  it("gives unknown ids a deterministic palette color", () => {
+    expect(PALETTE).toContain(paletteColorForGid(99));
+    expect(paletteColorForGid(99)).toBe(paletteColorForGid(99));
   });
 });

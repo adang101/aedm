@@ -5,8 +5,9 @@ import {
   TILE, clampCamera, clampZoom, follow, scaleOf, screenToTile, type Camera,
 } from "./camera";
 import { OUTLINE } from "./palette";
-import { drawEntity } from "./sprites";
-import { drawDecor, drawExit, drawGround, drawInteractable, drawWall } from "./tiles";
+import { drawEntityBody, drawEntityHud, type EntityDrawOpts } from "./sprites";
+import { drawExit, drawInteractable, createMapStyle, type MapStyle } from "./tiles";
+import { drawLights, drawMood, type Light } from "./mood";
 
 export interface TapInfo {
   tileX: number;
@@ -23,7 +24,7 @@ export interface RenderHooks {
   isTargetable(e: EntityView): boolean;
 }
 
-interface MapLayers {
+export interface MapLayers {
   mapId: string;
   ref: GameMap;
   w: number;
@@ -33,9 +34,11 @@ interface MapLayers {
   decor: number[];
   above: number[];
   objects: MapObject[];
+  style: MapStyle;
+  mood: GameMap["meta"]["setting"]["mood"];
 }
 
-function extractLayers(map: GameMap): MapLayers {
+export function extractLayers(map: GameMap): MapLayers {
   const tiles = (name: string): number[] => {
     const l = map.layers.find((x) => x.type === "tilelayer" && x.name === name);
     return l && l.type === "tilelayer" ? l.data : [];
@@ -45,7 +48,106 @@ function extractLayers(map: GameMap): MapLayers {
     mapId: map.id, ref: map, w: map.width, h: map.height,
     ground: tiles("ground"), walls: tiles("walls"), decor: tiles("decor"), above: tiles("above"),
     objects: obj && obj.type === "objectgroup" ? obj.objects : [],
+    style: createMapStyle(map.tileset.tiles, tiles("ground")),
+    mood: map.meta.setting.mood,
   };
+}
+
+export interface PaintHooks {
+  /** Receives the positions of lights (torches, braziers) as they are drawn. */
+  lights?: Light[];
+  /** Called after the ground, walls and exits and before props (hover and flash markers). */
+  beforeProps?: () => void;
+  /** Called after each row of props, so the caller can draw entities that stand in that row. */
+  afterRow?: (y: number) => void;
+}
+
+/** Everything under the mood tint, in world pixels: ground, walls, decals, exits, props and canopy. */
+export function paintMapLayers(ctx: CanvasRenderingContext2D, L: MapLayers, r: { x0: number; y0: number; x1: number; y1: number }, now: number, hooks: PaintHooks = {}): void {
+  const { x0, y0, x1, y1 } = r;
+  const st = L.style;
+  const gidAt = (arr: number[], x: number, y: number) => (x < 0 || y < 0 || x >= L.w || y >= L.h ? 0 : (arr[y * L.w + x] ?? 0));
+  const wallAt = (x: number, y: number) => x < 0 || y < 0 || x >= L.w || y >= L.h || st.isWall(gidAt(L.walls, x, y)) || st.isWall(gidAt(L.ground, x, y));
+  const liquidAt = (x: number, y: number) => st.isLiquid(gidAt(L.walls, x, y)) || st.isLiquid(gidAt(L.ground, x, y)) || wallAt(x, y);
+
+  const drawFullCell = (gid: number, x: number, y: number) => {
+    st.drawFull(ctx, gid, x * TILE, y * TILE, now);
+    if (st.isLiquid(gid)) {
+      st.drawLiquidEdges(ctx, gid, x * TILE, y * TILE, !liquidAt(x, y - 1), !liquidAt(x, y + 1), !liquidAt(x - 1, y), !liquidAt(x + 1, y));
+    }
+  };
+  const drawWallCell = (gid: number, x: number, y: number) =>
+    st.drawWall(ctx, gid, x * TILE, y * TILE, !wallAt(x, y + 1), !wallAt(x, y - 1), !wallAt(x - 1, y), !wallAt(x + 1, y));
+
+  // 1. ground: floors, liquids, hazards, doors; an underlay where nothing is drawn or a prop will stand
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const i = y * L.w + x;
+      const g = L.ground[i] ?? 0;
+      const cls = g ? st.classOf(g) : null;
+      if (cls === "full") drawFullCell(g, x, y);
+      else if (cls === "wall") drawWallCell(g, x, y);
+      else if (!g || cls === "prop") st.drawFull(ctx, st.underlay, x * TILE, y * TILE, now);
+      else st.drawFull(ctx, st.underlay, x * TILE, y * TILE, now);
+    }
+  }
+  // 2. walls and flat decals; props wait for the depth-sorted pass
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const i = y * L.w + x;
+      for (const arr of [L.walls, L.decor]) {
+        const g = arr[i] ?? 0;
+        if (!g) continue;
+        const cls = st.classOf(g);
+        if (cls === "wall") drawWallCell(g, x, y);
+        else if (cls === "full") drawFullCell(g, x, y);
+      }
+    }
+  }
+  // soft shadow of a wall on the floor south of it
+  ctx.fillStyle = "rgba(27,22,38,0.28)";
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (wallAt(x, y) && !wallAt(x, y + 1) && y + 1 < L.h) ctx.fillRect(x * TILE, (y + 1) * TILE, TILE, 5);
+    }
+  }
+  for (const o of L.objects) {
+    if (o.type === "exit") drawExit(ctx, o.x * TILE, o.y * TILE, now);
+  }
+
+  hooks.beforeProps?.();
+
+  // 3. props, row by row
+  const lights = hooks.lights;
+  const drawObjects = (y: number) => {
+    for (const o of L.objects) if (o.type === "interactable" && o.y === y) drawInteractable(ctx, o.kind, o.state, o.x * TILE, o.y * TILE);
+  };
+  for (let y = y0; y <= y1; y++) {
+    drawObjects(y);
+    for (let x = x0; x <= x1; x++) {
+      const i = y * L.w + x;
+      for (const arr of [L.ground, L.walls, L.decor]) {
+        const g = arr[i] ?? 0;
+        if (!g || st.classOf(g) !== "prop") continue;
+        const art = st.drawProp(ctx, g, x * TILE, y * TILE, now);
+        if (art?.light) lights?.push({ x: x * TILE + TILE / 2, y: y * TILE + 14, r: 96 });
+      }
+    }
+    hooks.afterRow?.(y);
+  }
+
+  // 4. canopy and other tiles above the entities
+  ctx.globalAlpha = 0.92;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const g = L.above[y * L.w + x] ?? 0;
+      if (!g) continue;
+      const cls = st.classOf(g);
+      if (cls === "prop") st.drawProp(ctx, g, x * TILE, y * TILE, now);
+      else if (cls === "full") st.drawFull(ctx, g, x * TILE, y * TILE, now);
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 export class MapRenderer {
@@ -60,6 +162,7 @@ export class MapRenderer {
   private hover: { x: number; y: number } | null = null;
   private flash: { x: number; y: number; until: number } | null = null;
   private pos = new Map<string, { x: number; y: number }>();
+  private facing = new Map<string, "left" | "right">();
   private pointers = new Map<number, { x: number; y: number }>();
   private pinchDist = 0;
   private down: { x: number; y: number; id: number } | null = null;
@@ -210,7 +313,8 @@ export class MapRenderer {
     const sc = scaleOf(this.viewW, this.cam) * this.dpr;
     const ox = Math.round(this.viewW / 2 * this.dpr - this.cam.cx * sc);
     const oy = Math.round(this.viewH / 2 * this.dpr - this.cam.cy * sc);
-    ctx.setTransform(sc, 0, 0, sc, ox, oy);
+    const world = () => ctx.setTransform(sc, 0, 0, sc, ox, oy);
+    world();
     ctx.imageSmoothingEnabled = false;
 
     // visible tile range
@@ -218,48 +322,43 @@ export class MapRenderer {
     const x1 = Math.min(L.w - 1, Math.ceil(((this.canvas.width - ox) / sc) / TILE));
     const y1 = Math.min(L.h - 1, Math.ceil(((this.canvas.height - oy) / sc) / TILE) + 1);
 
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const i = y * L.w + x;
-        const g = L.ground[i];
-        if (g) drawGround(ctx, g, x * TILE, y * TILE);
-      }
-    }
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const w = L.walls[y * L.w + x];
-        if (w) drawWall(ctx, w, x * TILE, y * TILE, !(L.walls[(y + 1) * L.w + x] ?? 0));
-        else {
-          const d = L.decor[y * L.w + x];
-          if (d) drawDecor(ctx, d, x * TILE, y * TILE);
-        }
-      }
-    }
-    for (const o of L.objects) {
-      if (o.type === "interactable") drawInteractable(ctx, o.kind, o.state, o.x * TILE, o.y * TILE);
-      else if (o.type === "exit") drawExit(ctx, o.x * TILE, o.y * TILE, now);
-    }
-
-    this.drawMarkers(s, now);
-
+    const lights: Light[] = [];
+    // entities are drawn row by row among the props so a tree in front hides the feet of someone behind it
     const mine = myEntity(s);
     const active = s.combat?.active_id;
-    const list = Object.values(s.entities).sort((a, b) => (this.pos.get(a.id)?.y ?? a.y) - (this.pos.get(b.id)?.y ?? b.y));
-    for (const e of list) {
-      const p = this.pos.get(e.id) ?? { x: e.x, y: e.y };
-      const hovered = !!this.hover && this.hover.x === e.x && this.hover.y === e.y;
-      drawEntity(ctx, e, {
-        x: p.x * TILE, y: p.y * TILE, time: now, mine: mine?.id === e.id, activeTurn: active === e.id,
-        targetable: this.hooks.isTargetable(e), hovered, label: true,
-      });
-    }
+    const ents = Object.values(s.entities)
+      .map((e) => {
+        const p = this.pos.get(e.id) ?? { x: e.x, y: e.y };
+        return { e, p, row: Math.max(y0, Math.min(y1, Math.round(p.y))) };
+      })
+      .sort((a, b) => a.p.y - b.p.y || a.p.x - b.p.x);
+    const huds: { e: EntityView; o: EntityDrawOpts }[] = [];
+    let ei = 0;
+    while (ei < ents.length && ents[ei]!.row < y0) ei++;
+    paintMapLayers(ctx, L, { x0, y0, x1, y1 }, now, {
+      lights,
+      beforeProps: () => this.drawMarkers(s, now),
+      afterRow: (y) => {
+        while (ei < ents.length && ents[ei]!.row <= y) {
+          const { e, p } = ents[ei]!;
+          const hovered = !!this.hover && this.hover.x === e.x && this.hover.y === e.y;
+          const o: EntityDrawOpts = {
+            x: p.x * TILE, y: p.y * TILE, time: now, mine: mine?.id === e.id, activeTurn: active === e.id,
+            targetable: this.hooks.isTargetable(e), hovered, label: true, facing: this.facing.get(e.id) ?? "right",
+          };
+          drawEntityBody(ctx, e, o);
+          huds.push({ e, o });
+          ei++;
+        }
+      },
+    });
 
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const a = L.above[y * L.w + x];
-        if (a) { ctx.globalAlpha = 0.92; drawDecor(ctx, a, x * TILE, y * TILE); ctx.globalAlpha = 1; }
-      }
-    }
+    // 5. whole-scene mood tint and lights (screen space), then HUD pieces on top
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    drawMood(ctx, L.mood, this.canvas.width, this.canvas.height, now);
+    drawLights(ctx, L.mood, lights, sc, ox, oy, now);
+    world();
+    for (const h of huds) drawEntityHud(ctx, h.e, h.o);
   }
 
   private drawMarkers(_s: AppState, now: number): void {
@@ -290,9 +389,10 @@ export class MapRenderer {
       const d = Math.hypot(dx, dy);
       if (d < 0.01) { p.x = e.x; p.y = e.y; continue; }
       const step = Math.min(d, speed * dt);
+      if (Math.abs(dx) > 0.05) this.facing.set(e.id, dx > 0 ? "right" : "left");
       p.x += (dx / d) * step; p.y += (dy / d) * step;
     }
-    for (const id of this.pos.keys()) if (!s.entities[id]) this.pos.delete(id);
+    for (const id of this.pos.keys()) if (!s.entities[id]) { this.pos.delete(id); this.facing.delete(id); }
   }
 
   private updateCamera(s: AppState, L: MapLayers, dt: number): void {

@@ -5,6 +5,7 @@ import {
 } from "./enums";
 import { EnemyIdSchema, EntityIdSchema, MapIdSchema, countWords, maxWords, shortWord, text, wordRange } from "./common";
 import { MapBriefSchema } from "./map";
+import { AppearanceSchema } from "./sprite";
 
 const coord = z.number().int().min(0).max(255);
 
@@ -27,6 +28,8 @@ export const CreateNpcActionSchema = z.strictObject({
   x: coord,
   y: coord,
   sprite_tags: z.array(shortWord).max(5),
+  /** Optional look hint for the sprite designer (at most 160 chars). */
+  appearance: AppearanceSchema.optional(),
 });
 
 export const NpcSayActionSchema = z.strictObject({
@@ -40,6 +43,8 @@ export const CreateEnemyActionSchema = z.strictObject({
   concept: text(200),
   role: EnemyRoleSchema,
   setting_notes: text(200, 0).default(""),
+  /** Optional look hint for the sprite designer (at most 160 chars). */
+  appearance: AppearanceSchema.optional(),
   /** Optional handle (en_ + snake_case, at most 40 chars). The server registers the built archetype under it so spawn_entity can use it as archetype_id. */
   ref: z.string().trim().max(40).regex(/^en_[a-z0-9_]+$/, "ref must be en_ plus snake_case").optional(),
 });

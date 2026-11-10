@@ -4,7 +4,8 @@ import {
   type ServerMessageType,
 } from "@aedm/schemas";
 import type { Transport, TransportFactory, TransportHandlers } from "./transport";
-import { MOCK_H, MOCK_W, NARRATION_OPENING, NPC_ODALYS, buildMockMap, choristerEntities, wallAt } from "./mock-world";
+import { FIRST_SCENE, NARRATION_OPENING, blockedAt, buildScenes, sceneFromText, type MockScene } from "./mock-world";
+import { PREMADE_SPECS } from "../state/sprite-builder";
 
 type Payload = Record<string, unknown>;
 type PlayerStatus = "online" | "away" | "offline" | "autopilot";
@@ -22,7 +23,7 @@ function toView(c: (typeof fixtures)["BRINDLE"]): CharacterView {
   return {
     v: 1, id: c.id, name: c.name, title: c.title, description: c.description, key_ability: c.key_ability, scores: c.scores,
     trait_tags: c.trait_tags, abilities: c.abilities, weapon_tier: c.weapon_tier, armor_bonus: c.armor_bonus,
-    level: c.level, growth: c.growth, hp: c.hp, hp_max: c.hp_max, sprite_recipe: c.sprite_recipe,
+    level: c.level, growth: c.growth, hp: c.hp, hp_max: c.hp_max, sprite_recipe: PREMADE_SPECS[c.id] ?? c.sprite_recipe,
   };
 }
 
@@ -54,7 +55,8 @@ export function mockCharacterFrom(c: CharacterCreate): CharacterView {
     v: 1, id: ME_CHAR, name: c.name, title: c.title, description: c.description, key_ability: c.key_ability,
     scores: { ...c.scores }, trait_tags: c.trait_tags,
     abilities: texts.map((t, i) => mockAbilityFrom(t, `ab_me_${i + 1}`, i)),
-    weapon_tier: 1, armor_bonus: 2, level: 1, growth: 0, hp, hp_max: hp, sprite_recipe: c.sprite_recipe,
+    weapon_tier: 1, armor_bonus: 2, level: 1, growth: 0, hp, hp_max: hp,
+    sprite_recipe: c.sprite_recipe ?? { kind: "shape", shape: "circle", color: "#9a6a3f", accent: "#e8c95a", glyph: (c.name.trim()[0] ?? "?").toUpperCase() },
   };
 }
 
@@ -71,7 +73,8 @@ function mockAbilityNames(c: CharacterCreate): string[] {
 
 const summaryOf = (t: MockTemplate): CharacterSummary => ({
   id: t.id, name: t.character.name, title: t.character.title, key_ability: t.character.key_ability,
-  sprite_recipe: t.character.sprite_recipe, ability_names: mockAbilityNames(t.character), forged: t.forged, saved_at: t.saved_at,
+  sprite_recipe: t.character.sprite_recipe ?? { kind: "shape", shape: "circle", color: "#9a6a3f", accent: "#e8c95a", glyph: (t.character.name.trim()[0] ?? "?").toUpperCase() },
+  ability_names: mockAbilityNames(t.character), forged: t.forged, saved_at: t.saved_at,
 });
 
 /**
@@ -103,7 +106,9 @@ export class MockServer {
   private authUser: MockAccount | null = null;
 
   // game
-  private map: GameMap = buildMockMap();
+  private scenes: Record<string, MockScene> = buildScenes();
+  private scene: MockScene = this.scenes[FIRST_SCENE]!;
+  private map: GameMap = this.scene.map;
   private ents: Record<string, EntityView> = {};
   private party: CharacterView[] = [];
   private seq = 0;
@@ -447,7 +452,9 @@ export class MockServer {
   private beginGame(): void {
     this.phase = "playing";
     this.recordAutosave();
-    this.map = buildMockMap();
+    this.scenes = buildScenes();
+    this.scene = this.scenes[FIRST_SCENE]!;
+    this.map = this.scene.map;
     this.ents = {};
     this.party = [];
     this.seq = 0;
@@ -463,8 +470,7 @@ export class MockServer {
       this.party.push(toView(f.char));
       this.addPc(toView(f.char), f.id, f.start);
     }
-    this.ents[NPC_ODALYS.id] = { ...NPC_ODALYS };
-    for (const e of choristerEntities()) this.ents[e.id] = e;
+    for (const e of this.scene.entities) this.ents[e.id] = structuredClone(e);
     this.lobbyState();
     this.sendSnapshot();
     this.script();
@@ -492,7 +498,7 @@ export class MockServer {
       this.later(() => {
         this.emit("roll_result", { who: ME_CHAR, label: "Perception: scan the square", dice: [14], modifier: 2, total: 16, target: 12, outcome: "success" });
         this.engine("You notice the robed figures never blink.");
-        this.emit("chips", { chips: ["Talk to Odalys", "Look around", "Attack the chorister"] });
+        this.emit("chips", { chips: ["Talk to Odalys", "Look around", "Go to the crypt", "Go to the snowy trail"] });
       }, 500);
     }), 700);
     this.later(() => this.chat(FAKES.mira.id, "Mira", "ooc", "ready when you are"), 5000);
@@ -507,7 +513,7 @@ export class MockServer {
     if (!e) return;
     const dx = rnd(3) - 2, dy = rnd(3) - 2;
     const nx = e.x + dx, ny = e.y + dy;
-    if (this.free(nx, ny) && cheb({ x: nx, y: ny }, { x: 13, y: 10 }) <= 4) this.moveEntity(e, nx, ny);
+    if (this.free(nx, ny) && cheb({ x: nx, y: ny }, this.scene.start) <= 4) this.moveEntity(e, nx, ny);
   }
 
   // ---------- helpers ----------
@@ -517,7 +523,7 @@ export class MockServer {
   }
 
   private free(x: number, y: number): boolean {
-    return !wallAt(this.map, x, y) && !this.occupant(x, y);
+    return !blockedAt(this.map, x, y) && !this.occupant(x, y);
   }
 
   private diff(changed: EntityView[], removed: string[] = [], extra: Payload = {}): void {
@@ -561,7 +567,7 @@ export class MockServer {
       const d = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] }[p.direction as "n"] ?? [0, 0];
       dest = { x: me.x + d[0]!, y: me.y + d[1]! };
     } else dest = { x: Number(p.x), y: Number(p.y) };
-    if (wallAt(this.map, dest.x, dest.y)) return this.fail("invalid_state", "A wall blocks the way.", ack);
+    if (blockedAt(this.map, dest.x, dest.y)) return this.fail("invalid_state", "Something blocks the way.", ack);
     const occ = this.occupant(dest.x, dest.y);
     if (occ && occ.id !== me.id) return this.fail("invalid_state", `${occ.name} is in the way.`, ack);
     const path = this.findPath(me, dest);
@@ -572,7 +578,8 @@ export class MockServer {
   }
 
   private findPath(from: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number }[] | null {
-    const key = (x: number, y: number) => y * MOCK_W + x;
+    const W = this.map.width, H = this.map.height;
+    const key = (x: number, y: number) => y * W + x;
     const prev = new Map<number, number>();
     const q: { x: number; y: number }[] = [from];
     prev.set(key(from.x, from.y), -1);
@@ -580,16 +587,16 @@ export class MockServer {
       const cur = q.shift()!;
       if (cur.x === to.x && cur.y === to.y) {
         const out: { x: number; y: number }[] = [];
-        for (let k = key(cur.x, cur.y); k !== key(from.x, from.y); k = prev.get(k)!) out.unshift({ x: k % MOCK_W, y: Math.floor(k / MOCK_W) });
+        for (let k = key(cur.x, cur.y); k !== key(from.x, from.y); k = prev.get(k)!) out.unshift({ x: k % W, y: Math.floor(k / W) });
         return out;
       }
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           if (!dx && !dy) continue;
           const nx = cur.x + dx, ny = cur.y + dy;
-          if (nx < 0 || ny < 0 || nx >= MOCK_W || ny >= MOCK_H || prev.has(key(nx, ny))) continue;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H || prev.has(key(nx, ny))) continue;
           if (!this.free(nx, ny)) continue;
-          if (dx && dy && (wallAt(this.map, cur.x + dx, cur.y) || wallAt(this.map, cur.x, cur.y + dy))) continue;
+          if (dx && dy && (blockedAt(this.map, cur.x + dx, cur.y) || blockedAt(this.map, cur.x, cur.y + dy))) continue;
           prev.set(key(nx, ny), key(cur.x, cur.y));
           q.push({ x: nx, y: ny });
         }
@@ -604,9 +611,54 @@ export class MockServer {
       this.later(() => {
         if (token !== this.walkToken || !this.free(step.x, step.y)) return;
         this.moveEntity(e, step.x, step.y);
+        const exit = e.id === ME_CHAR ? this.exitAt(step.x, step.y) : null;
+        if (exit && !this.combat) { this.travel(exit); return; }
         if (!this.combat && this.enemies().some((en) => cheb(en, e) <= 4)) this.startCombat();
       }, 110 * i);
     });
+  }
+
+  private exitAt(x: number, y: number): string | null {
+    for (const l of this.map.layers) {
+      if (l.type !== "objectgroup") continue;
+      for (const o of l.objects) if (o.type === "exit" && o.x === x && o.y === y && this.scenes[o.to]) return o.to;
+    }
+    return null;
+  }
+
+  private nearestFree(x: number, y: number, taken: Set<string>): { x: number; y: number } {
+    for (let r = 0; r < 6; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = x + dx, ny = y + dy;
+          if (!blockedAt(this.map, nx, ny) && !taken.has(`${nx},${ny}`)) return { x: nx, y: ny };
+        }
+      }
+    }
+    return { x, y };
+  }
+
+  /** Move the party to another mock map: new snapshot, new cast, a line of narration. */
+  private travel(id: string): void {
+    const next = this.scenes[id];
+    if (!next || this.phase !== "playing") return;
+    if (this.combat) return this.engine("You cannot slip away in the middle of a fight.");
+    if (next === this.scene) return this.engine("You are already here.");
+    this.walkToken++;
+    this.scene = next;
+    this.map = next.map;
+    const pcs = Object.values(this.ents).filter((e) => e.kind === "pc");
+    this.ents = {};
+    const taken = new Set<string>();
+    pcs.sort((a, b) => (a.id === ME_CHAR ? -1 : b.id === ME_CHAR ? 1 : 0)).forEach((pc) => {
+      const at = this.nearestFree(next.start.x, next.start.y, taken);
+      taken.add(`${at.x},${at.y}`);
+      this.ents[pc.id] = { ...pc, x: at.x, y: at.y };
+    });
+    for (const e of next.entities) this.ents[e.id] = structuredClone(e);
+    this.sendSnapshot();
+    this.sys(`The party arrives at ${next.title}.`);
+    this.narrate(next.arrival, () => this.emit("chips", { chips: next.chips }));
   }
 
   // ---------- chat and acts ----------
@@ -620,15 +672,17 @@ export class MockServer {
     }
     if (this.phase !== "playing") return;
     if (/vote/i.test(text)) return this.startVote();
+    const dest = /\b(go|travel|head|walk|descend|enter|return|take us|back)\b/i.test(text) ? sceneFromText(text) : null;
+    if (dest) return this.travel(dest);
     if (/attack|fight|chorister|battle|strike/i.test(text)) {
       this.narrate("You step toward the grey-robed figures. Their heads turn in perfect unison, and the humming stops. Then it begins again, higher, and wrong.", () => this.startCombat());
     } else if (/odalys|inn|talk|ask/i.test(text)) {
-      this.later(() => this.chat(NPC_ODALYS.id, "Odalys", "ic", "Three of my regulars walked into the marsh last night, humming. Please, find out why."), 500);
+      this.later(() => this.chat("npc_odalys", "Odalys", "ic", "Three of my regulars walked into the marsh last night, humming. Please, find out why."), 500);
       this.narrate("Odalys sets her broom against the porch rail and wipes her hands on her apron, glancing toward the reeds.");
     } else {
       this.narrate("The village holds its breath. A lantern swings though there is no wind, and the humming from the marsh swells, then settles.");
     }
-    this.later(() => this.emit("chips", { chips: ["Talk to Odalys", "Check the chest", "Attack the chorister"] }), 1500);
+    this.later(() => this.emit("chips", { chips: this.scene.id === FIRST_SCENE ? ["Talk to Odalys", "Check the chest", "Go to the crypt"] : this.scene.chips }), 1500);
   }
 
   private onAct(verb: string, target: string, ack: string): void {

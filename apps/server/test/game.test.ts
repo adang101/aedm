@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { findPath, isWalkable, occupiedTiles, type GameState } from "@aedm/engine";
-import type { EntityView, GameMap } from "@aedm/schemas";
+import { WS_VERSION, type EntityView, type GameMap } from "@aedm/schemas";
 import {
   dmReply, scriptedProvider, sleep, startedTable, startHarness, type Harness, type Table, type TestClient,
 } from "./helpers";
@@ -196,7 +196,7 @@ describe("connection handling", () => {
     const a = await h.connect();
     await a.createAndJoin("Alice");
 
-    const big = JSON.stringify({ v: 1, type: "say", id: "big1", ts: 1, payload: { text: "x".repeat(9000), channel: "ooc" } });
+    const big = JSON.stringify({ v: WS_VERSION, type: "say", id: "big1", ts: 1, payload: { text: "x".repeat(9000), channel: "ooc" } });
     a.sendRaw(big);
     const e1 = await a.wait("error", (e) => e.ack_id === "big1");
     expect(e1.payload.code).toBe("bad_message");
@@ -204,11 +204,11 @@ describe("connection handling", () => {
     a.sendRaw("not json");
     await a.wait("error", (e) => e.message.includes("JSON"));
 
-    a.sendRaw(JSON.stringify({ v: 2, type: "ping", id: "old1", ts: 1, payload: {} }));
+    a.sendRaw(JSON.stringify({ v: WS_VERSION - 1, type: "ping", id: "old1", ts: 1, payload: {} }));
     const e2 = await a.wait("error", (e) => e.ack_id === "old1");
     expect(e2.payload.code).toBe("version_mismatch");
 
-    a.sendRaw(JSON.stringify({ v: 1, type: "say", id: "bad1", ts: 1, payload: { text: "", channel: "ic" } }));
+    a.sendRaw(JSON.stringify({ v: WS_VERSION, type: "say", id: "bad1", ts: 1, payload: { text: "", channel: "ic" } }));
     const e3 = await a.wait("error", (e) => e.ack_id === "bad1");
     expect(e3.payload.code).toBe("bad_message");
 

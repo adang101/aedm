@@ -1,23 +1,14 @@
-/** Master palette from docs/style-bible.md. */
-export const OUTLINE = "#1b1626";
+/** Master palette helpers (docs/style-bible.md). Ramps come from @aedm/schemas so there is one source. */
+import { OUTLINE_HEX, PALETTE as SCHEMA_PALETTE, RAMP_NAMES, type Ramp } from "@aedm/schemas";
 
-export const RAMPS = {
-  grass: ["#2f5d34", "#4f8a3c", "#7cb342", "#b5d66b"],
-  stone: ["#3b3f55", "#5c6380", "#8b93b0", "#c4c9dc"],
-  earth: ["#4a2f24", "#70472f", "#9a6a3f", "#c99a63"],
-  sand: ["#8a6a2b", "#c99a3a", "#e8c95a", "#f6e8a0"],
-  water: ["#1f3f7a", "#2f6bb5", "#4f9fe0", "#9fd4f5"],
-  fire: ["#7a1f2b", "#c0392b", "#e8683a", "#f5a65b"],
-  magic: ["#3d2a6b", "#6a45a8", "#9b72d8", "#cbb0f0"],
-  skin: ["#6b3b2e", "#a5654a", "#d39a72", "#f2cfa6"],
-} as const;
-
-export const PALETTE: readonly string[] = Object.values(RAMPS).flat();
+export const OUTLINE = OUTLINE_HEX;
+export const RAMPS = SCHEMA_PALETTE;
+export const PALETTE: readonly string[] = RAMP_NAMES.flatMap((n) => [...SCHEMA_PALETTE[n]]);
 
 /** Body color choices for the sprite picker: the two middle tones of each ramp. */
-export const BODY_SWATCHES: readonly string[] = Object.values(RAMPS).flatMap((r) => [r[1], r[2]]);
+export const BODY_SWATCHES: readonly string[] = RAMP_NAMES.flatMap((n) => [SCHEMA_PALETTE[n][1], SCHEMA_PALETTE[n][2]]);
 /** Accent color choices: the darkest and lightest tone of each ramp. */
-export const ACCENT_SWATCHES: readonly string[] = Object.values(RAMPS).flatMap((r) => [r[0], r[3]]);
+export const ACCENT_SWATCHES: readonly string[] = RAMP_NAMES.flatMap((n) => [SCHEMA_PALETTE[n][0], SCHEMA_PALETTE[n][3]]);
 
 export function hashString(s: string): number {
   let h = 2166136261;
@@ -28,29 +19,71 @@ export function hashString(s: string): number {
   return h >>> 0;
 }
 
-/** Deterministic palette color for an unknown tile id. */
+/** Deterministic palette color for an unknown id. */
 export function paletteColorForGid(gid: number): string {
   const idx = Math.imul(gid, 2654435761) >>> 0;
   return PALETTE[idx % PALETTE.length] ?? PALETTE[0]!;
 }
 
-function parse(hex: string): [number, number, number] {
+export function parseHex(hex: string): [number, number, number] {
   const n = Number.parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
-/** Mix `hex` toward black (amount < 0) or white (amount > 0). amount in [-1, 1]. */
-export function shade(hex: string, amount: number): string {
-  const [r, g, b] = parse(hex);
-  const t = amount < 0 ? 0 : 255;
-  const k = Math.abs(amount);
-  const m = (c: number) => Math.round(c + (t - c) * k);
-  return `rgb(${m(r)}, ${m(g)}, ${m(b)})`;
+function toHex(r: number, g: number, b: number): string {
+  const c = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+/** Linear mix of two #rrggbb colors; t = 0 gives a, t = 1 gives b. */
+export function mixHex(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = parseHex(a), [br, bg, bb] = parseHex(b);
+  return toHex(ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t);
+}
+
+const RAMP_INDEX = new Map<string, { ramp: Ramp; i: number }>();
+for (const n of RAMP_NAMES) SCHEMA_PALETTE[n].forEach((c, i) => RAMP_INDEX.set(c.toLowerCase(), { ramp: SCHEMA_PALETTE[n], i }));
+
+/** Which ramp a palette color sits on, and its index (0 dark .. 3 light), or null. */
+export function rampPosition(hex: string): { ramp: Ramp; i: number } | null {
+  return RAMP_INDEX.get(hex.toLowerCase()) ?? null;
+}
+
+/**
+ * Move `steps` along the master palette ramp (positive = lighter). Past an end of the ramp the color
+ * keeps going toward white or the outline color. A color that is not on a ramp is lightened or darkened.
+ * Always returns lowercase #rrggbb.
+ */
+export function shade(hex: string, steps: number): string {
+  const h = hex.toLowerCase();
+  const hit = RAMP_INDEX.get(h);
+  if (hit && Number.isInteger(steps)) {
+    const j = hit.i + steps;
+    if (j >= 0 && j <= 3) return hit.ramp[j]!;
+    if (j > 3) return mixHex(hit.ramp[3], "#ffffff", Math.min(1, 0.32 * (j - 3)));
+    return mixHex(hit.ramp[0], OUTLINE, Math.min(1, 0.5 * -j));
+  }
+  if (steps === 0) return h;
+  return steps > 0 ? mixHex(h, "#ffffff", Math.min(1, 0.22 * steps)) : mixHex(h, OUTLINE, Math.min(1, 0.3 * -steps));
+}
+
+/** Three tones and a highlight around a base color: light from the top left. */
+export interface Tones { hi: string; base: string; sh: string; dk: string }
+
+const toneCache = new Map<string, Tones>();
+export function tones(hex: string): Tones {
+  const key = hex.toLowerCase();
+  let t = toneCache.get(key);
+  if (!t) {
+    t = { hi: shade(key, 1), base: key, sh: shade(key, -1), dk: shade(key, -2) };
+    toneCache.set(key, t);
+  }
+  return t;
 }
 
 /** Relative luminance 0..1, for choosing a readable glyph color. */
 export function luminance(hex: string): number {
-  const [r, g, b] = parse(hex);
+  const [r, g, b] = parseHex(hex);
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 

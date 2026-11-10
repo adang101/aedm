@@ -213,6 +213,8 @@ export function clampEnemy(draft: Enemy | EnemyDraft, partyLevel: number): { ene
     sprite_tags: src.sprite_tags ?? [],
     abilities,
   };
+  if (typeof src.appearance === "string" && src.appearance.trim()) enemy.appearance = src.appearance.trim().slice(0, 160);
+  if ((src as { sprite?: Enemy["sprite"] }).sprite) enemy.sprite = (src as { sprite?: Enemy["sprite"] }).sprite;
   if (typeof src.id === "string" && /^en_[A-Za-z0-9_-]{1,60}$/.test(src.id)) enemy.id = src.id;
   enemy.threat = enemyThreat(enemy);
   return { enemy, notes };

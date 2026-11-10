@@ -1,4 +1,4 @@
-import type { EntityView } from "@aedm/schemas";
+import { spriteSwatch, type EntityView } from "@aedm/schemas";
 import { MapRenderer, type TapInfo } from "../render/renderer";
 import { myCharacter, myEntity, pendingLevelUp, type AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
@@ -183,7 +183,7 @@ export function mountGame(ctx: Ctx): Screen {
         onClick: open,
         onKeydown: (ev: Event) => { const k = (ev as KeyboardEvent).key; if (k === "Enter" || k === " ") { ev.preventDefault(); open(); } },
       },
-        h("span", { class: "init-dot", style: `background:${c.sprite_recipe.color};border-color:${c.sprite_recipe.accent}` }, c.sprite_recipe.glyph),
+        h("span", { class: "init-dot", style: `background:${spriteSwatch(c.sprite_recipe, c.name).color};border-color:${spriteSwatch(c.sprite_recipe, c.name).accent}` }, spriteSwatch(c.sprite_recipe, c.name).glyph),
         h("div", { class: "member-main" },
           h("div", { class: "member-name" }, h("span", { class: `dot ${player?.status ?? "online"}` }), c.name.split(" ")[0]),
           h("div", { class: "hpbar" }, h("i", { class: frac < 0.3 ? "low" : frac < 0.6 ? "mid" : "", style: `width:${Math.round(frac * 100)}%` })),

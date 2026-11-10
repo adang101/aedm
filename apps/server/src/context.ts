@@ -1,6 +1,6 @@
 import type { DmContextPack, SceneEntity } from "@aedm/llm";
 import {
-  RULES, computePartyLevel, currentMap, entitiesOnMap, getObjects, lootCap, type GameState,
+  MATERIAL_IDS, RULES, computePartyLevel, currentMap, entitiesOnMap, getObjects, lootCap, type GameState,
 } from "@aedm/engine";
 
 export interface RecentTurn {
@@ -100,6 +100,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
   const recent = (input.recentTurns ?? []).filter((t) => t.channel !== "ooc").slice(-limit);
 
   return {
+    materialIds: MATERIAL_IDS,
     storyDigest: `${state.bible.digest} Tone: ${state.bible.tone}`,
     contentRating: state.contentRating,
     linesAndVeils: input.linesAndVeils ?? "",
@@ -107,8 +108,8 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     facts: state.facts.map((f) => ({ ...f })),
     scene: {
       mapId: map?.id ?? "none",
-      biome: map?.meta.biome ?? "town",
-      description: input.sceneNote ?? (map ? `A ${map.meta.biome} location.` : "Nowhere yet."),
+      setting: map?.meta.setting.name ?? "Unknown place",
+      description: input.sceneNote ?? (map ? `${map.meta.setting.name}.` : "Nowhere yet."),
       entities: entities.slice(0, MAX_SCENE_ENTITIES),
       exits,
     },

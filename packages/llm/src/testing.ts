@@ -11,7 +11,7 @@ export function makeLanternPack(intents: { characterId: string; characterName: s
     facts: LANTERN_MARSH_FACTS,
     scene: {
       mapId: "m_hollowmere",
-      biome: "town",
+      setting: "Hollowmere town square",
       description: "Hollowmere's square at dusk, with the inn glowing at one end and the marsh path at the other.",
       entities: [
         { id: "ch_brindle", kind: "character", name: "Brindle Ash", x: 10, y: 10 },

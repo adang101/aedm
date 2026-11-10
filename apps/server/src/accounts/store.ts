@@ -5,6 +5,7 @@ import {
   CharacterCreateSchema, MAX_SAVED_CHARACTERS, PASSWORD_MAX, PASSWORD_MIN, USERNAME_PATTERN,
   type Ability, type AuthUser, type CharacterCreate, type CharacterSummary,
 } from "@aedm/schemas";
+import { designSpriteOffline } from "@aedm/engine";
 import { hashPassword, verifyDummy, verifyPassword } from "./password";
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -78,7 +79,8 @@ function abilityNames(t: CharacterTemplate): string[] {
 export function summarize(t: CharacterTemplate): CharacterSummary {
   const c = t.character;
   return {
-    id: t.id, name: c.name, title: c.title, key_ability: c.key_ability, sprite_recipe: c.sprite_recipe,
+    id: t.id, name: c.name, title: c.title, key_ability: c.key_ability,
+    sprite_recipe: c.sprite_recipe ?? designSpriteOffline({ concept: `${c.title} ${c.description}`.trim() || c.name, name: c.name, role: "pc", kind: "pc" }, 1),
     ability_names: abilityNames(t), forged: !!t.forged_abilities?.length, saved_at: t.saved_at,
   };
 }

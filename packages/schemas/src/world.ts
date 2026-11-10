@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   ContentRatingSchema, DispositionSchema, ItemKindSchema, NpcRoleSchema, QuestStatusSchema,
 } from "./enums";
+import { AppearanceSchema } from "./sprite";
 import { EntityIdSchema, MapIdSchema, shortWord, text } from "./common";
 
 export { ContentRatingSchema };
@@ -63,6 +64,7 @@ export const NpcRecordSchema = z.strictObject({
   x: z.number().int().min(0),
   y: z.number().int().min(0),
   sprite_tags: z.array(shortWord).max(5),
+  appearance: AppearanceSchema.optional(),
   disposition: DispositionSchema.optional(),
   alive: z.boolean().default(true),
 });

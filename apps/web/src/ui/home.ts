@@ -2,7 +2,7 @@ import { validateRegistration, type CampaignInfo, type CharacterSummary } from "
 import { loadDisplayName, saveDisplayName } from "../state/storage";
 import type { AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
-import { shapeIcon } from "./creator";
+import { recipeIcon } from "./creator";
 import type { Ctx, Screen } from "./types";
 
 type Tab = "guest" | "login" | "register";
@@ -124,10 +124,9 @@ export function mountHome(ctx: Ctx, prefillCode: string): Screen {
     charKey = key;
     if (!list.length) { replaceChildren(charList, h("li", { class: "muted" }, "No saved characters yet.")); return; }
     replaceChildren(charList, ...list.map((c) => {
-      const sp = c.sprite_recipe;
       const confirming = confirmDelete.has(c.id);
       return h("li", { class: "saved" },
-        shapeIcon(sp.shape, sp.color, sp.accent, sp.glyph, 40),
+        recipeIcon(c.sprite_recipe, c.name, 40),
         h("div", { class: "saved-main" },
           h("b", null, c.name), c.title ? h("span", { class: "muted" }, ` ${c.title}`) : null,
           h("small", { class: "muted" }, c.ability_names.join(", ") || "No abilities")),

@@ -173,18 +173,9 @@ export function findFreeTileNear(map: GameMap, x: number, y: number, occupied: S
   return null;
 }
 
+const encoder = new TextEncoder();
+
 /** UTF-8 byte length of JSON.stringify(map). */
 export function serializeSize(map: GameMap): number {
-  const s = JSON.stringify(map);
-  let bytes = 0;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    if (c < 0x80) bytes += 1;
-    else if (c < 0x800) bytes += 2;
-    else if (c >= 0xd800 && c <= 0xdbff) {
-      bytes += 4;
-      i++;
-    } else bytes += 3;
-  }
-  return bytes;
+  return encoder.encode(JSON.stringify(map)).length;
 }

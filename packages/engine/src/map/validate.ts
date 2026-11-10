@@ -1,14 +1,23 @@
-import type { GameMap } from "@aedm/schemas";
+import type { GameMap, TileDef } from "@aedm/schemas";
 import { getObjects, groundOf, key, serializeSize, wallsOf } from "./nav";
-import { TILESET_BLOCKS, TILESET_BLOCKS_COUNT, tileInfo } from "./tileset";
 
 export const MAX_MAP_BYTES = 250 * 1024;
 
-const FALLBACK_TILESET_SIZE = 1024;
+export interface MapValidation {
+  ok: boolean;
+  errors: string[];
+  /** Not failures: tile definitions nothing draws, and so on. */
+  warnings: string[];
+}
 
-/** The 7 rules from docs/contracts.md "Map JSON". Returns every failure found. */
-export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
+/**
+ * The 7 rules from docs/contracts.md "Map JSON" (rule 2 is the inline tileset covering every tile id), plus
+ * rule 8: every exit, entity slot and interactable can be reached from `party_start` without stepping on a
+ * hazard tile. Returns every failure found; unused tile definitions are warnings.
+ */
+export function validateMap(map: GameMap): MapValidation {
   const errors: string[] = [];
+  const warnings: string[] = [];
   const { width: w, height: h } = map;
   const layers = map.layers.filter((l) => l.type === "tilelayer");
 
@@ -21,17 +30,19 @@ export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
     }
   }
 
-  // 2. tile ids inside a tileset range
-  const sets = [...map.tilesets].sort((a, b) => a.first_gid - b.first_gid);
-  const ranges = sets.map((t, i) => {
-    const size = t.asset_id === TILESET_BLOCKS.asset_id ? TILESET_BLOCKS_COUNT : FALLBACK_TILESET_SIZE;
-    const next = sets[i + 1]?.first_gid ?? Infinity;
-    return [t.first_gid, Math.min(t.first_gid + size - 1, next - 1)] as const;
-  });
+  // 2. every non-zero tile id has a TileDef in the inline tileset
+  const defs = new Map(map.tileset.tiles.map((t) => [t.gid, t]));
+  const usedGids = new Set<number>();
   for (const l of layers) {
     let bad = 0;
-    for (const v of l.data) if (v !== 0 && !ranges.some(([lo, hi]) => v >= lo && v <= hi)) bad++;
-    if (bad > 0) errors.push(`rule 2: layer ${l.name} has ${bad} tile id(s) outside every tileset range`);
+    let last = 0;
+    for (const v of l.data) {
+      if (v === 0 || v === last) continue;
+      last = v;
+      usedGids.add(v);
+      if (!defs.has(v)) bad++;
+    }
+    if (bad > 0) errors.push(`rule 2: layer ${l.name} has ${bad} tile id(s) without a TileDef`);
   }
 
   const objects = getObjects(map);
@@ -52,20 +63,21 @@ export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
 
   // 4. flood fill reachability
   if (start && open(start.x, start.y)) {
-    const seen = new Set<number>([start.y * w + start.x]);
+    const seen = new Uint8Array(w * h);
+    seen[start.y * w + start.x] = 1;
     const stack = [start.y * w + start.x];
     while (stack.length > 0) {
       const c = stack.pop()!;
       const cx = c % w;
-      const cy = Math.floor(c / w);
+      const cy = (c - cx) / w;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
           const nx = cx + dx;
           const ny = cy + dy;
           if (!open(nx, ny)) continue;
           const n = ny * w + nx;
-          if (!seen.has(n)) {
-            seen.add(n);
+          if (!seen[n]) {
+            seen[n] = 1;
             stack.push(n);
           }
         }
@@ -73,9 +85,40 @@ export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
     }
     for (const o of objects) {
       if (o.type === "exit" || o.type === "entity_slot" || o.type === "interactable") {
-        if (!inB(o.x, o.y) || !seen.has(o.y * w + o.x)) {
+        if (!inB(o.x, o.y) || !seen[o.y * w + o.x]) {
           const label = o.type === "exit" ? o.name : o.id;
           errors.push(`rule 4: ${o.type} ${label} at ${o.x},${o.y} is not reachable from party_start`);
+        }
+      }
+    }
+  }
+
+  // 8. hazards are never the only way through
+  if (start && open(start.x, start.y)) {
+    const isHazard = (x: number, y: number) => defs.get(ground[y * w + x] ?? 0)?.role === "hazard";
+    const clear = (x: number, y: number) => open(x, y) && !isHazard(x, y);
+    if (!clear(start.x, start.y)) errors.push(`rule 8: party_start at ${start.x},${start.y} is on a hazard tile`);
+    else {
+      const seen = new Uint8Array(w * h);
+      seen[start.y * w + start.x] = 1;
+      const stack = [start.y * w + start.x];
+      while (stack.length > 0) {
+        const c = stack.pop()!;
+        const cx = c % w;
+        const cy = (c - cx) / w;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (!clear(nx, ny)) continue;
+            const n = ny * w + nx;
+            if (!seen[n]) { seen[n] = 1; stack.push(n); }
+          }
+        }
+      }
+      for (const o of objects) {
+        if ((o.type === "exit" || o.type === "entity_slot" || o.type === "interactable") && inB(o.x, o.y) && !seen[o.y * w + o.x]) {
+          errors.push(`rule 8: ${o.type} ${o.type === "exit" ? o.name : o.id} at ${o.x},${o.y} needs a path across a hazard`);
         }
       }
     }
@@ -99,7 +142,7 @@ export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
       continue;
     }
     const onBoundary = o.x === 0 || o.y === 0 || o.x === w - 1 || o.y === h - 1;
-    const isDoor = (tileInfo(ground[o.y * w + o.x] ?? 0)?.name ?? "").startsWith("door");
+    const isDoor = defs.get(ground[o.y * w + o.x] ?? 0)?.role === "door";
     if (!onBoundary && !isDoor) errors.push(`rule 6: exit ${o.name} at ${o.x},${o.y} is neither on the boundary nor a door tile`);
   }
 
@@ -107,5 +150,28 @@ export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
   const bytes = serializeSize(map);
   if (bytes > MAX_MAP_BYTES) errors.push(`rule 7: serialized map is ${bytes} bytes (max ${MAX_MAP_BYTES})`);
 
-  return { ok: errors.length === 0, errors };
+  // unused tile definitions
+  const orphans = map.tileset.tiles.filter((t) => !usedGids.has(t.gid));
+  if (orphans.length > 0) warnings.push(`${orphans.length} tile definition(s) are not used by any layer: ${orphans.slice(0, 5).map((t) => t.gid).join(", ")}`);
+
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+/** Drops tile definitions no layer uses and renumbers the rest densely (gids in layers are remapped). Pure. */
+export function stripOrphanTiles(map: GameMap): GameMap {
+  const used = new Set<number>();
+  for (const l of map.layers) if (l.type === "tilelayer") for (const v of l.data) if (v !== 0) used.add(v);
+  const remap = new Map<number, number>();
+  const tiles: TileDef[] = [];
+  for (const t of map.tileset.tiles) {
+    if (!used.has(t.gid)) continue;
+    remap.set(t.gid, tiles.length + 1);
+    tiles.push({ ...t, gid: tiles.length + 1 });
+  }
+  if (tiles.length === map.tileset.tiles.length || tiles.length === 0) return map;
+  return {
+    ...map,
+    tileset: { first_gid: 1, tiles },
+    layers: map.layers.map((l) => (l.type === "tilelayer" ? { ...l, data: l.data.map((v) => (v === 0 ? 0 : (remap.get(v) ?? 0))) } : l)),
+  };
 }

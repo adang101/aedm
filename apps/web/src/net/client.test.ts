@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerMessage } from "@aedm/schemas";
+import { WS_VERSION, type ServerMessage } from "@aedm/schemas";
 import { GameClient } from "./client";
 import { Store } from "../state/store";
 import { loadSessionToken, saveSessionToken } from "../state/storage";
@@ -27,7 +27,7 @@ function setup() {
     return { send: (raw) => { sent.push(JSON.parse(raw)); }, close: () => undefined };
   }, { notify: (m) => { notes.push(m); } });
   const reply = <T extends ServerMessage["type"]>(type: T, payload: unknown, ack?: string) =>
-    handlers?.onMessage(JSON.stringify({ v: 1, type, id: `s${Math.random()}`, ts: 0, payload, ...(ack ? { ack_id: ack } : {}) }));
+    handlers?.onMessage(JSON.stringify({ v: WS_VERSION, type, id: `s${Math.random()}`, ts: 0, payload, ...(ack ? { ack_id: ack } : {}) }));
   return { client, store, sent, notes, open: () => handlers?.onOpen(), reply, types: () => sent.map((m) => m.type) };
 }
 

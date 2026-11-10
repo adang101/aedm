@@ -1,6 +1,6 @@
 export type Tier = "fast" | "standard" | "strong";
 
-export type ModelPurpose = "dm" | "forge" | "enemy" | "repair" | "bible" | "summary";
+export type ModelPurpose = "dm" | "forge" | "enemy" | "repair" | "bible" | "summary" | "sprite";
 
 export interface ModelRequest {
   tier: Tier;

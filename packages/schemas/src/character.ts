@@ -3,6 +3,7 @@ import { AbilityDraftSchema, AbilitySchema } from "./ability";
 import { AbilityScoreKeySchema, CheckTagSchema, SpriteShapeSchema } from "./enums";
 import { EntityIdSchema, HexColorSchema, text } from "./common";
 import { ItemSchema } from "./world";
+import { SpriteSpecSchema } from "./sprite";
 
 const glyph = z.string().trim().refine((s) => {
   const n = [...s].length;
@@ -18,9 +19,19 @@ export const ShapeSpriteRecipeSchema = z.strictObject({
 });
 export type ShapeSpriteRecipe = z.infer<typeof ShapeSpriteRecipeSchema>;
 
-/** Discriminated on `kind` so a `"parts"` variant can be added later. */
-export const SpriteRecipeSchema = z.discriminatedUnion("kind", [ShapeSpriteRecipeSchema]);
+/**
+ * Discriminated on `kind`: `spec` (body plan, parts, palette; see sprite.ts) is the standard for new content,
+ * `shape` (colored shape plus glyph) stays for backward compatibility and as the fallback drawing.
+ */
+export const SpriteRecipeSchema = z.discriminatedUnion("kind", [ShapeSpriteRecipeSchema, SpriteSpecSchema]);
 export type SpriteRecipe = z.infer<typeof SpriteRecipeSchema>;
+
+/** Two colors and a short glyph for badges, initiative dots and list swatches, whatever the recipe kind. */
+export function spriteSwatch(r: SpriteRecipe, fallbackName = "?"): { color: string; accent: string; glyph: string } {
+  if (r.kind === "shape") return { color: r.color, accent: r.accent, glyph: r.glyph };
+  const glyph = r.glyph ?? ([...fallbackName.trim()][0] ?? "?").toUpperCase();
+  return { color: r.palette.primary, accent: r.palette.accent, glyph };
+}
 
 const scoreFields = Object.fromEntries(
   ["str", "dex", "con", "int", "wis", "cha"].map((k) => [k, z.number().int().min(1).max(20)]),
@@ -89,7 +100,8 @@ export const CharacterCreateSchema = z
     key_ability: AbilityScoreKeySchema,
     scores: CreationScoresSchema,
     trait_tags: traitTags,
-    sprite_recipe: SpriteRecipeSchema,
+    /** Optional since v1.1: when absent the server designs a spec from title and description. */
+    sprite_recipe: SpriteRecipeSchema.optional(),
     ability_texts: z.array(text(300)).min(1).max(3).optional(),
     abilities: z.array(AbilityDraftSchema).min(1).max(3).optional(),
   })

@@ -8,7 +8,8 @@ import { EntityIdSchema, MapIdSchema, text } from "./common";
 import { MapSchema } from "./map";
 import { QuestSchema } from "./world";
 
-export const WS_VERSION = 1;
+/** 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged. */
+export const WS_VERSION = 2;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
