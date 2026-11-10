@@ -113,7 +113,7 @@ Part catalog, exported as `PART_GROUPS` and `PART_CATALOG`: **head** horns, antl
 
 A **Sprite spec draft** is the sprite designer model's output: `kind`, `v`, `size`, `traits` are optional (size defaults to medium), colors are any `#rrggbb` (snapped), and `parts` entries take any `part` string of at most 24 characters, up to 12 entries. The engine drops names outside the catalog, keeps the first 6 parts and snaps colors; `body` must be valid.
 
-`sprite_recipe` (characters) and an entity's `sprite` (views) are a union discriminated on `kind`: `spec` (above) or `shape` (circle, square, diamond, triangle or hex with color, accent, glyph). New content uses `spec`; `shape` stays valid for older saves and as a fallback drawing. Character create accepts either.
+`sprite_recipe` (characters) and an entity's `sprite` (views) are a union discriminated on `kind`: `spec` (above), `pixel` (below) or `shape` (circle, square, diamond, triangle or hex with color, accent, glyph). New content uses `spec` or `pixel`; `shape` stays valid for older saves and as a fallback drawing. Character create accepts any of them.
 
 **Asset record** (server-side asset store; sprites are stored in `<data>/assets/assets.json`, materials and settings are schema only)
 
@@ -196,7 +196,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `abilities` | array | 1 to 3 ability objects at creation, up to 6 after level-ups (`abilityLimits.maxAbilitiesPerCharacter`), total cost within the level's power budget |
 | `weapon_tier`, `armor_bonus` | integer | Within the level's allowance |
 | `level`, `growth`, `hp`, `hp_max` | integer | Engine-owned. Clients cannot set them. |
-| `sprite_recipe` | object | Discriminated on `kind`: `spec` (see Sprite spec; standard for new content) or `shape` (shape: circle, square, diamond, triangle, hex; color and accent `#rrggbb`; glyph 1 to 2 characters; kept for backward compatibility) |
+| `sprite_recipe` | object | Discriminated on `kind`: `spec` (see Sprite spec; standard for new content), `pixel` (see Pixel sprite) or `shape` (shape: circle, square, diamond, triangle, hex; color and accent `#rrggbb`; glyph 1 to 2 characters; kept for backward compatibility) |
 | `inventory` | array | Engine-owned |
 
 **Character create (client submits for a new character)**
@@ -205,7 +205,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 
 **WebSocket messages**
 
-Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 4: the envelopes are unchanged, but the Map payload changed shape (v2 map), room settings gained `plot_pattern` and `plot_arc`, and `design_sprite` and `sprite_designed` were added, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second; `design_sprite` is also limited per account (see Sprite designer).
+Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 5: the envelopes are unchanged, but the Map payload changed shape (v2 map), room settings gained `plot_pattern` and `plot_arc`, `design_sprite` and `sprite_designed` were added, and sprite recipes gained the `pixel` kind with the `invalid_sprite` error code, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second; `design_sprite` is also limited per account (see Sprite designer).
 
 | `type` | Direction | Payload |
 | --- | --- | --- |
@@ -335,13 +335,28 @@ Stored template (`data/accounts/users.json`, per user): id (`ch_...`), saved_at,
 
 A refusal is an `error` with the same `ack_id`: `rate_limited` (6 calls per minute per account, per connection for guests; `DEFAULT_CONFIG.limits.spriteDesign`) or `bad_message` (empty or over-long prompt, unknown role). The result is not stored in the asset store. Error text never includes provider messages.
 
+**Pixel sprite (built, WS v5)**
+
+A player-painted sprite, recipe kind `pixel` (`PixelSpriteSchema`, `packages/schemas/src/pixel.ts`).
+
+| Field | Rule |
+| --- | --- |
+| `kind`, `v` | `"pixel"`, `1` |
+| `width`, `height` | exactly 48 and 64 |
+| `palette` | 1 to 32 `#rrggbb` colors; the engine requires every one to be on the master palette (33 colors including the outline color) |
+| `pixels` | Run-length encoded palette indices, 3072 in all. 0 is transparent and index `i` is `palette[i - 1]`. Each run is a symbol followed by a decimal count (omitted when 1). Symbols: `.` is 0, `A` to `Z` are 1 to 26, `a` to `f` are 27 to 32. A blank canvas is `.3072`. Helpers: `encodePixels`, `decodePixels`. |
+| `size` | tiny to huge; scales the image with nearest-neighbor when drawn |
+| `base` | Optional `SpriteSpec` it was painted over: fallback drawing and traits |
+| `traits` | At most 160 characters |
+
+Engine rules (`validatePixelSprite`, numbers in `packages/engine/data/pixel.json`): canvas size, every index inside the palette, every color on the master palette, at most 32 colors, at least 60 opaque pixels, no opaque pixel within 2 pixels of the edge, lowest opaque row within 4 of y = 60, and the recipe JSON at most 6144 bytes (so the whole create message stays under 8 KB). `shiftToFeet` moves an image vertically to put the feet on y = 60 when they are off by more than the tolerance and the margins allow it; the editor applies it on save. The server runs `validatePixelSprite` on every `claim_character` recipe of kind `pixel` (including saved templates) and refuses a failing one with the error code `invalid_sprite` and the reasons in the message. The renderer decodes once per sprite and falls back to `base`, then to a shape, if drawing fails.
+
 **Planned contracts (designed in `design.md`, not yet implemented)**
 
 These become Zod schemas when the features are built; shapes may still change.
 
 | Contract | Fields |
 | --- | --- |
-| `PixelSprite` (recipe kind `pixel`) | `kind: "pixel"`, `v: 1`, `width: 48`, `height: 64`, `palette` (1 to 32 master-palette colors), `pixels` (run-length encoded palette indices, 0 transparent), `size` (tiny to huge), `base?` (`SpriteSpec` it was painted over), `traits` (at most 160) |
 | Workshop asset | `id` (`as_`), `owner_user_id`, `name` (at most 40), `role_hint` (pc, npc, enemy, prop), `concept` (at most 200), `recipe` (shape, spec or pixel), `source` (designed, painted_over, painted), `created_at`, `updated_at` |
 | `create_npc` / `create_enemy` | gain optional `asset_ref` (an approved cast asset id from the context pack) |
 | Room settings | gain `custom_cast` (off, host_approval, open) and `custom_paintings` (boolean) |
