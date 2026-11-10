@@ -172,8 +172,10 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           ground[i] = floorAt(x, y);
           break;
         case T.PATH: {
-          const m = mats.path[pickWeighted(mats.path.length, u, 0.93)]!;
-          ground[i] = bank.gid(m, variantOf(hash(seed, x, y, 3), 0.3), "ground");
+          // Coherent patches (smooth noise), not per-tile picks, so a secondary path material forms
+          // whole stretches instead of speckling the main road; few variants keep roads calm.
+          const m = mats.path[pickWeighted(mats.path.length, vnoise(seed, x, y, 9), 0.8)]!;
+          ground[i] = bank.gid(m, variantOf(u, 0.1), "ground");
           break;
         }
         case T.BRIDGE:
