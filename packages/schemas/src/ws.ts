@@ -7,13 +7,15 @@ import {
 } from "./enums";
 import { EntityIdSchema, MapIdSchema, text } from "./common";
 import { MapSchema } from "./map";
+import { SpriteSpecSchema } from "./sprite";
 import { QuestSchema } from "./world";
 
 /**
+ * 4: added design_sprite (client) and sprite_designed (server).
  * 3: room settings gained plot_pattern and plot_arc.
  * 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged.
  */
-export const WS_VERSION = 3;
+export const WS_VERSION = 4;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
@@ -216,6 +218,30 @@ export const LevelUpResultPayload = z.strictObject({
 });
 export type LevelUpResult = z.infer<typeof LevelUpResultPayload>;
 
+// ---------- sprite designer (describe your look) ----------
+
+export const SPRITE_PROMPT_MAX = 300;
+export const SPRITE_ROLE_HINTS = ["pc", "npc", "enemy", "prop"] as const;
+export const SpriteRoleHintSchema = z.enum(SPRITE_ROLE_HINTS);
+export type SpriteRoleHint = z.infer<typeof SpriteRoleHintSchema>;
+
+/** Correlated by the envelope id: the reply carries it as `ack_id`. A refusal (rate_limited, bad_message) is an `error` with the same ack_id. */
+export const DesignSpritePayload = z.strictObject({
+  prompt: text(SPRITE_PROMPT_MAX),
+  role_hint: SpriteRoleHintSchema,
+  /** Picks a different offline look; send a new one to regenerate. */
+  seed: z.number().int().min(0).max(0x7fffffff).optional(),
+  /** Only used for the sprite's glyph. */
+  name: text(30).optional(),
+});
+export const SpriteDesignedPayload = z.strictObject({
+  spec: SpriteSpecSchema,
+  notes: z.array(text(200, 0)).max(20),
+  source: z.enum(["model", "offline"]),
+});
+export type DesignSpritePayloadType = z.infer<typeof DesignSpritePayload>;
+export type SpriteDesignedPayloadType = z.infer<typeof SpriteDesignedPayload>;
+
 // ---------- envelopes ----------
 
 const envelope = {
@@ -350,6 +376,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   client("load_save", LoadSavePayload),
   client("ping", PingPayload),
   client("level_up_choice", LevelUpChoicePayload),
+  client("design_sprite", DesignSpritePayload),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export type ClientMessageType = ClientMessage["type"];
@@ -377,6 +404,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   server("pong", PongPayload),
   server("level_up_state", LevelUpStatePayload),
   server("level_up_result", LevelUpResultPayload),
+  server("sprite_designed", SpriteDesignedPayload),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export type ServerMessageType = ServerMessage["type"];

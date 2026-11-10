@@ -50,7 +50,11 @@ export interface ServerConfig {
   /** A room with nobody connected for this long is deleted. */
   roomIdleMs: number;
   maxPlayers: number;
-  limits: { movePerSec: number; sayIntervalMs: number; otherPerSec: number };
+  limits: {
+    movePerSec: number; sayIntervalMs: number; otherPerSec: number;
+    /** design_sprite calls per account (per connection for guests) in each window; they cost money with a real model. */
+    spriteDesign: { max: number; windowMs: number };
+  };
   /** Log rejected DM actions and other dev details to the logger. */
   devLog: boolean;
   /** Characters of the recent-turn window handed to the DM. */
@@ -68,7 +72,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   retryBackoffMs: 1500,
   roomIdleMs: 10 * 60_000,
   maxPlayers: 6,
-  limits: { movePerSec: 10, sayIntervalMs: 2000, otherPerSec: 5 },
+  limits: { movePerSec: 10, sayIntervalMs: 2000, otherPerSec: 5, spriteDesign: { max: 6, windowMs: 60_000 } },
   devLog: false,
   recentTurnLimit: 12,
 };

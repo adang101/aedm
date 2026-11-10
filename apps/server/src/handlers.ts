@@ -3,7 +3,7 @@ import type { CharacterCreate, ClientMessage } from "@aedm/schemas";
 import { AccountHandlers } from "./accounts/handlers";
 import { forgeCharacterAbilities, ForgeError } from "./forge";
 import { GameSession, type Reply } from "./game";
-import type { Conn } from "./net";
+import { RateLimiter, type Conn } from "./net";
 import { newToken, Room, RoomRegistry, type Player } from "./rooms";
 import { readSave, readSaveExact } from "./saves";
 import type { Deps } from "./types";
@@ -14,6 +14,8 @@ type Msg<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
 export class Handlers {
   readonly registry: RoomRegistry;
   private readonly accounts: AccountHandlers;
+  /** Keyed per account (or per connection for guests), shared across that account's connections. */
+  private readonly designLimiter = new RateLimiter();
 
   constructor(private readonly deps: Deps) {
     this.registry = new RoomRegistry(deps);
@@ -30,6 +32,7 @@ export class Handlers {
       case "ping": conn.send("pong", {}, ack); return;
       case "create_room": return this.createRoom(conn, msg as Msg<"create_room">);
       case "join_room": return this.joinRoom(conn, msg as Msg<"join_room">);
+      case "design_sprite": return this.designSprite(conn, msg as Msg<"design_sprite">);
       default: break;
     }
     if (this.accounts.handles(msg.type)) return this.accounts.dispatch(conn, msg);
@@ -84,6 +87,23 @@ export class Handlers {
       }
       default: return;
     }
+  }
+
+  // ---------- sprite designer ----------
+
+  /** "Describe your look": the prompt goes through the same designer as the DM's NPCs, but is never cached, so a re-roll differs. */
+  private async designSprite(conn: Conn, msg: Msg<"design_sprite">): Promise<void> {
+    const { prompt, role_hint, name } = msg.payload;
+    const lim = this.cfg.limits.spriteDesign;
+    const key = conn.userId ? `u:${conn.userId}` : `c:${conn.id}`;
+    if (!this.designLimiter.allow(key, this.deps.clock(), lim.max, lim.windowMs)) {
+      return conn.error("rate_limited", "You are designing too many looks. Wait a minute and try again.", msg.id);
+    }
+    const seed = msg.payload.seed ?? Math.floor(this.deps.random() * 0x7fffffff);
+    const r = await this.deps.sprites.designFresh(
+      { concept: prompt, name: name ?? "", role: role_hint, kind: role_hint }, seed,
+    );
+    conn.send("sprite_designed", { spec: r.spec, notes: r.notes.slice(0, 20), source: r.source }, msg.id);
   }
 
   // ---------- rooms ----------
