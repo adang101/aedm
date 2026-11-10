@@ -18,6 +18,7 @@ import { h, replaceChildren } from "../util/dom";
 import { fromRecipe, blank } from "../state/pixel-editor";
 import type { Ctx } from "./types";
 import { openPixelEditor, rasterizeSpec } from "./pixel-editor";
+import { openWorkshop, saveToWorkshop } from "./workshop";
 
 const ABILITY_NAMES: Record<string, string> = {
   str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma",
@@ -313,6 +314,20 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
     drawPreview();
   }, 450);
 
+  // ----- Workshop (accounts) -----
+  const wsSave = h("button", { type: "button", class: "btn small", title: "Keep this look in your Workshop library" }, "Save look to Workshop");
+  const wsOpen = h("button", { type: "button", class: "btn small ghost" }, "Open Workshop");
+  const workshopRow = h("div", { class: "paint-row workshop-row", hidden: true }, wsSave, wsOpen);
+  wsSave.addEventListener("click", () => {
+    const recipe: SpriteRecipe = form.painted ?? currentSpec();
+    wsSave.disabled = true;
+    const ok = saveToWorkshop(ctx, {
+      name: form.name.trim() || "My look", role_hint: "pc", concept: lookIn.value.trim() || form.description, recipe,
+    }, () => { wsSave.disabled = false; });
+    if (!ok) wsSave.disabled = false;
+  });
+  wsOpen.addEventListener("click", () => openWorkshop(ctx));
+
   // ----- premades -----
   const premades = premadeForms();
   const premadeRow = h("div", { class: "chip-row wrap" },
@@ -329,6 +344,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
   function updateAccount(s: AppState): void {
     const signedIn = !!s.auth.user;
     saveRow.hidden = !signedIn;
+    workshopRow.hidden = !signedIn;
     const list = signedIn ? s.auth.characters : [];
     savedBox.hidden = list.length === 0;
     const key = JSON.stringify(list.map((c) => [c.id, c.name]));
@@ -366,7 +382,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
         describeBox,
         h("div", { class: "sprite-col" }, preview,
           h("div", { class: "stack tight" }, h("b", null, "Body plan"), bodyBox, h("b", null, "Size"), sizeBox, randomBtn)),
-        h("section", { class: "stack tight paint-section" }, h("b", null, "Paint your own"), paintNote, paintRow),
+        h("section", { class: "stack tight paint-section" }, h("b", null, "Paint your own"), paintNote, paintRow, workshopRow),
       ),
     ),
     h("section", { class: "stack tight sprite-builder" },

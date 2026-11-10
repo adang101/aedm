@@ -14,7 +14,7 @@ const user = { id: "u_1", username: "ana", display_name: "Ana K" };
 describe("auth state", () => {
   it("starts signed out", () => {
     const s = createInitialState();
-    expect(s.auth).toEqual({ user: null, pending: false, error: null, characters: [], campaigns: null });
+    expect(s.auth).toEqual({ user: null, pending: false, error: null, characters: [], campaigns: null, workshop: null });
   });
 
   it("auth_ok signs in, keeps the characters and defaults the display name", () => {

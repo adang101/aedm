@@ -84,6 +84,12 @@ export class GameClient {
     else this.send("list_campaigns", {});
   }
 
+  /** Ask for the account's Workshop (a no-op for guests). The reply fills `auth.workshop`. */
+  refreshWorkshop(): void {
+    if (!this.store.state.auth.user) return;
+    this.send("list_sprite_assets", {});
+  }
+
   /** Open a lobby for a saved campaign; the host presses Load there. */
   resumeCampaign(c: { save_id: string; room_id: string }, displayName: string): void {
     this.entry = { kind: "resume", save_id: c.save_id, room_id: c.room_id };

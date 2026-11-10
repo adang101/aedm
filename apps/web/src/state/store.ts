@@ -1,5 +1,5 @@
 import type {
-  AuthUser, CampaignInfo, CharacterSummary, CombatState, CharacterView, EntityView, GameMap, LevelUpResult, LevelUpState, Quest, ServerMessage,
+  AuthUser, CampaignInfo, CastEntry, CharacterSummary, CombatState, CharacterView, EntityView, GameMap, LevelUpResult, LevelUpState, Quest, ServerMessage, WorkshopAsset,
 } from "@aedm/schemas";
 
 type Msg<T extends ServerMessage["type"]> = Extract<ServerMessage, { type: T }>["payload"];
@@ -57,9 +57,18 @@ export interface AuthState {
   characters: CharacterSummary[];
   /** Null until list_campaigns has been answered. */
   campaigns: CampaignInfo[] | null;
+  /** The account's Workshop; null until sprite_assets_list has arrived. */
+  workshop: WorkshopState | null;
 }
 
-export const createAuthState = (): AuthState => ({ user: null, pending: false, error: null, characters: [], campaigns: null });
+export interface WorkshopState {
+  assets: WorkshopAsset[];
+  usedBytes: number;
+  maxAssets: number;
+  maxBytes: number;
+}
+
+export const createAuthState = (): AuthState => ({ user: null, pending: false, error: null, characters: [], campaigns: null, workshop: null });
 
 export interface AppState {
   auth: AuthState;
@@ -74,6 +83,8 @@ export interface AppState {
   inviteCode: string | null;
   authToken: string | null;
   lobby: Msg<"lobby_state"> | null;
+  /** Sprites offered to this campaign (pending and approved). */
+  cast: CastEntry[];
   myCharacterName: string | null;
   /** character_id -> player_id */
   claimed: Record<string, string>;
@@ -104,7 +115,7 @@ export function createInitialState(): AppState {
     auth: createAuthState(),
     conn: "idle", mock: false, versionMismatch: false, busy: false,
     displayName: "", playerId: null, roomId: null, inviteCode: null, authToken: null,
-    lobby: null, myCharacterName: null, claimed: {},
+    lobby: null, cast: [], myCharacterName: null, claimed: {},
     seq: 0, needsResync: false, mode: "exploration", map: null, entities: {}, party: [], quests: [],
     combat: null, turnTimer: null, vote: null, log: [], chips: [],
     levelUp: null, levelUpResult: null, levelUpBusy: false,
@@ -124,7 +135,7 @@ export function pushLog(s: AppState, entry: Omit<LogEntry, "key" | "rev"> & { ke
 export function resetRoom(s: AppState): void {
   const fresh = createInitialState();
   s.playerId = fresh.playerId; s.roomId = fresh.roomId; s.inviteCode = fresh.inviteCode; s.authToken = fresh.authToken;
-  s.lobby = null; s.myCharacterName = null; s.claimed = {};
+  s.lobby = null; s.cast = []; s.myCharacterName = null; s.claimed = {};
   s.seq = 0; s.needsResync = false; s.mode = "exploration"; s.map = null; s.entities = {}; s.party = [];
   s.quests = []; s.combat = null; s.turnTimer = null; s.vote = null; s.log = []; s.chips = [];
   s.levelUp = null; s.levelUpResult = null; s.levelUpBusy = false;
@@ -280,6 +291,14 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
       return;
     case "campaigns_list":
       s.auth.campaigns = msg.payload.campaigns;
+      return;
+    case "sprite_assets_list":
+      s.auth.workshop = {
+        assets: msg.payload.assets, usedBytes: msg.payload.used_bytes, maxAssets: msg.payload.max_assets, maxBytes: msg.payload.max_bytes,
+      };
+      return;
+    case "cast_state":
+      s.cast = msg.payload.entries;
       return;
     case "map_load":
     case "save_created":

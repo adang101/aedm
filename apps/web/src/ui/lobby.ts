@@ -2,6 +2,7 @@ import { PLOTS } from "@aedm/engine";
 import { CONTENT_RATINGS, PLOT_ARCS, PLOT_PATTERNS, type LobbyPlayer } from "@aedm/schemas";
 import { isHost, type AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
+import { createCastPanel } from "./cast";
 import { createCreator } from "./creator";
 import type { Ctx, Screen } from "./types";
 
@@ -87,6 +88,7 @@ export function mountLobby(ctx: Ctx): Screen {
   // a room opened with "Resume" on a saved campaign: the host loads the save instead of starting fresh
   const resumeCard = h("section", { class: "card stack resume" });
 
+  const cast = createCastPanel(ctx);
   const claimedBox = h("section", { class: "card stack claimed" });
   const creator = createCreator(ctx, () => { editing = false; });
   const creatorCard = h("section", { class: "card" }, creator.el);
@@ -112,6 +114,7 @@ export function mountLobby(ctx: Ctx): Screen {
             h("label", { class: "inline", for: "rating" }, "Content rating", rating),
             h("label", { class: "inline check", for: "dev-solo" }, solo, "Dev solo mode")),
           hostNote),
+        cast.el,
         h("div", { class: "stack" }, readyBtn, startBtn, startHint),
       ),
       h("div", { class: "stack" }, claimedBox, creatorCard),
@@ -163,6 +166,7 @@ export function mountLobby(ctx: Ctx): Screen {
         host ? h("button", { type: "button", class: "btn primary big", onClick: () => ctx.client.send("load_save", { save_id: resume.save_id }) }, "Load campaign") : null);
     }
     creator.update(s);
+    cast.update(s);
 
     // character area
     const hasChar = !!me?.character_id;

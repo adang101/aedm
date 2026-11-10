@@ -410,3 +410,18 @@ input[type="password"]:focus-visible { outline: 2px solid var(--accent); outline
 .pe-prev { image-rendering: pixelated; background: #2c2145; border-radius: 6px; display: block; }
 .pe-help { font-size: 12px; }
 .paint-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ----- Workshop and campaign cast ----- */
+.modal-card.workshop { width: min(640px, 100%); max-height: calc(100dvh - 2 * var(--gutter)); overflow-y: auto; overscroll-behavior: contain; }
+.ws-item { align-items: flex-start; }
+.ws-item.editing .saved-main input, .ws-item.editing .saved-main textarea, .ws-design textarea, .ws-design input[type="text"] { width: 100%; min-width: 0; }
+.ws-actions { margin-top: 4px; }
+.ws-preview { display: flex; align-items: center; gap: 8px; }
+.ws-preview canvas { background: #2c2145; border-radius: 8px; }
+.cast-panel .cast-item { align-items: center; }
+.cast-panel .cast-item.hidden-by-me { opacity: .6; }
+.cast-panel .badge.pending { border-color: var(--sand-m); color: var(--sand-x); }
+.cast-panel .badge.approved { background: var(--grass-d); border-color: var(--grass-m); color: var(--grass-x); }
+.cast-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.cast-offer { display: flex; align-items: center; gap: 8px; }
+.cast-offer canvas { flex: none; }

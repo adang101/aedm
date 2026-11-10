@@ -57,6 +57,7 @@ export const SaveSpriteAssetPayload = z.strictObject({
   id: AssetIdSchema.optional(),
   ...assetFields,
 }).refine(sourceMatchesRecipe, sourceMessage);
+export type SaveSprite = z.infer<typeof SaveSpriteAssetPayload>;
 export const DeleteSpriteAssetPayload = z.strictObject({ id: AssetIdSchema });
 export const ListSpriteAssetsPayload = z.strictObject({});
 /** The reply to list, save and delete (ack_id set when it answers a request). */
