@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { CharacterCreateSchema, CharacterViewSchema, SpriteRecipeSchema } from "./character";
+import { AbilitySchema } from "./ability";
+import { AbilityScoresSchema, CharacterCreateSchema, CharacterViewSchema, SpriteRecipeSchema } from "./character";
 import {
-  ConditionSchema, ContentRatingSchema, DirectionSchema, DispositionSchema, PlayerStatusSchema,
+  AbilityScoreKeySchema, ConditionSchema, ContentRatingSchema, DirectionSchema, DispositionSchema, PlayerStatusSchema,
 } from "./enums";
 import { EntityIdSchema, MapIdSchema, text } from "./common";
 import { MapSchema } from "./map";
@@ -165,6 +166,44 @@ export const ChipsPayload = z.strictObject({ chips: z.array(text(60)).min(2).max
 export const ErrorPayload = z.strictObject({ code: text(40), message: text(500), ack_id: id.optional() });
 export const PongPayload = z.strictObject({});
 
+// ---------- level-up flow (self-contained block) ----------
+
+export const LevelUpChoicePayload = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("score"), ability: AbilityScoreKeySchema }),
+  z.strictObject({ kind: z.literal("new_ability"), text: text(300) }),
+  z.strictObject({ kind: z.literal("reforge"), ability_id: id, text: text(300) }),
+  z.strictObject({ kind: z.literal("skip_ability") }),
+]);
+export type LevelUpChoice = z.infer<typeof LevelUpChoicePayload>;
+
+/** Sent to the owning player only. Zero picks of both kinds closes the level-up screen. */
+export const LevelUpStatePayload = z.strictObject({
+  character_id: EntityIdSchema,
+  level: z.number().int().min(1).max(10),
+  score_points: z.number().int().min(0),
+  ability_picks: z.number().int().min(0),
+  budget: z.number().int().min(0),
+  budget_used: z.number().int().min(0),
+  per_ability_cap: z.number().int().min(0),
+  caps: z.strictObject({
+    max_avg: z.number().min(0),
+    max_radius: z.number().int().min(0),
+    max_stun_turns: z.number().int().min(0),
+  }),
+  max_abilities: z.number().int().min(1).optional(),
+  abilities: z.array(AbilitySchema).max(6),
+  scores: AbilityScoresSchema,
+});
+export type LevelUpState = z.infer<typeof LevelUpStatePayload>;
+
+export const LevelUpResultPayload = z.strictObject({
+  ok: z.boolean(),
+  message: text(500, 0),
+  forge_notes: z.array(text(1000, 0)).max(20),
+  ability: AbilitySchema.optional(),
+});
+export type LevelUpResult = z.infer<typeof LevelUpResultPayload>;
+
 // ---------- envelopes ----------
 
 const envelope = {
@@ -205,6 +244,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   client("request_save", RequestSavePayload),
   client("load_save", LoadSavePayload),
   client("ping", PingPayload),
+  client("level_up_choice", LevelUpChoicePayload),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export type ClientMessageType = ClientMessage["type"];
@@ -229,6 +269,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   server("chips", ChipsPayload),
   server("error", ErrorPayload),
   server("pong", PongPayload),
+  server("level_up_state", LevelUpStatePayload),
+  server("level_up_result", LevelUpResultPayload),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export type ServerMessageType = ServerMessage["type"];

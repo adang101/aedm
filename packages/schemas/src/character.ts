@@ -47,7 +47,7 @@ const publicFields = {
   key_ability: AbilityScoreKeySchema,
   scores: AbilityScoresSchema,
   trait_tags: traitTags,
-  abilities: z.array(AbilitySchema).min(1).max(3),
+  abilities: z.array(AbilitySchema).min(1).max(6),
   weapon_tier: z.number().int().min(1).max(5),
   armor_bonus: z.number().int().min(0).max(6),
   level: z.number().int().min(1).max(10),
@@ -67,10 +67,12 @@ export const CharacterSchema = z.strictObject({
 });
 export type Character = z.infer<typeof CharacterSchema>;
 
-/** Character minus private fields (user_id, campaign_id, inventory). */
+/** Character minus private fields (user_id, campaign_id). Inventory is optional (co-op: visible to the table). */
 export const CharacterViewSchema = z.strictObject({
   v: z.literal(1),
   ...publicFields,
+  /** Additive: the shared party pack, shown on the character sheet. */
+  inventory: z.array(ItemSchema).max(100).optional(),
 });
 export type CharacterView = z.infer<typeof CharacterViewSchema>;
 

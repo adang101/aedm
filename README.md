@@ -27,4 +27,10 @@ pnpm dev:web            # http://localhost:5173
 - **Fake DM (default).** `AEDM_LLM_PROVIDER=fake` needs no key. It is an offline improv narrator, forge and enemy builder: deterministic, schema-valid, and good enough to exercise every rule and screen, but its prose is canned.
 - **Real model.** Copy `.env.example` to `.env`, set `AEDM_LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY`, and restart the server. The key is read from the environment and never logged. This costs money per turn.
 
+### Leveling up (and testing it)
+
+The DM awards growth through milestones and contextual awards; 100 growth is a level. When a character levels, a **Level up!** badge appears on its party card and over the map: pick a +1 ability score (levels 3, 6, 9), learn a new ability (forged within the free power budget), reforge one, or keep your abilities. Click your party card for the character sheet. Level-up choices are only accepted outside combat.
+
+**Dev only:** in a room with *dev solo mode* on, typing `/dev grow 100` in OOC chat grants growth to your character through the engine (so you can reach a level-up without playing for it). With dev solo off the command does nothing. Never enable dev solo on a shared server.
+
 Other server settings: `AEDM_PORT` (default 8787), `AEDM_SAVE_DIR` (default `data/saves`; each room autosaves to `<room>/autosave.json` after every DM turn, and `request_save` writes named saves), `AEDM_DEV_LOG=1` (log DM actions the engine rejected). If the server runs on another host, build the web app with `VITE_AEDM_WS_URL=ws://host:8787`.

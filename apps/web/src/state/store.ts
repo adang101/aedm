@@ -1,5 +1,5 @@
 import type {
-  CombatState, CharacterView, EntityView, GameMap, Quest, ServerMessage,
+  CombatState, CharacterView, EntityView, GameMap, LevelUpResult, LevelUpState, Quest, ServerMessage,
 } from "@aedm/schemas";
 
 type Msg<T extends ServerMessage["type"]> = Extract<ServerMessage, { type: T }>["payload"];
@@ -73,6 +73,12 @@ export interface AppState {
   vote: VoteView | null;
   log: LogEntry[];
   chips: string[];
+  /** Latest level_up_state for my character; zero picks of both kinds means nothing is pending. */
+  levelUp: LevelUpState | null;
+  /** Reply to my last level_up_choice, shown in the level-up modal. */
+  levelUpResult: LevelUpResult | null;
+  /** True from sending a forging level-up choice until its reply (or an error) arrives. */
+  levelUpBusy: boolean;
 }
 
 export const MAX_LOG = 400;
@@ -84,6 +90,7 @@ export function createInitialState(): AppState {
     lobby: null, myCharacterName: null, claimed: {},
     seq: 0, needsResync: false, mode: "exploration", map: null, entities: {}, party: [], quests: [],
     combat: null, turnTimer: null, vote: null, log: [], chips: [],
+    levelUp: null, levelUpResult: null, levelUpBusy: false,
   };
 }
 
@@ -103,6 +110,7 @@ export function resetRoom(s: AppState): void {
   s.lobby = null; s.myCharacterName = null; s.claimed = {};
   s.seq = 0; s.needsResync = false; s.mode = "exploration"; s.map = null; s.entities = {}; s.party = [];
   s.quests = []; s.combat = null; s.turnTimer = null; s.vote = null; s.log = []; s.chips = [];
+  s.levelUp = null; s.levelUpResult = null; s.levelUpBusy = false;
   s.busy = false;
 }
 
@@ -117,6 +125,12 @@ export function myEntity(s: AppState): EntityView | null {
 export function myCharacter(s: AppState): CharacterView | null {
   const e = myEntity(s);
   return e ? (s.party.find((c) => c.id === e.id) ?? null) : null;
+}
+
+/** My pending level-up (picks left), or null. */
+export function pendingLevelUp(s: AppState): LevelUpState | null {
+  const l = s.levelUp;
+  return l && l.score_points + l.ability_picks > 0 ? l : null;
 }
 
 export function isHost(s: AppState): boolean {
@@ -218,9 +232,17 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
       s.vote = { vote_id: p.vote_id, topic: p.topic, options: p.options, tally: p.tally, seconds_left: p.seconds_left, at: now, myChoice: prev?.myChoice ?? null };
       return;
     }
+    case "level_up_state":
+      s.levelUp = msg.payload;
+      return;
+    case "level_up_result":
+      s.levelUpResult = msg.payload;
+      s.levelUpBusy = false;
+      return;
     case "error":
       // Surfaced as a toast by the client; also clears a pending "busy" join.
       s.busy = false;
+      s.levelUpBusy = false;
       return;
     case "map_load":
     case "save_created":

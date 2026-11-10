@@ -1,5 +1,5 @@
 import type { Ability } from "@aedm/schemas";
-import { myCharacter, myEntity, nameOf, type AppState } from "../state/store";
+import { myCharacter, myEntity, nameOf, pendingLevelUp, type AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
 
 export type Pending = { kind: "attack" } | { kind: "ability"; ability: Ability; id: string } | null;
@@ -9,11 +9,14 @@ export interface HudCallbacks {
   onAbility(ability: Ability, id: string): void;
   onEndTurn(): void;
   onCancel(): void;
+  onLevelUp(): void;
 }
 
 export interface Hud {
   top: HTMLElement;
   bottom: HTMLElement;
+  /** "Level up!" button, shown over the map whenever my character has picks pending. */
+  levelUp: HTMLElement;
   update(s: AppState, pending: Pending): void;
   tick(s: AppState): void;
 }
@@ -29,11 +32,15 @@ export function createHud(cb: HudCallbacks): Hud {
   const status = h("div", { class: "turn-status" });
   const top = h("div", { class: "hud-top", hidden: true }, status, strip);
   const bottom = h("div", { class: "hud-bottom", hidden: true });
+  const levelUp = h("button", { type: "button", class: "btn primary small lvl-fab", hidden: true, onClick: cb.onLevelUp }, "Level up!");
   let statusParts: { turn: HTMLElement; timer: HTMLElement } | null = null;
 
   return {
-    top, bottom,
+    top, bottom, levelUp,
     update(s, pending) {
+      const lu = pendingLevelUp(s);
+      levelUp.hidden = !lu;
+      if (lu) levelUp.textContent = s.combat ? `Level ${lu.level}: level up after the fight` : `Level up! (Level ${lu.level})`;
       const combat = s.combat;
       top.hidden = !combat;
       bottom.hidden = !combat;

@@ -1,6 +1,6 @@
 import type { EntityView, ServerMessage } from "@aedm/schemas";
 import { describe, expect, it } from "vitest";
-import { applyServerMessage, createInitialState, myEntity } from "./store";
+import { applyServerMessage, createInitialState, myEntity, pendingLevelUp, resetRoom } from "./store";
 
 const sprite = { kind: "shape", shape: "circle", color: "#4f8a3c", accent: "#f6e8a0", glyph: "A" } as const;
 const ent = (id: string, x: number, y: number, extra: Partial<EntityView> = {}): EntityView => ({
@@ -74,5 +74,38 @@ describe("store", () => {
     applyServerMessage(s, msg("character_claimed", { character_id: "ch1", player_id: "p1" }), 0);
     expect(s.log.map((l) => l.kind)).toEqual(["chat", "roll"]);
     expect(s.claimed.ch1).toBe("p1");
+  });
+});
+
+describe("level-up state", () => {
+  const scores = { str: 10, dex: 12, con: 14, int: 15, wis: 10, cha: 8 };
+  const lu = (over: Record<string, unknown> = {}) => ({
+    character_id: "a", level: 2, score_points: 0, ability_picks: 1, budget: 35, budget_used: 19, per_ability_cap: 15,
+    caps: { max_avg: 9, max_radius: 1, max_stun_turns: 1 }, abilities: [], scores, ...over,
+  }) as Extract<ServerMessage, { type: "level_up_state" }>["payload"];
+
+  it("stores level_up_state, reports pending picks, and closes at zero", () => {
+    const s = createInitialState();
+    expect(pendingLevelUp(s)).toBeNull();
+    applyServerMessage(s, msg("level_up_state", lu()), 0);
+    expect(pendingLevelUp(s)?.ability_picks).toBe(1);
+    applyServerMessage(s, msg("level_up_state", lu({ ability_picks: 0 })), 0);
+    expect(pendingLevelUp(s)).toBeNull();
+    expect(s.levelUp?.level).toBe(2);
+  });
+
+  it("level_up_result and errors clear the busy flag; resetRoom clears everything", () => {
+    const s = createInitialState();
+    s.levelUpBusy = true;
+    applyServerMessage(s, msg("level_up_result", { ok: true, message: "Learned it", forge_notes: ["n"] }), 0);
+    expect(s.levelUpBusy).toBe(false);
+    expect(s.levelUpResult?.message).toBe("Learned it");
+    s.levelUpBusy = true;
+    applyServerMessage(s, msg("error", { code: "invalid_state", message: "Finish the fight first." }), 0);
+    expect(s.levelUpBusy).toBe(false);
+    applyServerMessage(s, msg("level_up_state", lu()), 0);
+    resetRoom(s);
+    expect(s.levelUp).toBeNull();
+    expect(s.levelUpResult).toBeNull();
   });
 });

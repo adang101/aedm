@@ -269,6 +269,43 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .toast.error { border-color: var(--fire-m); background: #3a1f2d; }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
 
+/* ---------- level-up and character sheet ---------- */
+.member.clickable { cursor: pointer; position: relative; }
+.member.clickable:hover { border-color: var(--stone-l); }
+.lvl-badge { position: absolute; top: -9px; right: 6px; font: 800 11px/1 var(--font); padding: 4px 8px; border-radius: 99px; border: 1px solid #fff3; background: var(--accent); color: var(--accent-ink); cursor: pointer; animation: glow 1.6s ease-in-out infinite; }
+.lvl-fab { position: absolute; top: 8px; left: 8px; z-index: 6; animation: glow 1.6s ease-in-out infinite; }
+@keyframes glow { 50% { box-shadow: 0 0 0 4px rgba(232, 201, 90, .35); } }
+.modal-card.levelup, .modal-card.sheet { width: min(560px, 100%); max-height: calc(100dvh - 2 * var(--gutter)); overflow-y: auto; overscroll-behavior: contain; }
+.modal-card .row.between h2 { min-width: 0; overflow-wrap: anywhere; }
+.lvl-score { display: grid; grid-template-columns: minmax(96px, 1.2fr) 70px 78px 44px; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 8px; background: var(--bg-2); }
+.lvl-score-next { color: var(--muted); }
+.lvl-score-next.up { color: var(--ok); font-weight: 650; }
+.budget { height: 10px; border-radius: 99px; background: var(--bg-2); border: 1px solid var(--line); overflow: hidden; }
+.budget i { display: block; height: 100%; background: var(--water-l); transition: width .2s; }
+.budget i.full { background: var(--fire-l); }
+.budget.growth i { background: var(--grass-l); }
+.ability-card { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; min-width: 0; overflow-wrap: anywhere; }
+.ability-card p { font-size: 14px; }
+.ab-meta { font-size: 12px; }
+.ab-effects { margin: 0; padding-left: 18px; font-size: 13px; }
+.badge.cost { color: var(--sand-x); border-color: var(--sand-m); }
+.badge.tag { color: var(--water-x); border-color: var(--water-m); }
+.ability-card .btn { align-self: flex-start; }
+.lvl-result { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); }
+.lvl-result.ok { border-color: var(--grass-m); background: rgba(79, 138, 60, .15); }
+.lvl-result.bad { border-color: var(--fire-m); background: rgba(192, 57, 43, .15); }
+.forge-notes { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.spinner { width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.init-dot.big { width: 44px; height: 44px; font-size: 22px; flex: none; }
+.sheet-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 8px; }
+.sheet-stats > div { display: flex; flex-direction: column; padding: 6px 8px; background: var(--bg-2); border-radius: 8px; border: 1px solid var(--line); }
+.sheet-scores { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.sheet-score { display: flex; flex-direction: column; align-items: center; padding: 6px 2px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; }
+.sheet-score.key { border-color: var(--accent); }
+.inv { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.inv li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; background: var(--bg-2); border-radius: 6px; }
+
 /* ---------- phones and narrow windows ---------- */
 @media (max-width: 860px) {
   .lobby-grid { grid-template-columns: 1fr; }
@@ -282,6 +319,8 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 }
 @media (max-width: 420px) {
   :root { --gutter: 12px; }
+  .lvl-score { grid-template-columns: minmax(70px, 1fr) 62px 66px 40px; gap: 4px; font-size: 14px; }
+  .modal-card.levelup, .modal-card.sheet { padding: 14px; }
   .brand .muted { display: none; }
   .card { padding: 12px; }
   .score-row { grid-template-columns: minmax(70px, 1fr) 34px 26px 34px; }

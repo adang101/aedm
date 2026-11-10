@@ -202,7 +202,7 @@
   },
   "abilityLimits": {
     "maxRange": 12,
-    "maxAbilitiesPerCharacter": 3
+    "maxAbilitiesPerCharacter": 6
   },
   "powerBudget": {
     "base": 25,

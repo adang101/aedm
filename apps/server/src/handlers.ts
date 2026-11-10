@@ -70,6 +70,9 @@ export class Handlers {
         return;
       }
       case "end_turn": game.handleEndTurn(player, reply); return;
+      case "level_up_choice":
+        game.handleLevelUpChoice(player, (msg as Msg<"level_up_choice">).payload, reply, (p) => conn.send("level_up_result", p, ack));
+        return;
       case "vote_cast": {
         const p = (msg as Msg<"vote_cast">).payload;
         game.handleVote(player, p.vote_id, p.choice, reply);

@@ -11,11 +11,14 @@ export interface ForgeOutcome {
 }
 
 /** Engine finalizer: clamp to level 1, re-validate, price. The engine, not the model, owns the numbers. */
-export function finalizeAbility(draft: AbilityDraft, level = 1): FinalizeResult<Ability> {
+export function finalizeAbility(draft: AbilityDraft, level = 1, maxCost?: number): FinalizeResult<Ability> {
   try {
-    const { ability, notes } = clampAbilityToLevel(draft, level);
+    const { ability, notes } = clampAbilityToLevel(draft, level, maxCost === undefined ? {} : { maxCost });
     const v = validateAbilityForLevel(ability, level);
     if (!v.ok) return { ok: false, errors: v.errors };
+    if (maxCost !== undefined && abilityCost(ability) > maxCost) {
+      return { ok: false, errors: [`the ability costs ${abilityCost(ability)} but only ${maxCost} power budget is left; make it cheaper`] };
+    }
     return { ok: true, ability, cost: abilityCost(ability), notes };
   } catch (err) {
     return { ok: false, errors: [err instanceof Error ? err.message : "invalid ability"] };
@@ -82,6 +85,41 @@ export async function forgeCharacterAbilities(
     notices.push(`Dropped "${dropped.ability.name}" (cost ${dropped.cost}): your abilities exceeded the level ${level} power budget of ${caps.budget}.`);
   }
   return { abilities: forged.map((f) => f.ability), notices };
+}
+
+/**
+ * Forge one ability for a level-up. The result is clamped to the character's level and to `maxCost`
+ * (the power budget left). Throws ForgeError with a player-facing message when nothing fits.
+ */
+export async function forgeOneAbility(
+  provider: ModelProvider,
+  input: { concept: string; text: string; level: number; maxCost: number },
+  opts: { sleep: (ms: number) => Promise<void>; retryBackoffMs: number },
+): Promise<{ ability: Ability; notes: string[] }> {
+  const caps = levelCaps(input.level);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await forgeAbility(
+        provider,
+        {
+          concept: input.concept.slice(0, 400), abilityText: input.text, level: input.level, allowedTags: CHECK_TAGS,
+          caps: { maxAvg: caps.maxAverage, maxRadius: caps.maxRadius, maxDuration: caps.maxConditionTurns },
+        },
+        { finalize: (d) => finalizeAbility(d, input.level, input.maxCost) },
+      );
+      const notes = r.rejected ? [`The forge could not do this as written (${r.rejected}). It made the closest allowed version.`, ...r.forgeNotes] : r.forgeNotes;
+      return { ability: r.ability, notes };
+    } catch (err) {
+      lastErr = err;
+      if (!(err instanceof LlmError) || !err.retryable) break;
+      await opts.sleep(opts.retryBackoffMs);
+    }
+  }
+  if (lastErr instanceof LlmError && lastErr.kind === "invalid_output") {
+    throw new ForgeError(`The forge could not fit that idea into your remaining power budget (${input.maxCost}). Try something simpler or cheaper.`);
+  }
+  throw new ForgeError(lastErr instanceof LlmError ? "The forge is unavailable right now. Try again in a moment." : "That could not be shaped into rules. Try rewording it.");
 }
 
 function describe(a: Ability, cost: number, notes: string[], budget: number): string {

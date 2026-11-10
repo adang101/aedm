@@ -1,8 +1,9 @@
 import {
-  addCharacter, addMap, advanceBeat, applyDmActions, basicAttack, clampEnemy, cloneState, combatOutcome,
+  addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, basicAttack, clampEnemy, cloneState, combatOutcome,
   computePartyLevel, createGameState, currentMap, describeEvent, endCombat, endTurn, enemyRangesForLevel,
-  enemyTakeTurn, entitiesOnMap, findFreeTileNear, findPath, generateMap, isWalkable, moveEntity, occupiedTiles,
-  placePartyOnMap, registerArchetype, resolveCheck, rest, rngFromState, setAbsent, STARTER_BRIEFS, toCharacterView,
+  enemyTakeTurn, entitiesOnMap, findFreeTileNear, findPath, generateMap, isWalkable, levelUpView, moveEntity, occupiedTiles,
+  placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
+  skipAbilityPick, spendScorePoint, STARTER_BRIEFS, toCharacterView,
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
   type CheckRequest, type CreateEnemyAction, type EngineEvent, type Entity, type GameState,
 } from "@aedm/engine";
@@ -10,7 +11,8 @@ import {
   buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn, summarizeTurns,
   type DmTurnResult,
 } from "@aedm/llm";
-import type { Biome, DmAction, DmResponse, EntityView, GameMap, PlayerStatus } from "@aedm/schemas";
+import type { Ability, Biome, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus } from "@aedm/schemas";
+import { ForgeError, forgeOneAbility } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import type { Player, Room } from "./rooms";
 import { isSafeId, writeSave, type SaveFile, SAVE_VERSION } from "./saves";
@@ -303,6 +305,8 @@ export class GameSession {
       if (this.turn) this.room.send(playerId, "turn_timer", { entity_id: this.turn.entityId, seconds_left: Math.max(0, (this.turn.deadline - this.deps.clock()) / 1000) });
     }
     if (this.vote) this.room.send(playerId, "vote_state", this.votePayload(this.vote));
+    const mine = this.room.player(playerId)?.characterId;
+    if (mine) this.sendLevelUpState(mine, true);
   }
 
   private broadcastDelta(prev: GameState, next: GameState): void {
@@ -364,6 +368,9 @@ export class GameSession {
           this.room.broadcast("chat", { from_id: e.entityId, from_name: e.name.slice(0, 40), channel: "ic", text: e.text });
           this.recent.push({ speaker: e.name, text: e.text, kind: "dm" });
           break;
+        case "level_up":
+          this.sendLevelUpState(e.characterId);
+          break;
         case "action_rejected":
           if (this.cfg.devLog) this.deps.logger.info(`[dm] rejected ${e.action}: ${e.reason}`);
           break;
@@ -398,6 +405,10 @@ export class GameSession {
   }
 
   handleSay(player: Player, text: string, channel: "ic" | "ooc"): void {
+    if (channel === "ooc" && /^\/dev(\s|$)/.test(text)) {
+      this.handleDevCommand(player, text);
+      return;
+    }
     const ch = this.characterOf(player);
     this.room.broadcast("chat", {
       from_id: player.id,
@@ -595,6 +606,151 @@ export class GameSession {
 
   handleEndTurn(player: Player, reply: Reply): void {
     this.combatAction(player, reply, (ent) => endTurn(this.state, this.rng(), ent.id), { endsTurn: true });
+  }
+
+  // ---------- level-up ----------
+
+  /** The level_up_state payload for a character (zero picks closes the screen), or null if unknown. */
+  private levelUpPayload(charId: string) {
+    const v = levelUpView(this.state, charId);
+    if (!v) return null;
+    return {
+      character_id: v.characterId,
+      level: v.level,
+      score_points: v.scorePoints,
+      ability_picks: v.abilityPicks,
+      budget: v.budget,
+      budget_used: v.budgetUsed,
+      per_ability_cap: v.perAbilityCap,
+      caps: { max_avg: v.caps.maxAvg, max_radius: v.caps.maxRadius, max_stun_turns: v.caps.maxStunTurns },
+      max_abilities: v.maxAbilities,
+      abilities: v.abilities,
+      scores: v.scores,
+    };
+  }
+
+  /** Owner only. `onlyIfPending` skips the message when there is nothing to choose (reconnects). */
+  private sendLevelUpState(charId: string, onlyIfPending = false): void {
+    const owner = this.ownerOf(charId);
+    const payload = this.levelUpPayload(charId);
+    if (!owner || !payload) return;
+    if (onlyIfPending && payload.score_points + payload.ability_picks === 0) return;
+    this.room.send(owner.id, "level_up_state", payload);
+  }
+
+  private levelUpBusy = new Set<string>();
+
+  /** Apply one level-up choice for the sender's own character. Forging runs on the serialized queue. */
+  handleLevelUpChoice(
+    player: Player, choice: LevelUpChoice, reply: Reply,
+    sendResult: (p: { ok: boolean; message: string; forge_notes: string[]; ability?: Ability }) => void,
+  ): void {
+    const ch = this.characterOf(player);
+    if (!ch) return reply("error", "forbidden", "You have no character in this game.");
+    if (this.state.combat) return reply("error", "invalid_state", "Finish the fight first.");
+    const v0 = levelUpView(this.state, ch.id);
+    if (!v0 || v0.scorePoints + v0.abilityPicks === 0) return reply("error", "invalid_state", "You have no level-up choices pending.");
+    if (this.levelUpBusy.has(ch.id)) return reply("error", "invalid_state", "Your last choice is still being forged.");
+    const forges = choice.kind === "new_ability" || choice.kind === "reforge";
+    if (choice.kind === "score" && v0.scorePoints <= 0) return reply("error", "invalid_state", "You have no ability score point to spend.");
+    if (!(choice.kind === "score") && v0.abilityPicks <= 0) return reply("error", "invalid_state", "You have no ability pick to spend.");
+    if (forges) this.levelUpBusy.add(ch.id);
+
+    void this.enqueue(async () => {
+      try {
+        await this.applyLevelUpChoice(ch.id, choice, reply, sendResult);
+      } finally {
+        this.levelUpBusy.delete(ch.id);
+      }
+    });
+  }
+
+  private async applyLevelUpChoice(
+    charId: string, choice: LevelUpChoice, reply: Reply,
+    sendResult: (p: { ok: boolean; message: string; forge_notes: string[]; ability?: Ability }) => void,
+  ): Promise<void> {
+    const cur = () => this.state.characters[charId];
+    if (!cur()) return reply("error", "forbidden", "You have no character in this game.");
+    if (this.state.combat) return reply("error", "invalid_state", "Finish the fight first.");
+    const name = cur()!.name;
+    const refuse = (message: string, notes: string[] = []) => sendResult({ ok: false, message: message.slice(0, 500), forge_notes: notes });
+
+    let result: ReturnType<typeof spendScorePoint> | undefined;
+    let notes: string[] = [];
+    let line = "";
+
+    if (choice.kind === "score") {
+      result = spendScorePoint(this.state, charId, choice.ability);
+      line = `${name} raised ${choice.ability.toUpperCase()} to ${(cur()!.scores[choice.ability]) + 1}.`;
+    } else if (choice.kind === "skip_ability") {
+      result = skipAbilityPick(this.state, charId);
+    } else {
+      const replacing = choice.kind === "reforge" ? choice.ability_id : undefined;
+      const old = replacing === undefined ? undefined : cur()!.abilities.find((a) => a.id === replacing);
+      if (replacing !== undefined && !old) return refuse("You do not have that ability.");
+      const level = cur()!.level;
+      const left = remainingBudget(this.state, charId, replacing);
+      const maxCost = Math.min(levelUpView(this.state, charId)!.perAbilityCap, left);
+      if (maxCost < 1) return refuse(`No power budget is left (${left}). Reforge an existing ability instead.`);
+      if (replacing === undefined && cur()!.abilities.length >= (levelUpView(this.state, charId)!.maxAbilities)) {
+        return refuse("You already know as many abilities as you can. Reforge one instead.");
+      }
+      const concept = `${name}, ${cur()!.title}. ${cur()!.description}${old ? ` Upgrading the ability "${old.name}": ${old.description}` : ""}`;
+      let forged: { ability: Ability; notes: string[] };
+      try {
+        forged = await forgeOneAbility(this.deps.provider, { concept, text: choice.text, level, maxCost }, {
+          sleep: (ms) => this.sleep(ms), retryBackoffMs: this.cfg.retryBackoffMs,
+        });
+      } catch (err) {
+        if (!(err instanceof ForgeError)) this.deps.logger.error("[level-up] forge failed:", err instanceof Error ? err.message : String(err));
+        return refuse(err instanceof ForgeError ? err.message : "The forge hit a problem. Try again.");
+      }
+      if (this.state.combat) return reply("error", "invalid_state", "Finish the fight first.");
+      result = old
+        ? replaceAbility(this.state, charId, old.id as string, forged.ability)
+        : addAbilityToCharacter(this.state, charId, forged.ability);
+      notes = forged.notes;
+      line = result.ok && result.ability
+        ? (old ? `${name} reforged ${old.name} into ${result.ability.name}.` : `${name} learned ${result.ability.name}.`)
+        : "";
+    }
+
+    if (!result.ok) return refuse(result.error, notes);
+    this.commit(result.state);
+    this.publish(result.events, { toDm: false });
+    if (line) this.sys(line);
+    const ability = "ability" in result ? result.ability : undefined;
+    sendResult({
+      ok: true,
+      message: line || "You keep your abilities as they are.",
+      forge_notes: notes.map((n) => n.slice(0, 1000)).slice(0, 20),
+      ...(ability ? { ability } : {}),
+    });
+    this.sendLevelUpState(charId);
+    this.autosave();
+  }
+
+  /** `/dev grow <n>` in OOC chat. Only when the room setting dev_solo is on; otherwise it does nothing. */
+  private handleDevCommand(player: Player, text: string): void {
+    if (!this.room.settings.dev_solo) {
+      this.sysTo(player.id, "Dev commands are disabled in this room.");
+      return;
+    }
+    const m = /^\/dev\s+grow\s+(\d{1,4})\s*$/.exec(text.trim());
+    const ch = this.characterOf(player);
+    if (!m || !ch) {
+      this.sysTo(player.id, "Usage: /dev grow <1-1000> (needs a character).");
+      return;
+    }
+    const n = Number(m[1]);
+    if (n < 1 || n > 1000) { this.sysTo(player.id, "Usage: /dev grow <1-1000>."); return; }
+    void this.enqueue(() => {
+      const r = addGrowth(this.state, ch.id, n);
+      if (!r.ok) { this.sysTo(player.id, r.error ?? "That did not work."); return; }
+      this.commit(r.state);
+      this.sysTo(player.id, `[dev] ${ch.name} gains ${n} growth.`);
+      this.publish(r.events, { toDm: false });
+    });
   }
 
   // ---------- combat loop ----------

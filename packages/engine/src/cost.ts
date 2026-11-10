@@ -200,12 +200,15 @@ function clampDiceTo(dice: string, maxAvgHundredths: number): string {
 }
 
 /**
- * Scale an over-cap draft down to a level. Order: range, dice, radius, durations (stun, then capped
+ * Scale an over-cap draft down to a level (and, with `maxCost`, to the power budget the player has left). Order: range, dice, radius, durations (stun, then capped
  * conditions), then price: shorten durations, shrink radius, shrink dice, switch to 1 use per rest,
  * and finally drop trailing effects. The result always carries a recomputed `cost`.
  */
-export function clampAbilityToLevel(draft: Ability | AbilityDraft, level: number): { ability: Ability; notes: string[] } {
+export function clampAbilityToLevel(
+  draft: Ability | AbilityDraft, level: number, opts: { maxCost?: number } = {},
+): { ability: Ability; notes: string[] } {
   const caps = levelCaps(level);
+  const costCap = Math.min(caps.perAbilityCap, opts.maxCost ?? Number.POSITIVE_INFINITY);
   const notes: string[] = [];
   const src = structuredClone(draft) as AbilityDraft;
   const effects = src.effects as MutableEffect[];
@@ -241,7 +244,7 @@ export function clampAbilityToLevel(draft: Ability | AbilityDraft, level: number
   effects.forEach(fixShape);
 
   const cost = () => abilityCost(src as unknown as CostableAbility);
-  const over = () => cost() > caps.perAbilityCap;
+  const over = () => cost() > costCap;
 
   if (over()) {
     // 1. shorten the longest duration

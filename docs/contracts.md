@@ -120,7 +120,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `key_ability` | enum | str, dex, con, int, wis or cha |
 | `scores` | object | The six ability scores. At creation they cost exactly 27 points and each is 8 to 15. |
 | `trait_tags` | array | Exactly 2 allowed tags |
-| `abilities` | array | 1 to 3 ability objects at creation, total cost within the level's power budget |
+| `abilities` | array | 1 to 3 ability objects at creation, up to 6 after level-ups (`abilityLimits.maxAbilitiesPerCharacter`), total cost within the level's power budget |
 | `weapon_tier`, `armor_bonus` | integer | Within the level's allowance |
 | `level`, `growth`, `hp`, `hp_max` | integer | Engine-owned. Clients cannot set them. |
 | `sprite_recipe` | object | Discriminated on `kind`. For now only `shape`: shape (circle, square, diamond, triangle, hex), color and accent (`#rrggbb`), glyph (1 to 2 characters). A `parts` variant (part IDs and palettes, validated against the asset catalog) comes later. |
@@ -156,6 +156,7 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `request_save` | Client to server | name (at most 30 characters) |
 | `load_save` | Client to server | save_id (owner only) |
 | `ping` | Client to server | none |
+| `level_up_choice` | Client to server | Discriminated on `kind`: `score` (ability: str, dex, con, int, wis or cha), `new_ability` (text, 1 to 300 characters), `reforge` (ability_id, text 1 to 300), `skip_ability` (none). Applies to the sender's own character only; out of combat only. |
 | `state_snapshot` | Server to client | seq, mode (exploration, combat), map (Map JSON), entities (EntityView), party (CharacterView), quests, combat (optional CombatState) |
 | `state_diff` | Server to client | seq, ack_seq (optional), changed (EntityView list), removed (entity IDs), mode (optional), combat (optional CombatState) |
 | `narration_chunk` | Server to client | turn_id, text, done |
@@ -172,8 +173,12 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `log` | Server to client | kind (narration, system, roll, engine), text, turn_id (optional) |
 | `error` | Server to client | code, message, ack_id (optional) |
 | `pong` | Server to client | none |
+| `level_up_state` | Server to client | Owner only. character_id, level, score_points, ability_picks, budget, budget_used, per_ability_cap, caps (max_avg, max_radius, max_stun_turns), max_abilities (optional), abilities (current, with cost), scores. Sent after a `level_up` event, after each choice, and on (re)connect while picks are pending. Zero score points and zero ability picks closes the level-up screen. |
+| `level_up_result` | Server to client | Owner only, carries the choice's `ack_id`. ok, message, forge_notes (list), ability (optional: the ability learned or reforged). Rejections that need no forge (combat, nothing pending, wrong target) come back as `error` instead. |
 
-Shared payload types: `EntityView` is id, kind (pc, npc, enemy), name, x, y, hp, hp_max, conditions (condition and turns), sprite (sprite recipe), and optional disposition and owner_player_id. `CharacterView` is the Character minus the private fields `user_id`, `campaign_id` and `inventory`. `CombatState` is round, order and active_id.
+**Level-up flow.** A `level_up` engine event (growth reaching 100 per level) gives the character one ability pick, plus one ability score point at levels 3, 6 and 9. The owner receives `level_up_state` and answers with `level_up_choice` messages until both counters are zero. `score` spends a point (a score never passes 20; max HP follows CON). `new_ability` and `reforge` forge the text at the character's current level through the same pipeline as character creation, clamp it to the level caps and to the power budget still free (a reforge frees the old ability's cost first), and reject it with a clear message when nothing fits. `skip_ability` keeps the abilities and clears one pick. Choices run on the room's serialized queue because forging calls the model. Each success broadcasts a system `log` line ("Brindle learned Chain Spark") and a `state_snapshot` with the new party view. In a room with `dev_solo` on, the OOC chat command `/dev grow <1-1000>` grants growth to the sender's character; with `dev_solo` off it does nothing but answer "Dev commands are disabled in this room."
+
+Shared payload types: `EntityView` is id, kind (pc, npc, enemy), name, x, y, hp, hp_max, conditions (condition and turns), sprite (sprite recipe), and optional disposition and owner_player_id. `CharacterView` is the Character minus the private fields `user_id` and `campaign_id`, plus an optional `inventory` (additive, so the table can see the party's gear on the character sheet). `CombatState` is round, order and active_id.
 
 The 8 KB limit applies to client-to-server messages. A `state_snapshot` carries a whole map and may be larger.
 

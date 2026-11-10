@@ -1,6 +1,6 @@
 import {
   ClientMessageSchema, WS_VERSION, fixtures, parseDice,
-  type CharacterCreate, type CharacterView, type EntityView, type GameMap, type ServerMessageType,
+  type Ability, type CharacterCreate, type CharacterView, type EntityView, type GameMap, type ServerMessageType,
 } from "@aedm/schemas";
 import type { Transport, TransportFactory, TransportHandlers } from "./transport";
 import { MOCK_H, MOCK_W, NARRATION_OPENING, NPC_ODALYS, buildMockMap, choristerEntities, wallAt } from "./mock-world";
@@ -31,6 +31,19 @@ const FAKES = {
   sable: { id: "p_sable", name: "Sable", char: fixtures.ORRIN, start: { x: 13, y: 12 } },
 };
 
+/** Stand-in for the ability forge: every idea becomes 2d6 single-target damage. */
+export function mockAbilityFrom(t: string, id: string, i = 0): Ability {
+  const [head, ...rest] = t.split(":");
+  const name = (rest.length ? head! : t.split(/\s+/).slice(0, 3).join(" ")).trim().slice(0, 40) || `Ability ${i + 1}`;
+  const desc = (rest.length ? rest.join(":") : t).trim().slice(0, 200) || name;
+  return {
+    v: 1 as const, id, name, description: desc, tags: [], action: "action" as const,
+    target: "enemy" as const, range_tiles: 4, cooldown_turns: 2,
+    effects: [{ type: "damage" as const, shape: "single" as const, dice: "2d6", damage_type: "sharp" as const }],
+    forge_notes: "Mock forge: turned into 2d6 single-target damage.", cost: 4,
+  };
+}
+
 /** Build the character a real server would produce from a creator submission (the forge is faked). */
 export function mockCharacterFrom(c: CharacterCreate): CharacterView {
   const con = c.scores.con;
@@ -39,17 +52,7 @@ export function mockCharacterFrom(c: CharacterCreate): CharacterView {
   return {
     v: 1, id: ME_CHAR, name: c.name, title: c.title, description: c.description, key_ability: c.key_ability,
     scores: { ...c.scores }, trait_tags: c.trait_tags,
-    abilities: texts.map((t, i) => {
-      const [head, ...rest] = t.split(":");
-      const name = (rest.length ? head! : t.split(/\s+/).slice(0, 3).join(" ")).trim().slice(0, 40) || `Ability ${i + 1}`;
-      const desc = (rest.length ? rest.join(":") : t).trim().slice(0, 200) || name;
-      return {
-        v: 1 as const, id: `ab_me_${i + 1}`, name, description: desc, tags: [], action: "action" as const,
-        target: "enemy" as const, range_tiles: 4, cooldown_turns: 2,
-        effects: [{ type: "damage" as const, shape: "single" as const, dice: "2d6", damage_type: "sharp" as const }],
-        forge_notes: "Mock forge: turned into 2d6 single-target damage.", cost: 4,
-      };
-    }),
+    abilities: texts.map((t, i) => mockAbilityFrom(t, `ab_me_${i + 1}`, i)),
     weapon_tier: 1, armor_bonus: 2, level: 1, growth: 0, hp, hp_max: hp, sprite_recipe: c.sprite_recipe,
   };
 }
@@ -174,6 +177,7 @@ export class MockServer {
       case "end_turn": return this.onEndTurn(ack);
       case "say": return this.onSay(String(p.text), p.channel as "ic" | "ooc", ack);
       case "vote_cast": return this.onVoteCast(String(p.choice), ack);
+      case "level_up_choice": return this.onLevelUpChoice(p, ack);
       case "request_save": this.emit("save_created", { save_id: `sv_${this.n}`, name: String(p.name) }, ack); return;
       case "load_save": return this.fail("not_found", "Saves are not available in the mock.", ack);
       default: return;
@@ -220,7 +224,7 @@ export class MockServer {
     }
     this.emit("joined", { player_id: ME, auth_token: "mock-token-abc123", room_id: "room_mock" }, ack);
     this.lobbyState();
-    if (this.phase === "playing") this.sendSnapshot();
+    if (this.phase === "playing") { this.sendSnapshot(); if (this.pend.score + this.pend.picks > 0) this.sendLevelUp(); }
     if (!this.hostIsFake && !resuming) this.scriptHostLobby();
   }
 
@@ -628,7 +632,96 @@ export class MockServer {
     this.engine("Combat ends: victory.");
     this.narrate("The last chorister folds like wet paper, and the humming stops. In the silence, the marsh exhales. Odalys lets out a long, shaky breath from the porch.", () => {
       this.emit("chips", { chips: ["Search the robes", "Talk to Odalys", "Head for the marsh"] });
+      this.grantLevelUps();
     });
+  }
+
+  // ---------- level-up (mock) ----------
+
+  private pend = { score: 0, picks: 0 };
+  private levelUpGranted = false;
+
+  private budgetFor(level: number): { budget: number; cap: number } {
+    const budget = 25 + 5 * level;
+    return { budget, cap: Math.floor((budget * 45) / 100) };
+  }
+
+  private sendLevelUp(): void {
+    const c = this.myChar;
+    if (!c) return;
+    const { budget, cap } = this.budgetFor(c.level);
+    this.emit("level_up_state", {
+      character_id: c.id, level: c.level, score_points: this.pend.score, ability_picks: this.pend.picks,
+      budget, budget_used: c.abilities.reduce((n, a) => n + (a.cost ?? 0), 0), per_ability_cap: cap,
+      caps: { max_avg: 5 + 2 * c.level, max_radius: c.level >= 5 ? 2 : 1, max_stun_turns: c.level >= 7 ? 2 : 1 },
+      max_abilities: 6, abilities: c.abilities, scores: c.scores,
+    });
+  }
+
+  /** Once, after the first victory: Brindle jumps to level 3 (1 score point, 2 ability picks). */
+  /** Dev hook (also called after the first mock victory): `__mock.grantLevelUps()`. */
+  grantLevelUps(): void {
+    const c = this.myChar;
+    if (!c || this.levelUpGranted) return;
+    this.levelUpGranted = true;
+    c.growth += 200;
+    for (let lv = c.level + 1; lv <= 3; lv++) {
+      c.level = lv;
+      c.hp_max += 6 + Math.floor((c.scores.con - 10) / 2);
+      this.pend.picks += 1;
+      if (lv === 3) this.pend.score += 1;
+      this.engine(`${c.name.split(" ")[0]} reaches level ${lv}.${lv === 3 ? " +1 ability score available." : ""}`);
+    }
+    c.hp = c.hp_max;
+    const e = this.ents[c.id];
+    if (e) { e.hp = c.hp_max; e.hp_max = c.hp_max; }
+    this.sendSnapshot();
+    this.sendLevelUp();
+  }
+
+  private onLevelUpChoice(p: Payload, ack: string): void {
+    const c = this.myChar;
+    if (!c || (this.pend.score === 0 && this.pend.picks === 0)) return this.fail("invalid_state", "You have no level-up choices pending.", ack);
+    if (this.combat) return this.fail("invalid_state", "Finish the fight first.", ack);
+    const result = (ok: boolean, message: string, ability?: Ability, notes: string[] = []) =>
+      this.emit("level_up_result", { ok, message, forge_notes: notes, ...(ability ? { ability } : {}) }, ack);
+    const first = c.name.split(" ")[0];
+    const kind = String(p.kind);
+    if (kind === "score") {
+      const k = p.ability as keyof typeof c.scores;
+      if (this.pend.score <= 0) return this.fail("invalid_state", "You have no ability score point to spend.", ack);
+      if (c.scores[k] >= 20) return result(false, `${String(k).toUpperCase()} is already 20.`);
+      c.scores[k] += 1;
+      this.pend.score -= 1;
+      this.sys(`${first} raised ${String(k).toUpperCase()} to ${c.scores[k]}.`);
+      this.sendSnapshot();
+      result(true, `${first} raised ${String(k).toUpperCase()} to ${c.scores[k]}.`);
+    } else {
+      if (this.pend.picks <= 0) return this.fail("invalid_state", "You have no ability pick to spend.", ack);
+      if (kind === "skip_ability") {
+        this.pend.picks -= 1;
+        result(true, "You keep your abilities as they are.");
+      } else {
+        const replacing = kind === "reforge" ? String(p.ability_id) : null;
+        const old = replacing ? c.abilities.find((a) => a.id === replacing) : undefined;
+        if (replacing && !old) return result(false, "You do not have that ability.");
+        if (!replacing && c.abilities.length >= 6) return result(false, "You already know as many abilities as you can. Reforge one instead.");
+        const ab = mockAbilityFrom(String(p.text), `ab_me_${++this.n}`);
+        const used = c.abilities.reduce((n, a) => n + (a === old ? 0 : (a.cost ?? 0)), 0);
+        if (used + (ab.cost ?? 0) > this.budgetFor(c.level).budget) return result(false, "That does not fit your remaining power budget.");
+        this.later(() => {
+          if (old) c.abilities[c.abilities.indexOf(old)] = ab;
+          else c.abilities.push(ab);
+          this.pend.picks -= 1;
+          this.sys(old ? `${first} reforged ${old.name} into ${ab.name}.` : `${first} learned ${ab.name}.`);
+          this.sendSnapshot();
+          result(true, old ? `${first} reforged ${old.name} into ${ab.name}.` : `${first} learned ${ab.name}.`, ab, [ab.forge_notes ?? ""].filter(Boolean));
+          this.sendLevelUp();
+        }, 900);
+        return;
+      }
+    }
+    this.sendLevelUp();
   }
 
   private onBasicAttack(target: string, ack: string): void {

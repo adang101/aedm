@@ -458,7 +458,7 @@ export function toEntityView(state: GameState, e: Entity): EntityView {
 }
 
 export function toCharacterView(c: Character): CharacterView {
-  const { user_id: _u, campaign_id: _c, inventory: _i, ...view } = c;
+  const { user_id: _u, campaign_id: _c, ...view } = c;
   return view;
 }
 

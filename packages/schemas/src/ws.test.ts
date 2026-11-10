@@ -111,3 +111,37 @@ describe("server messages", () => {
     expect(ServerMessageSchema.safeParse(env("chips", { chips: ["one"] })).success).toBe(false);
   });
 });
+
+describe("level-up messages", () => {
+  const ability = BRINDLE.abilities[0]!;
+  it("level_up_choice payloads", () => {
+    const ok = [
+      { kind: "score", ability: "con" },
+      { kind: "new_ability", text: "Chain lightning that jumps between enemies" },
+      { kind: "reforge", ability_id: "ab_x", text: "Make it burst" },
+      { kind: "skip_ability" },
+    ];
+    for (const p of ok) expect(ClientMessageSchema.safeParse(env("level_up_choice", p)).success, JSON.stringify(p)).toBe(true);
+    const bad = [
+      { kind: "score", ability: "luck" },
+      { kind: "new_ability", text: "" },
+      { kind: "new_ability", text: "x".repeat(301) },
+      { kind: "reforge", text: "no id" },
+      { kind: "skip_ability", extra: 1 },
+      { kind: "heal" },
+    ];
+    for (const p of bad) expect(ClientMessageSchema.safeParse(env("level_up_choice", p)).success, JSON.stringify(p)).toBe(false);
+  });
+  it("level_up_state and level_up_result", () => {
+    const state = {
+      character_id: "ch_a", level: 3, score_points: 1, ability_picks: 2, budget: 40, budget_used: 19, per_ability_cap: 18,
+      caps: { max_avg: 11, max_radius: 1, max_stun_turns: 1 }, abilities: [ability], scores: BRINDLE.scores,
+    };
+    expect(ServerMessageSchema.safeParse(env("level_up_state", state)).success).toBe(true);
+    expect(ServerMessageSchema.safeParse(env("level_up_state", { ...state, score_points: -1 })).success).toBe(false);
+    expect(ServerMessageSchema.safeParse(env("level_up_state", { ...state, extra: 1 })).success).toBe(false);
+    expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: true, message: "Learned it", forge_notes: ["a"], ability })).success).toBe(true);
+    expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: false, message: "Finish the fight first.", forge_notes: [] })).success).toBe(true);
+    expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: true, message: "x" })).success).toBe(false);
+  });
+});

@@ -1,7 +1,7 @@
 import type { AbilityScoreKey } from "@aedm/schemas";
 import { RULES } from "./data.ts";
 import type { EngineEvent } from "./events.ts";
-import { cloneState, emit, finish, type GameState, type Mut } from "./state.ts";
+import { cloneState, emit, finish, run, type GameState, type Mut } from "./state.ts";
 import { fromState } from "./rng.ts";
 import { hpMax as computeHpMax, levelFromGrowth } from "./rules.ts";
 
@@ -32,6 +32,20 @@ export function addGrowthM(m: Mut, charId: string, amount: number): void {
   }
 }
 
+/** Drop a pending entry once nothing is left to choose. */
+export function clearIfDone(s: GameState, charId: string): void {
+  const p = s.pendingLevelUps[charId];
+  if (p && p.scorePoints <= 0 && p.abilityPicks <= 0) delete s.pendingLevelUps[charId];
+}
+
+/** Public wrapper over `addGrowthM`: add growth points and apply any level-ups. */
+export function addGrowth(state: GameState, charId: string, amount: number): { ok: boolean; state: GameState; events: EngineEvent[]; error?: string } {
+  if (!state.characters[charId]) return { ok: false, state, events: [], error: "unknown character" };
+  if (!Number.isInteger(amount) || amount <= 0) return { ok: false, state, events: [], error: "growth must be a positive whole number" };
+  const r = run(state, fromState(state.rngState), (m) => addGrowthM(m, charId, amount));
+  return { ok: true, state: r.state, events: r.events };
+}
+
 /** Spend a pending +1 ability score (levels 3, 6, 9; maximum 20). */
 export function applyScoreIncrease(state: GameState, charId: string, key: AbilityScoreKey):
   { ok: boolean; state: GameState; events: EngineEvent[]; error?: string } {
@@ -50,7 +64,9 @@ export function applyScoreIncrease(state: GameState, charId: string, key: Abilit
     c.hp_max = newMax;
     const ent = s.entities[charId];
     if (ent) { ent.hpMax = newMax; if (ent.hp > 0) ent.hp += gain; }
+    else if (c.hp > 0) c.hp = Math.min(newMax, Math.max(0, c.hp + gain));
   }
+  clearIfDone(s, charId);
   const r = finish({ s, rng: fromState(s.rngState), ev: [] }, undefined);
   return { ok: true, state: r.state, events: r.events };
 }

@@ -1,10 +1,12 @@
 import type { EntityView } from "@aedm/schemas";
 import { MapRenderer, type TapInfo } from "../render/renderer";
-import { myCharacter, myEntity, type AppState } from "../state/store";
+import { myCharacter, myEntity, pendingLevelUp, type AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
 import { createHud, type Pending } from "./hud";
+import { createLevelUpModal } from "./levelup";
 import { createLog } from "./log";
 import { closeMenu, openMenu, type MenuItem } from "./menu";
+import { createSheetModal } from "./sheet";
 import type { Ctx, Screen } from "./types";
 import { createVoteModal } from "./vote";
 
@@ -18,6 +20,7 @@ export function mountGame(ctx: Ctx): Screen {
   let pending: Pending = null;
   let tab: Tab = "story";
   let channel: "ic" | "ooc" = "ic";
+  const levelUpModal = createLevelUpModal(ctx);
 
   // ---------- canvas ----------
   const canvas = h("canvas", { class: "map-canvas", tabindex: 0, "aria-label": "Game map" });
@@ -34,9 +37,10 @@ export function mountGame(ctx: Ctx): Screen {
     },
     onEndTurn() { client.send("end_turn", {}); pending = null; refresh(); },
     onCancel() { pending = null; refresh(); },
+    onLevelUp() { levelUpModal.open(); },
   });
 
-  const mapWrap = h("div", { class: "map-wrap" }, canvas, hud.top, hud.bottom, h("div", { class: "zoom" }, zoomIn, zoomOut), loading);
+  const mapWrap = h("div", { class: "map-wrap" }, canvas, hud.top, hud.bottom, hud.levelUp, h("div", { class: "zoom" }, zoomIn, zoomOut), loading);
 
   const renderer = new MapRenderer(canvas, store, {
     onTap: (info) => handleTap(info),
@@ -156,7 +160,8 @@ export function mountGame(ctx: Ctx): Screen {
   const panel = h("aside", { class: "panel" }, partyBar, h("div", { class: "tabs", role: "tablist" }, ...tabBtns), storyPane, questPane);
 
   const vote = createVoteModal(ctx);
-  const el = h("main", { class: "screen game" }, mapWrap, panel, vote.el);
+  const sheet = createSheetModal(ctx);
+  const el = h("main", { class: "screen game" }, mapWrap, panel, vote.el, levelUpModal.el, sheet.el);
 
   // ---------- update ----------
   function refresh(): void { update(store.state); }
@@ -169,13 +174,26 @@ export function mountGame(ctx: Ctx): Screen {
       const owner = e?.owner_player_id ?? s.claimed[c.id];
       const player = s.lobby?.players.find((p) => p.player_id === owner);
       const frac = Math.max(0, Math.min(1, hp / max));
-      return h("div", { class: `member${activeId === c.id ? " active" : ""}${owner === s.playerId ? " me" : ""}`, title: `${c.name}: ${c.title}` },
+      const mine = owner === s.playerId;
+      const lu = mine ? pendingLevelUp(s) : null;
+      const open = () => sheet.open(c.id);
+      const card = h("div", {
+        class: `member clickable${activeId === c.id ? " active" : ""}${mine ? " me" : ""}`, title: `${c.name}: ${c.title} (open character sheet)`,
+        role: "button", tabindex: 0, "aria-label": `${c.name}, level ${c.level}. Open character sheet`,
+        onClick: open,
+        onKeydown: (ev: Event) => { const k = (ev as KeyboardEvent).key; if (k === "Enter" || k === " ") { ev.preventDefault(); open(); } },
+      },
         h("span", { class: "init-dot", style: `background:${c.sprite_recipe.color};border-color:${c.sprite_recipe.accent}` }, c.sprite_recipe.glyph),
         h("div", { class: "member-main" },
           h("div", { class: "member-name" }, h("span", { class: `dot ${player?.status ?? "online"}` }), c.name.split(" ")[0]),
           h("div", { class: "hpbar" }, h("i", { class: frac < 0.3 ? "low" : frac < 0.6 ? "mid" : "", style: `width:${Math.round(frac * 100)}%` })),
-          h("div", { class: "hptext" }, `${hp}/${max}`)),
+          h("div", { class: "hptext" }, `${hp}/${max} - Lv ${c.level}`)),
+        lu ? h("button", {
+          type: "button", class: "lvl-badge", "aria-label": "Level up",
+          onClick: (ev: Event) => { ev.stopPropagation(); levelUpModal.open(); },
+        }, "Level up!") : null,
         (e?.conditions.length ?? 0) > 0 ? h("div", { class: "conds" }, ...e!.conditions.map((c2) => h("span", { class: "cond" }, c2.condition))) : null);
+      return card;
     }));
   }
 
@@ -195,6 +213,8 @@ export function mountGame(ctx: Ctx): Screen {
     updateQuests(s);
     log.update(s);
     vote.update(s);
+    levelUpModal.update(s);
+    sheet.update(s);
     replaceChildren(chipRow, ...s.chips.map((c) => h("button", {
       type: "button", class: "chip", onClick: () => { client.send("say", { text: c, channel: "ic" }); },
     }, c)));
