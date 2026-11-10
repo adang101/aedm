@@ -205,7 +205,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 
 **WebSocket messages**
 
-Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 5: the envelopes are unchanged, but the Map payload changed shape (v2 map), room settings gained `plot_pattern` and `plot_arc`, `design_sprite` and `sprite_designed` were added, and sprite recipes gained the `pixel` kind with the `invalid_sprite` error code, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second; `design_sprite` is also limited per account (see Sprite designer).
+Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 6 (Workshop and cast messages, `custom_cast` and `custom_paintings` settings); it was 5 for the following: the envelopes are unchanged, but the Map payload changed shape (v2 map), room settings gained `plot_pattern` and `plot_arc`, `design_sprite` and `sprite_designed` were added, and sprite recipes gained the `pixel` kind with the `invalid_sprite` error code, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second; `design_sprite` is also limited per account (see Sprite designer).
 
 | `type` | Direction | Payload |
 | --- | --- | --- |
@@ -351,19 +351,27 @@ A player-painted sprite, recipe kind `pixel` (`PixelSpriteSchema`, `packages/sch
 
 Engine rules (`validatePixelSprite`, numbers in `packages/engine/data/pixel.json`): canvas size, every index inside the palette, every color on the master palette, at most 32 colors, at least 60 opaque pixels, no opaque pixel within 2 pixels of the edge, lowest opaque row within 4 of y = 60, and the recipe JSON at most 6144 bytes (so the whole create message stays under 8 KB). `shiftToFeet` moves an image vertically to put the feet on y = 60 when they are off by more than the tolerance and the margins allow it; the editor applies it on save. The server runs `validatePixelSprite` on every `claim_character` recipe of kind `pixel` (including saved templates) and refuses a failing one with the error code `invalid_sprite` and the reasons in the message. The renderer decodes once per sprite and falls back to `base`, then to a shape, if drawing fails.
 
-**Planned contracts (designed in `design.md`, not yet implemented)**
+**Workshop and campaign cast (built, WS v6)**
 
-These become Zod schemas when the features are built; shapes may still change.
+Schemas: `packages/schemas/src/workshop.ts`. Server: `apps/server/src/accounts/workshop.ts` (store), `workshop-handlers.ts`, and the cast handlers in `handlers.ts`.
 
 | Contract | Fields |
 | --- | --- |
-| Workshop asset | `id` (`as_`), `owner_user_id`, `name` (at most 40), `role_hint` (pc, npc, enemy, prop), `concept` (at most 200), `recipe` (shape, spec or pixel), `source` (designed, painted_over, painted), `created_at`, `updated_at` |
-| `create_npc` / `create_enemy` | gain optional `asset_ref` (an approved cast asset id from the context pack) |
-| Room settings | gain `custom_cast` (off, host_approval, open) and `custom_paintings` (boolean) |
+| Workshop asset (wire) | `id` (`as_`), `name` (1 to 40), `role_hint` (`pc`, `npc`, `enemy`, `prop`), `concept` (0 to 200), `tags` (at most 5 short words), `recipe` (shape, spec or pixel), `source` (`designed` for shape and spec recipes, `painted_over` or `painted` for pixel recipes; the schema enforces the pairing), `created_at`, `updated_at`. The stored record adds `owner_user_id`, which never leaves the server. |
+| Cast entry | `asset_id`, `owner_player_id`, `owner_name`, `name`, `role_hint`, `concept`, `recipe` (a snapshot taken at the offer), `status` (`pending`, `approved`) |
+| `create_npc` / `create_enemy` | gain optional `asset_ref` (an `as_` id from the context pack's `<cast>` block). The DM response `v` stays 1 (an optional field). `Enemy.sprite` widened from a spec to any sprite recipe. |
+| Room settings | gain `custom_cast` (`off`, `host_approval`, `open`; missing means `host_approval`) and `custom_paintings` (boolean; missing means true) |
+
+Limits per account: 200 assets and 5 MB (the size is the JSON of the stored records). A pixel recipe is validated by the engine on save (`invalid_sprite`). Guests get `forbidden` ("Log in to use your Workshop"); over a limit gets `invalid_state`.
 
 | WS `type` | Direction | Payload |
 | --- | --- | --- |
-| `save_sprite_asset` / `delete_sprite_asset` | Client to server | asset fields / id (account only) |
-| `list_sprite_assets` / `sprite_assets_list` | Both | Workshop summaries |
-| `offer_to_cast` / `cast_decision` | Client to server | asset_id / asset_id, approve (host) |
-| `cast_state` | Server to client | approved and pending cast entries (name, role hint, concept, recipe) |
+| `save_sprite_asset` | Client to server | name, role_hint, concept, tags, recipe, source, id? (present: update the account's own asset; absent: create). Accounts only. Replies `sprite_assets_list`. |
+| `delete_sprite_asset` | Client to server | id. Replies `sprite_assets_list`. |
+| `list_sprite_assets` | Client to server | empty. |
+| `sprite_assets_list` | Server to client | assets (newest first), used_bytes, max_assets, max_bytes. The envelope `ack_id` is the request's `id`. |
+| `offer_to_cast` | Client to server | asset_id (from the sender's own Workshop). In a room, account only. Under `host_approval` the entry is `pending` (the host's own offers are `approved`); under `open` it is `approved`; under `off`, `forbidden`. Only `npc` and `enemy` looks can be offered, at most 10 per player and 60 per room; a pixel recipe is refused while `custom_paintings` is false. Replies `presence` (ok). |
+| `cast_decision` | Client to server | asset_id, approve. Host: approve a pending entry, or deny or remove one (approve false). The offering player may withdraw their own entry (approve false). |
+| `cast_state` | Server to client | entries (cast entries, pending and approved). Sent to everyone on every change and to a joining or reconnecting player. |
+
+The cast is room state: it is not written to saves, and entries are visible only to players in the room where they were offered. `update_settings` is host-only; once the game has started it accepts only `custom_cast` and `custom_paintings`. Setting `custom_cast` to `open` approves every waiting entry. The DM's context lists approved `npc` and `enemy` entries (id, kind, name, concept up to 120 characters, neutralised as untrusted text; at most 20) while `custom_cast` is not `off`, and painted ones only while `custom_paintings` is on. `asset_ref` is checked on the server against that usable list and the action kind (`create_npc` takes `npc`, `create_enemy` takes `enemy`); anything else is ignored and the designed sprite is used. The beat never fails and the engine still decides all stats.

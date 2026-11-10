@@ -162,14 +162,18 @@ export function openWorkshop(ctx: Ctx): { close(): void } {
     h("div", { class: "row between" }, h("h2", null, "My Workshop"), closeBtn), usage, designBox, h("h3", null, "My sprites"), listEl);
   const el = h("div", { class: "modal", "data-modal": "workshop" }, card);
   el.addEventListener("click", (ev) => { if (ev.target === el) close(); });
-  el.addEventListener("keydown", (ev) => { if ((ev as KeyboardEvent).key === "Escape") close(); });
+  // on the document, so Escape still works after focus fell to the page (a button that disabled itself)
+  const onKey = (ev: KeyboardEvent): void => {
+    if (ev.key === "Escape" && !document.querySelector(".pe-overlay")) close();
+  };
+  document.addEventListener("keydown", onKey);
   document.body.append(el);
 
   const unsub = ctx.store.subscribe(renderList);
   let closed = false;
   function close(): void {
     if (closed) return;
-    closed = true; unsub(); el.remove();
+    closed = true; unsub(); el.remove(); document.removeEventListener("keydown", onKey);
     if (openModal === handle) openModal = null;
   }
   const handle = { close };
