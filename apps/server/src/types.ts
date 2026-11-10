@@ -1,5 +1,6 @@
 import type { ModelProvider } from "@aedm/llm";
 import type { AccountStore } from "./accounts/store";
+import type { WorkshopStore } from "./accounts/workshop";
 import type { SpriteAssets } from "./assets/sprites";
 
 /** Timer functions, injectable so tests can run fast or fully fake. */
@@ -82,6 +83,8 @@ export interface Deps {
   provider: ModelProvider;
   saveDir: string;
   accounts: AccountStore;
+  /** Per-account sprite libraries (Workshop). */
+  workshop: WorkshopStore;
   /** Designed sprites, cached per concept so the same NPC or enemy looks the same across sessions. */
   sprites: SpriteAssets;
   clock: () => number;

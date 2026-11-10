@@ -1,6 +1,7 @@
 import { addCharacter, cloneState, validatePixelSprite, validatePointBuy } from "@aedm/engine";
 import type { CharacterCreate, ClientMessage } from "@aedm/schemas";
 import { AccountHandlers } from "./accounts/handlers";
+import { WorkshopHandlers } from "./accounts/workshop-handlers";
 import { forgeCharacterAbilities, ForgeError } from "./forge";
 import { GameSession, type Reply } from "./game";
 import { RateLimiter, type Conn } from "./net";
@@ -14,11 +15,13 @@ type Msg<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
 export class Handlers {
   readonly registry: RoomRegistry;
   private readonly accounts: AccountHandlers;
+  private readonly workshop: WorkshopHandlers;
   /** Keyed per account (or per connection for guests), shared across that account's connections. */
   private readonly designLimiter = new RateLimiter();
 
   constructor(private readonly deps: Deps) {
     this.registry = new RoomRegistry(deps);
+    this.workshop = new WorkshopHandlers(deps);
     this.accounts = new AccountHandlers(deps, this.registry, { onRoomCreated: (room) => this.scheduleIdleCheck(room) });
   }
 
@@ -36,6 +39,7 @@ export class Handlers {
       default: break;
     }
     if (this.accounts.handles(msg.type)) return this.accounts.dispatch(conn, msg);
+    if (this.workshop.handles(msg.type)) return this.workshop.dispatch(conn, msg);
     const room = conn.roomId ? this.registry.get(conn.roomId) : undefined;
     const player = room?.player(conn.playerId);
     if (!room || !player) return conn.error("forbidden", "Join a room first.", ack);
