@@ -1,7 +1,8 @@
 import {
   CHECK_TAGS, CharacterCreateSchema, fixtures,
-  type AbilityScoreKey, type CharacterCreate, type CheckTag,
+  type AbilityScoreKey, type CharacterCreate, type CheckTag, type PixelSprite,
 } from "@aedm/schemas";
+import { validatePixelSprite } from "@aedm/engine";
 import { POINT_BUY_BUDGET, baseScores, pointsLeft, type Scores } from "./pointbuy";
 import { PREMADE_SPECS, buildSpriteSpec, defaultSpriteForm, formFromSpec, type SpriteForm } from "./sprite-builder";
 
@@ -15,6 +16,8 @@ export interface CreatorForm {
   abilityTexts: string[];
   /** The sprite builder's state; `buildCreate` turns it into a `spec` recipe. */
   sprite: SpriteForm;
+  /** A sprite made in the pixel editor. When set it is the character's recipe instead of the builder's spec. */
+  painted?: PixelSprite | undefined;
 }
 
 export const MAX_TRAITS = 2;
@@ -55,6 +58,11 @@ export function buildCreate(form: CreatorForm): BuildResult {
   const texts = form.abilityTexts.map((t) => t.trim()).filter(Boolean);
   if (texts.length === 0) errors.abilities = "Describe at least one ability.";
 
+  if (form.painted) {
+    const px = validatePixelSprite(form.painted);
+    if (!px.ok) errors.sprite = px.errors.map((e) => e.message).join(" ");
+  }
+
   const candidate = {
     v: 1,
     name: form.name,
@@ -63,7 +71,7 @@ export function buildCreate(form: CreatorForm): BuildResult {
     key_ability: form.key_ability,
     scores: form.scores,
     trait_tags: form.traits,
-    sprite_recipe: buildSpriteSpec(form.sprite, form.name),
+    sprite_recipe: form.painted ?? buildSpriteSpec(form.sprite, form.name),
     ability_texts: texts,
   };
   const parsed = CharacterCreateSchema.safeParse(candidate);

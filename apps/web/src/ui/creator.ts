@@ -1,6 +1,6 @@
 import { ABILITIES, BODY_PLANS, CHECK_TAGS, PART_GROUPS, SPRITE_PROMPT_MAX, spriteSwatch, type CheckTag, type PartGroup, type PixelSprite, type SpriteRecipe, type SpriteShape, type SpriteSpec } from "@aedm/schemas";
 import { drawShapeBody } from "../render/shape-recipe";
-import { composePixelSprite } from "../render/pixel-sprite";
+import { composePixelSprite, composeRecipe } from "../render/pixel-sprite";
 import { MARGIN, composeSprite } from "../render/sprite-composer";
 import {
   MAX_ABILITIES, MAX_TRAITS, buildCreate, emptyForm, premadeForms, toggleTrait,
@@ -15,7 +15,9 @@ import {
 } from "../state/pointbuy";
 import type { AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
+import { fromRecipe, blank } from "../state/pixel-editor";
 import type { Ctx } from "./types";
+import { openPixelEditor, rasterizeSpec } from "./pixel-editor";
 
 const ABILITY_NAMES: Record<string, string> = {
   str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma",
@@ -170,8 +172,9 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
   function drawPreview(): void {
     const g = preview.getContext("2d");
     if (!g) return;
-    const spec = currentSpec();
-    const s = composeSprite(spec, "right", previewFrame);
+    const s = form.painted
+      ? composeRecipe(form.painted, "right", previewFrame) ?? composeSprite(currentSpec(), "right", previewFrame)
+      : composeSprite(currentSpec(), "right", previewFrame);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, preview.width, preview.height);
     const k = 3; // 48 x 64 canvas drawn at 3x
@@ -182,8 +185,40 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
     const fit = Math.min(1, 1 / s.scale * 1.1);
     g.drawImage(s.canvas, fx - s.footX * k * fit, fy - s.footY * k * fit, s.canvas.width * k * fit, s.canvas.height * k * fit);
   }
+  // ----- paint over / paint from scratch -----
+  const paintNote = h("p", { class: "muted", role: "status" });
+  const paintOver = h("button", { type: "button", class: "btn small", onClick: () => startEditor("over") }, "Paint over");
+  const paintScratch = h("button", { type: "button", class: "btn small", onClick: () => startEditor("scratch") }, "Paint from scratch");
+  const editPaint = h("button", { type: "button", class: "btn small", onClick: () => startEditor("edit") }, "Edit painting");
+  const removePaint = h("button", { type: "button", class: "btn small ghost", onClick: () => { clearPainting(); refreshPreview(); } }, "Remove painting");
+  const paintRow = h("div", { class: "paint-row" }, paintOver, editPaint, paintScratch, removePaint);
+  function clearPainting(): void { form.painted = undefined; }
+  function startEditor(mode: "over" | "scratch" | "edit"): void {
+    const size = form.painted?.size ?? form.sprite.size;
+    let px = blank();
+    let base: SpriteSpec | undefined;
+    if (mode === "edit" && form.painted) {
+      px = fromRecipe(form.painted) ?? px;
+      base = form.painted.base;
+    } else if (mode === "over") {
+      base = currentSpec();
+      try { px = rasterizeSpec(base).px; } catch { base = undefined; }
+    }
+    openPixelEditor({
+      px, size, base, traits: base?.traits,
+      onSave: (sprite) => { form.painted = sprite; refreshPreview(); },
+    });
+  }
+  function refreshPaintControls(): void {
+    const has = !!form.painted;
+    paintOver.hidden = has; editPaint.hidden = !has; removePaint.hidden = !has;
+    paintNote.textContent = has
+      ? "Using your painting. Changing the look below replaces it."
+      : "Or make your own pixel sprite: start from this look or from a blank canvas.";
+  }
   function refreshPreview(): void {
     drawPreview();
+    refreshPaintControls();
     for (const b of bodyBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.body === form.sprite.body);
     for (const b of sizeBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.size === form.sprite.size);
     for (const b of slotBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.slot === slot);
@@ -199,28 +234,29 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
   }
   function buildSpriteControls(): void {
     replaceChildren(bodyBox, ...BODY_PLANS.map((b) => h("button", {
-      type: "button", class: "chip", "data-body": b, onClick: () => { form.sprite.body = b; refreshPreview(); },
+      type: "button", class: "chip", "data-body": b, onClick: () => { clearPainting(); form.sprite.body = b; refreshPreview(); },
     }, BODY_LABEL[b])));
     replaceChildren(sizeBox, ...BUILDER_SIZES.map((z) => h("button", {
-      type: "button", class: "chip", "data-size": z, onClick: () => { form.sprite.size = z; refreshPreview(); },
+      type: "button", class: "chip", "data-size": z, onClick: () => { clearPainting(); form.sprite.size = z; refreshPreview(); },
     }, z)));
     replaceChildren(slotBox, ...PALETTE_SLOTS.map((k) => h("button", {
       type: "button", class: "chip slot", "data-slot": k, onClick: () => { slot = k; buildSpriteControls(); refreshPreview(); },
     }, h("span", { class: "dot", style: `background:${form.sprite.palette[k]}` }), SLOT_LABEL[k])));
     replaceChildren(swatchBox, ...SWATCHES.map((c) => h("button", {
       type: "button", class: "swatch", "data-color": c, style: `background:${c}`, "aria-label": `${SLOT_LABEL[slot]} color ${c}`,
-      onClick: () => { form.sprite.palette[slot] = c; buildSpriteControls(); refreshPreview(); },
+      onClick: () => { clearPainting(); form.sprite.palette[slot] = c; buildSpriteControls(); refreshPreview(); },
     })));
     replaceChildren(partsBox, ...(Object.keys(PART_GROUPS) as PartGroup[]).map((g) => h("div", { class: "part-group" },
       h("b", null, GROUP_LABEL[g]),
       h("div", { class: "chip-row wrap" }, ...PART_GROUPS[g].map((part) => h("button", {
         type: "button", class: "chip toggle small", "data-part": part,
-        onClick: () => { form.sprite.parts = togglePart(form.sprite.parts, part); refreshPreview(); },
+        onClick: () => { clearPainting(); form.sprite.parts = togglePart(form.sprite.parts, part); refreshPreview(); },
       }, part.replace(/_/g, " ")))))));
   }
   const randomBtn = h("button", {
     type: "button", class: "btn small",
     onClick: () => {
+      clearPainting();
       form.sprite = randomLook(form.name, form.sprite.rolls + 1);
       buildSpriteControls(); refreshPreview();
     },
@@ -253,6 +289,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
       designing = false;
       designBtn.disabled = false;
       if (type === "sprite_designed" && msg.type === "sprite_designed") {
+        clearPainting();
         form.sprite = { ...designedForm(msg.payload.spec), rolls: form.sprite.rolls };
         designed = true;
         designBtn.textContent = "Design again";
@@ -329,6 +366,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
         describeBox,
         h("div", { class: "sprite-col" }, preview,
           h("div", { class: "stack tight" }, h("b", null, "Body plan"), bodyBox, h("b", null, "Size"), sizeBox, randomBtn)),
+        h("section", { class: "stack tight paint-section" }, h("b", null, "Paint your own"), paintNote, paintRow),
       ),
     ),
     h("section", { class: "stack tight sprite-builder" },

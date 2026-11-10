@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { autoGlyph, buildCreate, emptyForm, premadeForms, toggleTrait } from "./creator";
+import { blank, paintCells, rectCells, toRecipe } from "./pixel-editor";
 import { adjust, baseScores, canIncrease, pointsLeft, pointsSpent, scoreCost } from "./pointbuy";
 
 describe("point buy", () => {
@@ -62,5 +63,28 @@ describe("creator form", () => {
       expect(r.errors.traits).toBeTruthy();
       expect(r.errors.abilities).toBeTruthy();
     }
+  });
+
+  const goodForm = () => {
+    const f = premadeForms()[0]!.form;
+    return f;
+  };
+  const painted = (rect: [number, number, number, number]) => {
+    let px = blank();
+    px = paintCells(px, rectCells(...rect, true), 6);
+    return toRecipe(px, { size: "medium" });
+  };
+
+  it("uses a painted sprite as the recipe", () => {
+    const form = { ...goodForm(), painted: painted([16, 10, 31, 60]) };
+    const r = buildCreate(form);
+    expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
+    if (r.ok) expect(r.value.sprite_recipe?.kind).toBe("pixel");
+  });
+
+  it("refuses a painted sprite that breaks the rules", () => {
+    const r = buildCreate({ ...goodForm(), painted: painted([0, 10, 31, 60]) });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.sprite).toMatch(/empty space/);
   });
 });
