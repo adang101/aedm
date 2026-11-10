@@ -77,6 +77,9 @@ export function mountLobby(ctx: Ctx): Screen {
   startBtn.addEventListener("click", () => ctx.client.send("start_game", {}));
   const startHint = h("p", { class: "muted center" });
 
+  // a room opened with "Resume" on a saved campaign: the host loads the save instead of starting fresh
+  const resumeCard = h("section", { class: "card stack resume" });
+
   const claimedBox = h("section", { class: "card stack claimed" });
   const creator = createCreator(ctx, () => { editing = false; });
   const creatorCard = h("section", { class: "card" }, creator.el);
@@ -91,6 +94,7 @@ export function mountLobby(ctx: Ctx): Screen {
     h("div", { class: "lobby-grid" },
       h("div", { class: "stack" },
         h("section", { class: "card stack" }, h("h2", null, "Players"), playerList),
+        resumeCard,
         h("section", { class: "card stack" },
           h("h2", null, "Campaign"),
           h("label", { for: "pitch" }, "Pitch"), pitch,
@@ -135,23 +139,38 @@ export function mountLobby(ctx: Ctx): Screen {
     solo.checked = lobby.settings.dev_solo;
     hostNote.textContent = host ? "You are the host. Only you can change these." : "Only the host can change these settings.";
 
+    // resuming a saved campaign: characters come from the save
+    const resume = lobby.resume_save;
+    resumeCard.hidden = !resume;
+    if (resume) {
+      replaceChildren(resumeCard,
+        h("h2", null, "Resuming a saved campaign"),
+        h("p", { class: "muted" }, host
+          ? `"${resume.name}" is ready. Wait for your friends to join with the invite code, then load it. Anyone who played before gets their character back.`
+          : "Waiting for the host to load the saved campaign."),
+        host ? h("button", { type: "button", class: "btn primary big", onClick: () => ctx.client.send("load_save", { save_id: resume.save_id }) }, "Load campaign") : null);
+    }
+    creator.update(s);
+
     // character area
     const hasChar = !!me?.character_id;
-    creatorCard.hidden = hasChar && !editing;
+    creatorCard.hidden = (hasChar && !editing) || !!resume;
     replaceChildren(claimedBox,
       h("div", { class: "row between" },
         h("div", { class: "stack tight" }, h("span", { class: "label" }, "Your character"), h("b", { class: "big-name" }, s.myCharacterName ?? "Ready to play")),
         h("button", { type: "button", class: "btn small", onClick: () => { editing = true; update(ctx.store.state); creator.focusName(); } }, "Edit / replace")),
     );
-    claimedBox.hidden = !hasChar || editing;
+    claimedBox.hidden = !hasChar || editing || !!resume;
 
+    readyBtn.hidden = !!resume;
     readyBtn.textContent = me?.ready ? "Not ready" : "Ready";
     readyBtn.classList.toggle("primary", !me?.ready);
     readyBtn.disabled = !hasChar;
     const readyCount = lobby.players.filter((p) => p.ready).length;
     const canStart = readyCount >= 2 || lobby.settings.dev_solo;
-    startBtn.hidden = !host;
+    startBtn.hidden = !host || !!resume;
     startBtn.disabled = !canStart || !hasChar;
+    startHint.hidden = !!resume;
     startHint.textContent = !hasChar ? "Create a character, then ready up."
       : host ? (canStart ? "Everyone ready? Start the adventure." : "Waiting for at least 2 ready players, or turn on dev solo mode.")
         : "Waiting for the host to start.";

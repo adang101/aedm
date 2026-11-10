@@ -95,3 +95,4 @@ function render(s: AppState): void {
 
 store.subscribe(render);
 render(store.state);
+client.connect(); // the home screen needs a connection for log in, register and the account lists

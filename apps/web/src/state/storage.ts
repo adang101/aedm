@@ -48,3 +48,14 @@ export function loadAuth(code: string): StoredAuth | null {
 
 export const saveAuth = (code: string, auth: StoredAuth): void => storageSet(tokenKey(code), JSON.stringify(auth));
 export const clearAuth = (code: string): void => storageRemove(tokenKey(code));
+
+// ---------- account session ----------
+
+const SESSION_KEY = "aedm.session";
+
+export const loadSessionToken = (): string | null => {
+  const t = storageGet(SESSION_KEY);
+  return t && t.length >= 8 && t.length <= 128 ? t : null;
+};
+export const saveSessionToken = (token: string): void => storageSet(SESSION_KEY, token);
+export const clearSessionToken = (): void => storageRemove(SESSION_KEY);

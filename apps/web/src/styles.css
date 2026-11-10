@@ -300,3 +300,28 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
   .actions .btn { flex: none; white-space: nowrap; }
   .actions .end-turn { margin-left: 0; }
 }
+
+/* ---------- accounts ---------- */
+input[type="password"] {
+  width: 100%; padding: 10px 12px; font: inherit; color: var(--text); background: var(--bg-2);
+  border: 1px solid var(--line); border-radius: 8px; min-width: 0;
+}
+input[type="password"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.auth-card { padding-top: 0; }
+.auth-card .tabs { margin: 0 -16px 4px; }
+.account-bar .who { color: var(--muted); }
+.account-bar .who b, .account-bar .who { overflow-wrap: anywhere; }
+.saved-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.saved { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; }
+.saved canvas { flex: none; }
+.saved-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.saved-main small { overflow-wrap: anywhere; }
+.btn.danger { background: var(--fire-d); border-color: var(--fire-m); color: var(--fire-x); }
+.saved-chars .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px 5px 6px; }
+.saved-chars .chip canvas { flex: none; }
+.small-note { font-size: 12px; }
+.resume { border-color: var(--accent); }
+@media (max-width: 420px) {
+  .auth-card .tabs { margin: 0 -12px 4px; }
+  .tab { padding: 10px 4px; font-size: 12px; }
+}

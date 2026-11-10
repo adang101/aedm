@@ -74,11 +74,20 @@ export class AccountHandlers {
     return CharacterCreateSchema.safeParse(tpl.character).success ? tpl : null;
   }
 
-  /** Remembers the forge result so "Save to my characters" can keep it; refreshes a template that was just used. */
+  /**
+   * Remembers the forge result so "Save to my characters" can keep it, and attaches it to a saved
+   * template that was just used (or that matches this claim exactly). Tells the client when the list changed.
+   */
   async afterForge(conn: Conn, create: CharacterCreate, abilities: Ability[], templateId?: string): Promise<void> {
     if (!conn.userId) return;
     conn.lastForged = { name: create.name.toLowerCase(), abilities };
-    if (templateId) await this.store.setForged(conn.userId, templateId, abilities);
+    const user = await this.store.getUser(conn.userId);
+    const key = (c: CharacterCreate) => JSON.stringify([c.name.toLowerCase(), c.ability_texts ?? c.abilities]);
+    const tpl = user?.characters.find((c) => (templateId ? c.id === templateId : key(c.character) === key(create)));
+    if (!user || !tpl) return;
+    await this.store.setForged(user.id, tpl.id, abilities);
+    const fresh = await this.store.getUser(user.id);
+    conn.send("characters_list", { characters: (fresh?.characters ?? []).map(summarize) });
   }
 
   // ---------- auth ----------
