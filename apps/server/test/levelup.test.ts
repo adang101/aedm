@@ -124,9 +124,14 @@ describe("level-up flow", () => {
 
     // b has its own pending pick; its choice never changes a's character
     const aChar = lastLevelUp(t.a).character_id;
-    const before = JSON.stringify(stateOf(h).characters[aChar]);
+    // Compare only level-up fields: combat is live, so enemy turns may change HP meanwhile.
+    const growth = () => {
+      const c = stateOf(h).characters[aChar]!;
+      return JSON.stringify({ level: c.level, abilities: c.abilities, scores: c.scores });
+    };
+    const before = growth();
     await t.b.request("level_up_choice", { kind: "skip_ability" });
-    expect(JSON.stringify(stateOf(h).characters[aChar])).toBe(before);
+    expect(growth()).toBe(before);
   });
 
   it("re-sends the pending level_up_state on reconnect", async () => {
