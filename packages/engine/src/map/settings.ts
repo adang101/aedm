@@ -5,7 +5,8 @@
 import { MATERIAL_ROLES, SETTING_PRESETS } from "@aedm/schemas";
 import type { Environment, Layout, Material, MaterialRef, MaterialRole, Mood, Setting, SettingPreset } from "@aedm/schemas";
 import data from "../../data/settings.json";
-import { defaultForRole, getMaterial, resolveMaterial, words } from "./materials";
+import { ensureWallContrast } from "./contrast";
+import { defaultForRole, getMaterial, rampPosition, resolveMaterial, shiftColor, words } from "./materials";
 
 export interface Density {
   obstacles: number;
@@ -28,6 +29,8 @@ interface Accent {
   keywords: string[];
   materials: Partial<Record<MaterialRole, string[]>>;
   density?: Partial<Density>;
+  /** A mood these words imply: a calm brief (bright, neutral, dim) is pushed to it. Dark stays dark. */
+  mood?: Mood;
 }
 
 interface SettingsFile {
@@ -99,6 +102,25 @@ function coerce(m: Material, role: MaterialRole): Material {
   return walkable === m.walkable && blocks === m.blocks_sight ? m : { ...m, walkable, blocks_sight: blocks };
 }
 
+/** Dark and eerie places read one ramp step darker. Custom (DM-made) materials keep exactly the colors the DM chose. */
+const TONE: Record<Mood, number> = { bright: 0, neutral: 0, dim: 0, dark: -1, eerie: -1 };
+const TONED_ROLES: ReadonlySet<MaterialRole> = new Set(["floor", "path", "wall", "obstacle", "liquid", "door"]);
+
+function toned(m: Material, role: MaterialRole, tone: number): Material {
+  if (tone === 0 || !TONED_ROLES.has(role) || m.id.startsWith("custom_")) return m;
+  // ground never goes below the second ramp step, so walls always have somewhere darker to be
+  const floorMin = role === "floor" || role === "path" ? 1 : 0;
+  const move = (c: string): string => {
+    const pos = rampPosition(c);
+    return pos ? shiftColor(c, Math.max(tone, floorMin - pos.index)) : c;
+  };
+  const color = move(m.color);
+  const shifted = move(m.accent);
+  // keep the original accent where the shift would merge color and accent and erase the pattern
+  const accent = color === shifted && m.color !== m.accent ? m.accent : shifted;
+  return color === m.color && accent === m.accent ? m : { ...m, color, accent };
+}
+
 function dedupe(list: Material[]): Material[] {
   const seen = new Set<string>();
   return list.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
@@ -116,9 +138,11 @@ export function resolveSetting(setting: Setting, themeTags: readonly string[] = 
   const explicitPreset = setting.preset && SETTING_PRESET_DATA[setting.preset] ? setting.preset : undefined;
   const preset = explicitPreset ?? inferPreset(text) ?? fallbackPreset(setting.layout, setting.environment);
   const pd = SETTING_PRESET_DATA[preset];
-  const ctx = { tags: [...themeTags, ...words(name)], mood: setting.mood };
   const t = padded(text);
   const accents = ACCENT_MATCHERS.filter(({ match }) => match(t) > 0).map(({ a }) => a);
+  const calm = setting.mood === "bright" || setting.mood === "neutral" || setting.mood === "dim";
+  const mood: Mood = calm && accents.some((a) => a.mood === "eerie") ? "eerie" : setting.mood;
+  const ctx = { tags: [...themeTags, ...words(name)], mood };
 
   const idsFor = (role: MaterialRole): string[] => {
     const base = pd.materials[role] ?? [];
@@ -137,11 +161,12 @@ export function resolveSetting(setting: Setting, themeTags: readonly string[] = 
     } else if (refs.length === 0) {
       refs.push(...idsFor(role));
     }
-    let list = dedupe(refs.map((r) => coerce(resolveMaterial(r, role, ctx), role))).slice(0, CAPS[role]);
-    if (list.length === 0) list = [coerce(defaultForRole(role, ctx), role)];
+    let list = dedupe(refs.map((r) => toned(coerce(resolveMaterial(r, role, ctx), role), role, TONE[mood]))).slice(0, role === "floor" && setting.environment !== "outdoor" ? 2 : CAPS[role]);
+    if (list.length === 0) list = [toned(coerce(defaultForRole(role, ctx), role), role, TONE[mood])];
     materials[role] = list;
   }
-  if (!materials.liquid.some((m) => !m.walkable)) materials.liquid.push(getMaterial("water") ?? defaultForRole("liquid", ctx));
+  if (!materials.liquid.some((m) => !m.walkable)) materials.liquid.push(toned(getMaterial("water") ?? defaultForRole("liquid", ctx), "liquid", TONE[mood]));
+  ensureWallContrast(materials);
 
   const base = setting.density ?? pd.density;
   const density: Density = { obstacles: base.obstacles, liquid: base.liquid, hazards: base.hazards };
@@ -157,7 +182,7 @@ export function resolveSetting(setting: Setting, themeTags: readonly string[] = 
     preset,
     layout: setting.layout,
     environment: setting.environment,
-    mood: setting.mood,
+    mood,
     materials,
     density,
     decorPool: materials.decor,

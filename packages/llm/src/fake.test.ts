@@ -108,6 +108,14 @@ describe("fake improv DM", () => {
     expect(String(unknown.name)).toContain("Glimmerfen");
   });
 
+  it("honors eerie words: a sunken cathedral is an eerie temple, a dark cave stays dark", async () => {
+    const setting = async (t: string) => ((await types(t)).find((x) => x.type === "generate_map") as { brief: { setting: Record<string, unknown> } }).brief.setting;
+    expect(await setting("We travel down into the sunken cathedral beneath the marsh.")).toMatchObject({ preset: "temple", mood: "eerie", name: "Sunken cathedral" });
+    expect(await setting("We enter the haunted crypt")).toMatchObject({ preset: "crypt", mood: "eerie" });
+    expect(await setting("We head into the black cave")).toMatchObject({ preset: "cave", mood: "dark" });
+    expect(await setting("We explore the temple")).toMatchObject({ mood: "dim" });
+  });
+
   it("gives created enemies an appearance hint", async () => {
     const a = await types("I attack the nearest one");
     const e = a.find((x) => x.type === "create_enemy") as { appearance?: string } | undefined;

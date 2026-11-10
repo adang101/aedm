@@ -4,9 +4,10 @@
  * palette ramp).
  */
 import { MAX_TILEDEFS } from "@aedm/schemas";
-import type { InlineTileset, Material, MaterialRole, Mood, TileDef } from "@aedm/schemas";
+import type { InlineTileset, Material, MaterialRole, TileDef } from "@aedm/schemas";
 import { T } from "./layouts/grid";
 import type { Grid } from "./layouts/grid";
+import { lum } from "./contrast";
 import { getMaterial, resolveMaterial, shiftColor } from "./materials";
 import type { ResolvedSetting } from "./settings";
 
@@ -40,10 +41,6 @@ function vnoise(seed: number, x: number, y: number, scale: number): number {
   return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy;
 }
 
-/** Dark and eerie places read one ramp step darker. Custom (DM-made) materials keep exactly the colors the DM chose. */
-const TONE: Record<Mood, number> = { bright: 0, neutral: 0, dim: 0, dark: -1, eerie: -1 };
-const TONED_ROLES: ReadonlySet<MaterialRole> = new Set(["floor", "path", "wall", "obstacle", "liquid", "door"]);
-
 const ROLE_INDEX: Record<MaterialRole, number> = { floor: 0, path: 1, wall: 2, obstacle: 3, liquid: 4, hazard: 5, decor: 6, door: 7 };
 const LAYER_INDEX: Record<TileLayerName, number> = { ground: 0, walls: 1, decor: 2, above: 3 };
 
@@ -51,16 +48,14 @@ class TileBank {
   readonly tiles: TileDef[] = [];
   private readonly byKey = new Map<string, number>();
 
-  constructor(private readonly tone: number) {}
-
+  /** Mood tone is already applied to the resolved materials (see resolveSetting). */
   private colors(m: Material, role: MaterialRole, variant: number): { color: string; accent: string } {
     let { color, accent } = m;
-    if (this.tone !== 0 && TONED_ROLES.has(role) && !m.id.startsWith("custom_")) {
-      const c = shiftColor(color, this.tone);
-      const a = shiftColor(accent, this.tone);
-      // keep the original accent where the shift would merge color and accent and erase the pattern
-      accent = c === a && m.color !== m.accent ? m.accent : a;
-      color = c;
+    if (role === "wall") {
+      // wall variants only step away from the floor, so a wall never drifts back toward it
+      if (variant === 1 || variant === 2) color = shiftColor(color, lum(color) < 0.45 ? -1 : 1);
+      else if (variant === 3) [color, accent] = [accent, color];
+      return { color, accent };
     }
     if (variant === 1) color = shiftColor(color, color === shiftColor(color, 1) ? -1 : 1);
     else if (variant === 2) color = shiftColor(color, color === shiftColor(color, -1) ? 1 : -1);
@@ -145,7 +140,7 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
   const walls = new Array<number>(n).fill(0);
   const decorLayer = new Array<number>(n).fill(0);
   const above = new Array<number>(n).fill(0);
-  const bank = new TileBank(TONE[setting.mood]);
+  const bank = new TileBank();
   const mats = setting.materials;
   const deep = mats.liquid.filter((m) => !m.walkable);
   const shallow = mats.liquid.filter((m) => m.walkable);
@@ -158,7 +153,7 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
   const floorAt = (x: number, y: number): number => {
     const list = mats.floor;
     const m = list[pickWeighted(list.length, vnoise(seed, x, y, 5), list.length === 2 ? 0.68 : 0.58)]!;
-    return bank.gid(m, variantOf(hash(seed, x, y, 1), 0.26), "ground");
+    return bank.gid(m, variantOf(hash(seed, x, y, 1), 0.16), "ground");
   };
   const liquidDepth = (x: number, y: number): boolean => {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
@@ -177,7 +172,7 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           ground[i] = floorAt(x, y);
           break;
         case T.PATH: {
-          const m = mats.path[pickWeighted(mats.path.length, u, 0.8)]!;
+          const m = mats.path[pickWeighted(mats.path.length, u, 0.93)]!;
           ground[i] = bank.gid(m, variantOf(hash(seed, x, y, 3), 0.3), "ground");
           break;
         }

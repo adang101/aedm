@@ -6,7 +6,7 @@
  */
 import type { MaterialRole, TileDef } from "@aedm/schemas";
 import { TILE } from "./camera";
-import { OUTLINE, shade, tones } from "./palette";
+import { OUTLINE, mixHex, shade, tones } from "./palette";
 import { PATTERN_DRAWERS } from "./patterns";
 import { drawDoor, drawHazardMotif, drawProp, hazardGlow, propFrames, propGivesLight, propKindFor, type PropKind } from "./props";
 import { Pen, ctxOf, makeCanvas, type Ctx } from "./px";
@@ -80,8 +80,10 @@ export class MapStyle {
   // ---------- pre-rendering ----------
 
   private drawPattern(def: TileDef, g: Ctx, layer: "base" | "overlay"): void {
+    // big areas of floor stay calm: strong line patterns are drawn at half contrast, walls and accents keep theirs
+    const calm = (def.role === "floor" || def.role === "path") && (def.pattern === "cobbles" || def.pattern === "bricks" || def.pattern === "tiles" || def.pattern === "planks");
     PATTERN_DRAWERS[def.pattern](new Pen(g), {
-      color: def.color, accent: def.accent, variant: def.variant, seed: def.gid * 7919 + def.variant * 104729,
+      color: def.color, accent: calm ? mixHex(def.color, def.accent, 0.5) : def.accent, variant: def.variant, seed: def.gid * 7919 + def.variant * 104729,
       role: def.role, layer,
     });
   }
@@ -127,16 +129,24 @@ export class MapStyle {
     return o;
   }
 
-  private buildWall(def: TileDef, open: boolean): Canvas {
+  /**
+   * A 3/4 wall tile. `open` = a floor tile lies south, so the front face shows (the bottom 16px); `capped` = the
+   * tile north of it is open, so this is the top edge of the wall and its top face is lit. Anywhere else the top
+   * is solid mass: a flat dark fill with only a faint trace of the pattern, so thick walls read as solid and the
+   * rooms they enclose read as outlines.
+   */
+  private buildWall(def: TileDef, open: boolean, capped: boolean): Canvas {
     const c = makeCanvas(TILE, TILE);
     const g = ctxOf(c);
     const img = def.image_asset_id ? getTileImage(def.image_asset_id) : null;
     if (img) { g.drawImage(img, 0, 0, TILE, TILE); return c; }
     const pen = new Pen(g);
-    this.drawPattern(def, g, "base");
+    const solid = mixHex(def.color, OUTLINE, 0.45);
+    if (capped) this.drawPattern(def, g, "base");
+    else this.drawPattern({ ...def, color: solid, accent: mixHex(solid, def.accent, 0.22) }, g, "base");
     if (!open) return c;
     const t = tones(def.color);
-    const front: TileDef = { ...def, color: shade(def.color, -1), accent: shade(def.accent, -1) };
+    const front: TileDef = { ...def, color: shade(def.color, -1), accent: def.accent };
     pen.clipRect(0, 32, TILE, 16, () => {
       g.save();
       g.translate(0, 32);
@@ -151,13 +161,13 @@ export class MapStyle {
     return c;
   }
 
-  wallArt(gid: number, openBelow: boolean): Canvas | null {
-    const key = `${gid}:${openBelow ? 1 : 0}`;
+  wallArt(gid: number, openBelow: boolean, capped = true): Canvas | null {
+    const key = `${gid}:${openBelow ? 1 : 0}${capped ? 1 : 0}`;
     let c = this.walls.get(key);
     if (!c) {
       const def = this.defs.get(gid);
       if (!def) return null;
-      c = this.buildWall(def, openBelow);
+      c = this.buildWall(def, openBelow, capped);
       this.walls.set(key, c);
     }
     return c;
@@ -218,7 +228,7 @@ export class MapStyle {
 
   /** A wall; `edges` are the sides that face a non-wall tile (n, w, e) for an outline. */
   drawWall(ctx: Ctx, gid: number, px: number, py: number, openBelow: boolean, edgeN: boolean, edgeW: boolean, edgeE: boolean): void {
-    const art = this.wallArt(gid, openBelow);
+    const art = this.wallArt(gid, openBelow, edgeN);
     if (!art) return;
     ctx.drawImage(art, px, py);
     const hi = tones(this.defs.get(gid)?.color ?? "#8b93b0").hi;

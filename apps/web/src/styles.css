@@ -377,3 +377,9 @@ input[type="password"]:focus-visible { outline: 2px solid var(--accent); outline
 .gallery-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .gallery-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; color: var(--muted, #aaa); width: 96px; }
 .gallery-cell.wide { width: auto; }
+.gallery-page.maps { max-width: 1280px; }
+.mapcard { margin: 0 0 20px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.mapcard-head { margin-bottom: 6px; font-size: 13px; }
+.mapcard-row { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.gallery-page .map-thumb { background: #1b1626; max-width: 100%; }
+.gallery-page .map-crop { background: #1b1626; width: 672px; max-width: 100%; height: auto; }

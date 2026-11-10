@@ -161,8 +161,22 @@ function freeTextName(text: string): string {
   return (w.map(cap).join(" ") || "Open country").slice(0, 40);
 }
 
+/** Words that set a place's mood whatever its kind: a sunken cathedral is eerie, a black keep is dark. */
+const EERIE_WORDS = /\b(sunken|drowned|haunted|cursed|forsaken|ghostly|spectral|eerie|undead|flooded|whispering)\b/i;
+const DARK_WORDS = /\b(dark|black|abyssal|shadowy|gloomy|midnight|lightless)\b/i;
+
 function settingFromText(text: string, current: string): SettingRule {
-  for (const r of SETTING_RULES) if (r.rx.test(text)) return r;
+  for (const r of SETTING_RULES) {
+    const hit = r.rx.exec(text);
+    if (!hit) continue;
+    const eerie = EERIE_WORDS.exec(text)?.[0];
+    const dark = DARK_WORDS.test(text);
+    if (!eerie && !dark) return r;
+    // keep the player's own nouns ("Sunken cathedral") and let the mood words decide the mood
+    const noun = (hit[1] ?? hit[0]).toLowerCase();
+    const name = eerie ? `${cap(eerie.toLowerCase())} ${noun}` : r.name;
+    return { ...r, name: name.slice(0, 40), mood: dark && !eerie ? "dark" : eerie ? "eerie" : r.mood };
+  }
   const named = freeTextName(text);
   const stay = SETTING_RULES.find((r) => r.rx.test(current));
   return {
@@ -308,7 +322,8 @@ export function improvDm(user: string): string {
     const ids = (present.length ? present : ctx.party).map((p) => p.id);
     if (!foe) {
       actions.push({
-        type: "create_enemy", concept: `A ${name} met in ${ctx.setting}, hostile and quick to strike`, role: ids.length >= 5 ? "elite" : "standard",
+        type: "create_enemy", concept: `A ${name} met in ${ctx.setting}, hostile and quick to strike`, // a lone hero's encounter budget (10 + 3 x level) is smaller than a standard enemy's threat, so a solo party gets a minion
+        role: ids.length >= 5 ? "elite" : ids.length === 1 ? "minion" : "standard",
         setting_notes: ctx.description.slice(0, 120), ref: archetype,
         appearance: `${pick(["wiry", "hulking", "gaunt", "bristling"], h, 6)} ${name} in ${pick(["mud-brown", "ash-grey", "dark-red", "pale-blue"], h, 7)} rags, ${pick(["glowing eyes", "a notched blade", "bone trinkets", "a patched hood"], h, 8)}`.slice(0, 160),
       });

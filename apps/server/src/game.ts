@@ -387,7 +387,9 @@ export class GameSession {
         default:
           break;
       }
-      if (!SILENT_EVENTS.has(e.type)) this.room.broadcast("log", { kind: "engine", text: humanLine(e).slice(0, 4000) });
+      // a rest that healed nobody is noise for the players; the DM still sees it
+      const quiet = SILENT_EVENTS.has(e.type) || (e.type === "rest" && e.hpRestored === 0);
+      if (!quiet) this.room.broadcast("log", { kind: "engine", text: humanLine(e).slice(0, 4000) });
       if (!DM_SKIP_EVENTS.has(e.type)) lines.push(describeEvent(e));
     }
     if (opts.toDm !== false) {
