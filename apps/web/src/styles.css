@@ -145,6 +145,7 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .claimed { border-color: var(--grass-m); }
 
 .creator h3 { margin-top: 4px; }
+.describe-look textarea { width: 100%; }
 .sprite-col { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .sprite-preview { width: 144px; height: 192px; background: var(--grass-d); border-radius: 10px; border: 1px solid var(--line); image-rendering: pixelated; flex: none; }
 .swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }

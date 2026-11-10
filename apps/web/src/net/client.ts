@@ -1,5 +1,5 @@
 import {
-  ClientMessageSchema, ServerMessageSchema, WS_VERSION, exceedsMaxBytes, type ClientMessage,
+  ClientMessageSchema, ServerMessageSchema, WS_VERSION, exceedsMaxBytes, type ClientMessage, type ServerMessage,
 } from "@aedm/schemas";
 import {
   clearAuth, clearSessionToken, loadAuth, loadSessionToken, saveAuth, saveSessionToken,
@@ -37,7 +37,7 @@ export class GameClient {
   /** Ack id of the last create_room, resume_campaign or join_room, so only its failure kicks us back to the home screen. */
   private entryAck: string | null = null;
   private wantCampaigns = false;
-  private readonly replyWaiters = new Map<string, (type: string) => void>();
+  private readonly replyWaiters = new Map<string, (type: string, msg: ServerMessage) => void>();
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private readonly acks = new AckTracker();
@@ -131,7 +131,7 @@ export class GameClient {
   }
 
   /** Run `fn` once, with the type of the server's reply to message `id` (its ack). */
-  afterReply(id: string, fn: (replyType: string) => void): void {
+  afterReply(id: string, fn: (replyType: string, msg: ServerMessage) => void): void {
     this.replyWaiters.set(id, fn);
   }
 
@@ -290,7 +290,7 @@ export class GameClient {
     if (msg.ack_id) {
       this.acks.ack(msg.ack_id);
       const waiter = this.replyWaiters.get(msg.ack_id);
-      if (waiter) { this.replyWaiters.delete(msg.ack_id); waiter(msg.type); }
+      if (waiter) { this.replyWaiters.delete(msg.ack_id); waiter(msg.type, msg); }
     }
     this.store.apply(msg, Date.now());
 

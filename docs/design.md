@@ -61,7 +61,7 @@ The DM can ask for any place or creature the story needs. It never draws tiles o
 - A **sprite designer** step turns a concept ("a robed chorister who borrows the voices of the drowned") into a spec: a fast-tier model call through `ModelProvider`, validated by schema, with a deterministic keyword designer as the offline fallback. The web client composes the spec procedurally on the 48 x 64 canvas.
 - **Asset store:** specs (settings, materials, sprites) are cached by a hash of their concept, so recurring places and creatures reuse their look across a campaign. An `image_asset_id` slot on each spec is where generated art will plug in (M3).
 
-## Player-made sprites (planned)
+## Player-made sprites (Describe path built; the rest planned)
 
 Players can make the look of their own character, and of NPCs and enemies they offer to a campaign, in three ways. Every way ends in the same sprite recipe, so the renderer, the DM and the asset store treat all of them alike.
 
@@ -70,6 +70,8 @@ Players can make the look of their own character, and of NPCs and enemies they o
 | Describe | Writes up to 300 characters ("a lanky heron-folk ferryman with a lantern and a patched blue coat") and picks a role | The sprite designer (the same pipeline the DM uses: fast-tier model, offline keyword fallback, engine finalizer) returns a `SpriteSpec`. The player can regenerate (a new seed), then fine-tune it in the parts builder. |
 | Paint over | Opens any spec sprite in the pixel editor | The composed front idle frame is rasterized to a 48 x 64 grid and becomes editable. Saving keeps the original spec as `base` (for traits, fallbacks and the image model). |
 | Paint from scratch | Opens a blank 48 x 64 canvas | A pixel sprite with no base spec. |
+
+**Built (Describe path).** The creator's "Describe your look" box sends `design_sprite` (prompt up to 300 characters, `role_hint`, optional `seed` and `name`); the server answers `sprite_designed` (`spec`, `notes`, `source` of `model` or `offline`), correlated by the envelope id. Divergences from the plan: the result is never cached in the asset store (a re-roll must differ, so the designer runs fresh each time, with the usual 4 s timeout and offline fallback), and the offline look varies with the seed while a real model simply answers again. Calls are limited to 6 per minute per account (per connection for guests), set in `DEFAULT_CONFIG.limits.spriteDesign`. In the builder, an untouched design is kept whole (any size, up to six parts, traits and pose); touching a control builds on top of it with at most four parts. `?mock=1` answers with the offline designer. WS_VERSION is 4.
 
 **Pixel sprite.** A new recipe kind, `pixel`: 48 x 64 pixels, a palette of at most 32 colors drawn from the master palette plus the outline color, and pixels stored as palette indices (0 is transparent) in a run-length encoded string. Alpha is therefore only 0 or 255, as the style bible requires. Facing left mirrors the image; the idle bob, shadow, HP bar and rings are added by the renderer as for spec sprites. Large and huge sizes scale it with nearest-neighbor. The encoded sprite must fit in a client message (8 KB).
 
@@ -133,7 +135,7 @@ Every campaign follows one of seven classic **plot patterns** and one of six **e
 
 | Request | Today | Gap |
 | --- | --- | --- |
-| Players create their own sprite from a prompt | Partly: the creator has a parts builder; the server designs a look from title and description only when no sprite is sent | A "Describe your look" prompt with preview and regenerate |
+| Players create their own sprite from a prompt | Yes: the creator has a parts builder and a "Describe your look" prompt (`design_sprite` / `sprite_designed`) with live preview, re-roll (a new seed) and builder tweaks. The server still designs a look from title and description when no sprite is sent | Role picker (the creator always sends `pc`; npc, enemy and prop wait for the Workshop and cast) |
 | Players create enemy and NPC sprites | No | Workshop, campaign cast, `asset_ref` on `create_npc` and `create_enemy` |
 | Paint over an existing sprite | No | `pixel` recipe kind, rasterizer, pixel editor |
 | Paint from scratch | No | Same editor with a blank canvas |
@@ -172,4 +174,4 @@ Every campaign follows one of seven classic **plot patterns** and one of six **e
 - **M1:** full combat loop in the client, ability forge UI, enemy builder, saves and reload.
 - **M2:** memory (summaries, retrieval), evals in CI, content safety pass, mobile polish.
 - **M3:** image generation pipeline and acceptance gates from the style bible.
-- **Next (designed, not built):** player-made sprites (describe, paint over, paint from scratch; Workshop and campaign cast) and story structure (plot patterns, emotional arcs, pacing). See the sections above.
+- **Next (designed, not built):** player-made sprites (the Describe path is built; still to do: paint over, paint from scratch; Workshop and campaign cast) and story structure (plot patterns, emotional arcs, pacing). See the sections above.

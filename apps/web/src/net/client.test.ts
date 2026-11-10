@@ -119,3 +119,31 @@ describe("GameClient accounts", () => {
     expect(t.notes).toContain("Log in to do that.");
   });
 });
+
+describe("GameClient sprite designer", () => {
+  const spec = {
+    kind: "spec", v: 1, body: "avian", size: "medium", glyph: "H", traits: "", parts: [],
+    palette: { primary: "#112233", secondary: "#445566", accent: "#778899", detail: "#001122" },
+  };
+
+  it("sends design_sprite and hands the reply to afterReply with its payload", () => {
+    const t = setup();
+    t.client.connect();
+    t.open();
+    const id = t.client.send("design_sprite", { prompt: "a heron-folk ferryman", role_hint: "pc", seed: 3 });
+    expect(id).not.toBeNull();
+    expect(t.types()).toContain("design_sprite");
+    let got: ServerMessage | null = null;
+    t.client.afterReply(id as string, (_type, msg) => { got = msg; });
+    t.reply("sprite_designed", { spec, notes: [], source: "offline" }, id as string);
+    expect((got as ServerMessage | null)?.type).toBe("sprite_designed");
+  });
+
+  it("refuses to send an over-long prompt", () => {
+    const t = setup();
+    t.client.connect();
+    t.open();
+    expect(t.client.send("design_sprite", { prompt: "x".repeat(301), role_hint: "pc" })).toBeNull();
+    expect(t.types()).not.toContain("design_sprite");
+  });
+});

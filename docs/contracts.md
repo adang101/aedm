@@ -205,7 +205,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 
 **WebSocket messages**
 
-Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 3: the envelopes are unchanged, but the Map payload changed shape (v2 map) and room settings gained `plot_pattern` and `plot_arc`, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second.
+Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 4: the envelopes are unchanged, but the Map payload changed shape (v2 map), room settings gained `plot_pattern` and `plot_arc`, and `design_sprite` and `sprite_designed` were added, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second; `design_sprite` is also limited per account (see Sprite designer).
 
 | `type` | Direction | Payload |
 | --- | --- | --- |
@@ -326,6 +326,15 @@ Stored template (`data/accounts/users.json`, per user): id (`ch_...`), saved_at,
 | Engine events | `stage_advanced` (stageId, stageName, title) and `plot_adjusted` (stages), narrated to the DM as engine lines. |
 | DM context | A `<pacing>` block built by the engine from the bible: plot and arc names, current stage with purpose and goal, next stage, tension target (0 to 10), fortune trend, suggested encounter difficulty. Milestone lines carry `stage=`. |
 
+**Sprite designer (built, WS v4)**
+
+| WS `type` | Direction | Payload |
+| --- | --- | --- |
+| `design_sprite` | Client to server | prompt (1 to 300), role_hint (`pc`, `npc`, `enemy`, `prop`), seed? (integer 0 to 2147483647; a new seed re-rolls the offline look), name? (1 to 30, only used for the glyph). Allowed in or out of a room. |
+| `sprite_designed` | Server to client | spec (`SpriteSpec`, already finalized by the engine), notes (at most 20 short strings), source (`model` or `offline`). The envelope `ack_id` is the request's `id`; that is the request id. |
+
+A refusal is an `error` with the same `ack_id`: `rate_limited` (6 calls per minute per account, per connection for guests; `DEFAULT_CONFIG.limits.spriteDesign`) or `bad_message` (empty or over-long prompt, unknown role). The result is not stored in the asset store. Error text never includes provider messages.
+
 **Planned contracts (designed in `design.md`, not yet implemented)**
 
 These become Zod schemas when the features are built; shapes may still change.
@@ -339,8 +348,6 @@ These become Zod schemas when the features are built; shapes may still change.
 
 | WS `type` | Direction | Payload |
 | --- | --- | --- |
-| `design_sprite` | Client to server | prompt (at most 300), role_hint, seed? |
-| `sprite_designed` | Server to client | spec, notes |
 | `save_sprite_asset` / `delete_sprite_asset` | Client to server | asset fields / id (account only) |
 | `list_sprite_assets` / `sprite_assets_list` | Both | Workshop summaries |
 | `offer_to_cast` / `cast_decision` | Client to server | asset_id / asset_id, approve (host) |

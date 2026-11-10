@@ -5,6 +5,7 @@ import {
 } from "@aedm/schemas";
 import type { Transport, TransportFactory, TransportHandlers } from "./transport";
 import { FIRST_SCENE, NARRATION_OPENING, blockedAt, buildScenes, sceneFromText, type MockScene } from "./mock-world";
+import { designSpriteOffline } from "@aedm/engine";
 import { PREMADE_SPECS } from "../state/sprite-builder";
 
 type Payload = Record<string, unknown>;
@@ -191,6 +192,14 @@ export class MockServer {
       case "create_room": return this.onCreate(String(p.display_name), ack);
       case "join_room": return this.onJoin(String(p.invite_code), String(p.display_name), ack);
       case "ping": return this.emit("pong", {}, ack);
+      case "design_sprite": {
+        // Offline keyword designer, the same one the server falls back to.
+        const spec = designSpriteOffline(
+          { concept: String(p.prompt), name: String(p.name ?? ""), role: String(p.role_hint), kind: p.role_hint as "pc" | "npc" | "enemy" | "prop" },
+          typeof p.seed === "number" ? p.seed : rnd(0x7ffffffe),
+        );
+        return this.emit("sprite_designed", { spec, notes: [], source: "offline" }, ack);
+      }
       case "register": case "login": case "resume_session": case "logout": case "list_characters":
       case "save_character_template": case "delete_character_template": case "list_campaigns": case "resume_campaign":
         return this.onAccount(m.type, p, ack);

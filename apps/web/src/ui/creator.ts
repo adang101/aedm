@@ -1,4 +1,4 @@
-import { ABILITIES, BODY_PLANS, CHECK_TAGS, PART_GROUPS, type CheckTag, type PartGroup, type SpriteRecipe, type SpriteShape, type SpriteSpec } from "@aedm/schemas";
+import { ABILITIES, BODY_PLANS, CHECK_TAGS, PART_GROUPS, SPRITE_PROMPT_MAX, type CheckTag, type PartGroup, type SpriteRecipe, type SpriteShape, type SpriteSpec } from "@aedm/schemas";
 import { drawShapeBody } from "../render/shape-recipe";
 import { composeSprite } from "../render/sprite-composer";
 import {
@@ -7,7 +7,7 @@ import {
 } from "../state/creator";
 import {
   BODY_LABEL, BUILDER_SIZES, GROUP_LABEL, MAX_BUILDER_PARTS, PALETTE_SLOTS, SLOT_LABEL, SWATCHES,
-  buildSpriteSpec, randomLook, togglePart, type PaletteSlot,
+  buildSpriteSpec, designedForm, randomLook, togglePart, type PaletteSlot,
 } from "../state/sprite-builder";
 import {
   POINT_BUY_BUDGET, adjust, canDecrease, canIncrease, nextCost, pointsLeft, scoreCost,
@@ -205,6 +205,49 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
       buildSpriteControls(); refreshPreview();
     },
   }, "Randomize look");
+
+  // ----- describe your look -----
+  const lookIn = h("textarea", {
+    rows: 2, maxlength: SPRITE_PROMPT_MAX, "aria-label": "Describe your look",
+    placeholder: "e.g. a lanky heron-folk ferryman with a lantern and a patched blue coat",
+  });
+  const lookCount = h("small", { class: "muted" }, `0/${SPRITE_PROMPT_MAX}`);
+  const lookNote = h("p", { class: "muted", role: "status" });
+  const designBtn = h("button", { type: "button", class: "btn small" }, "Design");
+  lookIn.addEventListener("input", () => { lookCount.textContent = `${lookIn.value.length}/${SPRITE_PROMPT_MAX}`; });
+  let designing = false;
+  let designed = false;
+  designBtn.addEventListener("click", () => {
+    const prompt = lookIn.value.trim();
+    if (designing) return;
+    if (!prompt) { lookNote.textContent = "Describe your character's look first."; return; }
+    const name = form.name.trim().slice(0, 30);
+    const id = ctx.client.send("design_sprite", {
+      prompt, role_hint: "pc", seed: Math.floor(Math.random() * 0x7fffffff), ...(name ? { name } : {}),
+    });
+    if (!id) return;
+    designing = true;
+    designBtn.disabled = true;
+    lookNote.textContent = "Designing...";
+    ctx.client.afterReply(id, (type, msg) => {
+      designing = false;
+      designBtn.disabled = false;
+      if (type === "sprite_designed" && msg.type === "sprite_designed") {
+        form.sprite = { ...designedForm(msg.payload.spec), rolls: form.sprite.rolls };
+        designed = true;
+        designBtn.textContent = "Design again";
+        lookNote.textContent = msg.payload.source === "offline"
+          ? "Designed offline from keywords. Press Design again for another take, or tweak below."
+          : "Press Design again for another take, or tweak it below.";
+        buildSpriteControls(); refreshPreview();
+      } else {
+        lookNote.textContent = "That did not work. Try again in a moment.";
+      }
+    });
+  });
+  const describeBox = h("section", { class: "stack tight describe-look" },
+    h("div", { class: "row between" }, h("b", null, "Describe your look"), lookCount),
+    lookIn, h("div", { class: "row" }, designBtn), lookNote);
   let seen = false;
   const bob = setInterval(() => {
     if (preview.isConnected) seen = true;
@@ -263,6 +306,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
         h("label", null, "Key ability", keySel, errEls.key_ability!),
       ),
       h("div", { class: "stack" },
+        describeBox,
         h("div", { class: "sprite-col" }, preview,
           h("div", { class: "stack tight" }, h("b", null, "Body plan"), bodyBox, h("b", null, "Size"), sizeBox, randomBtn)),
       ),
@@ -290,6 +334,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
 
   function syncAll(): void {
     nameIn.value = form.name; titleIn.value = form.title; descIn.value = form.description;
+    if (designed) { designed = false; designBtn.textContent = "Design"; lookNote.textContent = ""; }
     keySel.value = form.key_ability;
     refreshScores(); refreshTraits(); refreshAbilities(); buildSpriteControls(); refreshPreview(); showErrors();
   }

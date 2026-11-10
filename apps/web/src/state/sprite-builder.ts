@@ -22,6 +22,11 @@ export interface SpriteForm {
   parts: Part[];
   /** Bumped by "Randomize look", so the same name gives a new look each press. */
   rolls: number;
+  /**
+   * The designed spec this form was read from ("Describe your look"). While the builder controls still show exactly
+   * what the design shows, the design is kept whole (any size, up to six parts, traits, pose); a tweak builds on top of it.
+   */
+  base?: SpriteSpec;
 }
 
 export const SLOT_LABEL: Record<PaletteSlot, string> = {
@@ -48,14 +53,27 @@ export function togglePart(parts: readonly Part[], part: Part): Part[] {
   return parts.length >= MAX_BUILDER_PARTS ? [...parts] : [...parts, part];
 }
 
+/** True when every control of `form` still shows what `spec` shows. */
+function matchesSpec(form: SpriteForm, spec: SpriteSpec): boolean {
+  const f = formFromSpec(spec);
+  return form.body === f.body && form.size === f.size
+    && PALETTE_SLOTS.every((k) => form.palette[k] === f.palette[k])
+    && form.parts.length === f.parts.length && form.parts.every((p, i) => p === f.parts[i]);
+}
+
 /** A valid `spec` recipe for the form. The glyph follows the name so badges stay readable. */
 export function buildSpriteSpec(form: SpriteForm, name = ""): SpriteSpec {
   const letter = /[\p{L}\p{N}]/u.exec(name.trim())?.[0]?.toUpperCase();
+  const base = form.base;
+  if (base && matchesSpec(form, base)) {
+    return SpriteSpecSchema.parse({ ...base, ...(base.glyph || !letter ? {} : { glyph: letter }) });
+  }
   const spec: SpriteSpec = {
-    kind: "spec", v: 1, body: form.body, size: form.size, traits: "",
+    kind: "spec", v: 1, body: form.body, size: form.size, traits: base?.traits ?? "",
     palette: { ...form.palette },
     parts: form.parts.slice(0, MAX_BUILDER_PARTS).map((part) => ({ part })),
-    ...(letter ? { glyph: letter } : {}),
+    ...(base?.pose ? { pose: base.pose } : {}),
+    ...(letter ? { glyph: letter } : base?.glyph ? { glyph: base.glyph } : {}),
   };
   return SpriteSpecSchema.parse(spec);
 }
@@ -66,6 +84,11 @@ export function formFromSpec(spec: SpriteSpec): SpriteForm {
     body: spec.body, size: spec.size === "small" ? "small" : "medium", rolls: 0,
     palette: { ...spec.palette }, parts: spec.parts.map((p) => p.part).slice(0, MAX_BUILDER_PARTS),
   };
+}
+
+/** A form showing a designed spec (from "Describe your look"), which stays whole until the player tweaks a control. */
+export function designedForm(spec: SpriteSpec): SpriteForm {
+  return { ...formFromSpec(spec), base: spec };
 }
 
 const GROUP_CHANCE: Record<PartGroup, number> = { head: 0.75, body: 0.6, held: 0.7, aura: 0.15 };
