@@ -1,9 +1,10 @@
 import { CHECK_TAGS, DIFFICULTIES, type Difficulty, type DmAction, type Item, type MapBrief, type NpcRecord, type SpriteSpec } from "@aedm/schemas";
 import { clampDc, type CheckRequest } from "./checks.ts";
 import { endCombatM, startCombatM } from "./combat.ts";
-import { RULES } from "./data.ts";
+import { PLOTS, RULES } from "./data.ts";
 import type { EngineEvent } from "./events.ts";
 import { addGrowthM } from "./growth.ts";
+import { currentStage } from "./plot.ts";
 import { applyCondition, archetypeOf, isStanding, removeEntity } from "./mutate.ts";
 import type { Rng } from "./rng.ts";
 import { levelCaps, lootCap } from "./rules.ts";
@@ -350,13 +351,58 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       if (!ms) return `unknown milestone ${a.milestone_id}`;
       if (ms.completed) return `milestone ${a.milestone_id} is already completed`;
       if (present.length === 0) return "no characters are present";
+      const before = currentStage(s.bible);
+      if (before && ms.stage !== undefined) {
+        const idx = s.bible.plot!.stages.findIndex((st) => st.id === ms.stage);
+        if (idx > before.index) return `milestone ${a.milestone_id} belongs to the later stage ${ms.stage}; finish the earlier stage ${before.stage.id} first`;
+      }
       ms.completed = true;
       emit(m, { type: "milestone_completed", milestoneId: ms.id, description: ms.description });
+      const after = currentStage(s.bible);
+      if (before && after && !before.finished && after.index > before.index) {
+        emit(m, { type: "stage_advanced", stageId: after.stage.id, stageName: after.data.name, title: after.stage.title });
+      }
       for (const id of present) {
         const c = s.characters[id] as NonNullable<(typeof s.characters)[string]>;
         addGrowthM(m, id, RULES.growth.milestoneAward);
         emit(m, { type: "growth_awarded", characterId: id, name: c.name, amount: RULES.growth.milestoneAward, reason: "milestone", growth: c.growth });
       }
+      return undefined;
+    }
+
+    case "adjust_plot": {
+      const plot = s.bible.plot;
+      if (!plot) return "this campaign has no plot to adjust";
+      const cur = currentStage(s.bible);
+      if (!cur) return "this campaign has no plot to adjust";
+      if (cur.finished) return "every stage is already complete";
+      const stageIds = new Set<string>();
+      for (const st of a.stages) {
+        const idx = plot.stages.findIndex((p) => p.id === st.stage_id);
+        if (idx < 0) return `unknown stage ${st.stage_id}`;
+        if (idx <= cur.index) return `stage ${st.stage_id} has already started and cannot be changed`;
+        if (stageIds.has(st.stage_id)) return `stage ${st.stage_id} appears twice`;
+        stageIds.add(st.stage_id);
+      }
+      const kept = s.bible.milestones.filter((x) => !(x.stage !== undefined && stageIds.has(x.stage)));
+      const taken = new Set(kept.map((x) => x.id));
+      for (const st of a.stages) {
+        for (const nm of st.milestones) {
+          if (taken.has(nm.id)) return `milestone id ${nm.id} is already in use`;
+          taken.add(nm.id);
+        }
+      }
+      const rebuilt = plot.stages.flatMap((p) => {
+        const repl = a.stages.find((x) => x.stage_id === p.id);
+        if (repl) return repl.milestones.map((nm) => ({ id: nm.id, description: nm.description, completed: false, stage: p.id }));
+        return kept.filter((x) => x.stage === p.id);
+      });
+      const orphans = kept.filter((x) => x.stage === undefined || !plot.stages.some((p) => p.id === x.stage));
+      const all = [...orphans, ...rebuilt];
+      if (all.length > PLOTS.limits.maxMilestones) return `a campaign holds at most ${PLOTS.limits.maxMilestones} milestones`;
+      s.bible.milestones = all;
+      for (const st of a.stages) (plot.stages.find((p) => p.id === st.stage_id) as { goal: string }).goal = st.goal;
+      emit(m, { type: "plot_adjusted", stages: a.stages.map((x) => x.stage_id) });
       return undefined;
     }
 

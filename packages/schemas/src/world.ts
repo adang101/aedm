@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  ContentRatingSchema, DispositionSchema, ItemKindSchema, NpcRoleSchema, QuestStatusSchema,
+  ContentRatingSchema, DispositionSchema, ItemKindSchema, NpcRoleSchema, PlotArcSchema, PlotPatternSchema, QuestStatusSchema,
 } from "./enums";
 import { AppearanceSchema } from "./sprite";
 import { EntityIdSchema, MapIdSchema, shortWord, text } from "./common";
@@ -24,10 +24,15 @@ export const ItemSchema = z.strictObject({
 });
 export type Item = z.infer<typeof ItemSchema>;
 
+/** A plot stage id (snake_case, from packages/engine/data/plots.json). */
+export const StageIdSchema = z.string().trim().min(1).max(40).regex(/^[a-z][a-z0-9_]*$/, "stage ids are snake_case");
+
 export const MilestoneSchema = z.strictObject({
   id: EntityIdSchema,
   description: text(300),
   completed: z.boolean(),
+  /** Plot stage this milestone belongs to. Optional so saves from before story structure still parse. */
+  stage: StageIdSchema.optional(),
 });
 export type Milestone = z.infer<typeof MilestoneSchema>;
 
@@ -45,11 +50,28 @@ export const ActSchema = z.strictObject({
 });
 export type Act = z.infer<typeof ActSchema>;
 
+export const PlotStageSchema = z.strictObject({
+  id: StageIdSchema,
+  title: text(60),
+  goal: text(300),
+});
+export type PlotStage = z.infer<typeof PlotStageSchema>;
+
+/** The campaign's plot plan: one pattern, one emotional arc, and the pattern's stages with campaign-specific goals. */
+export const PlotSchema = z.strictObject({
+  pattern: PlotPatternSchema,
+  arc: PlotArcSchema,
+  stages: z.array(PlotStageSchema).min(1).max(8),
+});
+export type Plot = z.infer<typeof PlotSchema>;
+
 export const StoryBibleSchema = z.strictObject({
   title: text(80),
   digest: text(2000),
   tone: text(200),
   acts: z.array(ActSchema).max(10).optional(),
+  /** Optional so older saves still parse. */
+  plot: PlotSchema.optional(),
   milestones: z.array(MilestoneSchema).max(30),
   quests: z.array(QuestSchema).max(50),
 });

@@ -5,6 +5,7 @@ import {
 } from "./enums";
 import { EnemyIdSchema, EntityIdSchema, MapIdSchema, countWords, maxWords, shortWord, text, wordRange } from "./common";
 import { MapBriefSchema } from "./map";
+import { StageIdSchema } from "./world";
 import { AppearanceSchema } from "./sprite";
 
 const coord = z.number().int().min(0).max(255);
@@ -143,6 +144,16 @@ export const CompleteMilestoneActionSchema = z.strictObject({
   milestone_id: EntityIdSchema,
 });
 
+/** Re-plans stages that have not started: new goals and a fresh milestone list for each. */
+export const AdjustPlotActionSchema = z.strictObject({
+  type: z.literal("adjust_plot"),
+  stages: z.array(z.strictObject({
+    stage_id: StageIdSchema,
+    goal: text(300),
+    milestones: z.array(z.strictObject({ id: EntityIdSchema, description: text(300) })).min(1).max(4),
+  })).min(1).max(7),
+});
+
 export const SuggestActionsActionSchema = z.strictObject({
   type: z.literal("suggest_actions"),
   chips: z.array(text(60).refine((s) => countWords(s) <= 4, { message: "at most 4 words" })).min(2).max(4),
@@ -152,7 +163,7 @@ export const DmActionSchema = z.discriminatedUnion("type", [
   RequestCheckActionSchema, CreateNpcActionSchema, NpcSayActionSchema, CreateEnemyActionSchema,
   SpawnEntityActionSchema, StartCombatActionSchema, EndCombatActionSchema, ApplyConditionActionSchema,
   GrantItemActionSchema, UpdateQuestActionSchema, SetFactActionSchema, GenerateMapActionSchema,
-  ChangeSceneActionSchema, AwardGrowthActionSchema, CompleteMilestoneActionSchema, SuggestActionsActionSchema,
+  ChangeSceneActionSchema, AwardGrowthActionSchema, CompleteMilestoneActionSchema, AdjustPlotActionSchema, SuggestActionsActionSchema,
 ]);
 export type DmAction = z.infer<typeof DmActionSchema>;
 export type DmActionType = DmAction["type"];

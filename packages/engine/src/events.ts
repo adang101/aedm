@@ -43,6 +43,8 @@ export type EngineEvent =
   | { type: "fact_set"; subject: string; predicate: string; object: string }
   | { type: "growth_awarded"; characterId: string; name: string; amount: number; reason: string; growth: number }
   | { type: "milestone_completed"; milestoneId: string; description: string }
+  | { type: "stage_advanced"; stageId: string; stageName: string; title: string }
+  | { type: "plot_adjusted"; stages: string[] }
   | { type: "level_up"; characterId: string; name: string; level: number; hpMax: number; scorePoint: boolean }
   | { type: "rest"; hpRestored: number }
   | { type: "chips"; chips: string[] }
@@ -102,6 +104,8 @@ export function describeEvent(e: EngineEvent): string {
     case "quest_updated": return wrap(`quest "${e.title}" is now ${e.status}${e.note ? `: ${e.note}` : ""}`);
     case "fact_set": return wrap(`fact recorded: ${e.subject} ${e.predicate} ${e.object}`);
     case "growth_awarded": return wrap(`${e.name} gains ${e.amount} growth (${e.reason})`);
+    case "stage_advanced": return wrap(`the story moves to a new stage: ${e.stageName} ("${e.title}")`);
+    case "plot_adjusted": return wrap(`the plot was re-planned for stages: ${e.stages.join(", ")}`);
     case "milestone_completed": return wrap(`milestone reached: ${e.description}`);
     case "level_up": return wrap(`${e.name} reaches level ${e.level} (max HP ${e.hpMax})${e.scorePoint ? "; +1 ability score available" : ""}`);
     case "rest": return wrap(`the party rests and recovers ${e.hpRestored} HP in total`);

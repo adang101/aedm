@@ -2,12 +2,13 @@
  * Typed access to the rules numbers in `packages/engine/data/*.json`.
  * Nothing in the engine hardcodes a rules number; it reads it from here.
  */
-import type { Condition, DamageType, Difficulty, Disposition, EnemyRole } from "@aedm/schemas";
+import type { PlotArc, PlotPattern, Condition, DamageType, Difficulty, Disposition, EnemyRole } from "@aedm/schemas";
 import rulesJson from "../data/rules.json" with { type: "json" };
 import levelsJson from "../data/levels.json" with { type: "json" };
 import conditionsJson from "../data/conditions.json" with { type: "json" };
 import costsJson from "../data/costs.json" with { type: "json" };
 import enemiesJson from "../data/enemies.json" with { type: "json" };
+import plotsJson from "../data/plots.json" with { type: "json" };
 
 export interface ArmorInfo { name: string; dexCap: number | null; speedPenalty: number }
 
@@ -117,3 +118,15 @@ export const LEVELS = (levelsJson as unknown as { levels: LevelRow[] }).levels;
 export const CONDITION_META = conditionsJson as unknown as Record<Condition, ConditionMeta>;
 export const COSTS = costsJson as unknown as Costs;
 export const ENEMY_DATA = enemiesJson as unknown as EnemyData;
+
+export interface PlotStageData { id: string; name: string; purpose: string; tension: number; difficulty: Difficulty }
+export interface PlotPatternData { name: string; shape: string; keywords: string[]; recommendedArcs: PlotArc[]; stages: PlotStageData[] }
+export interface PlotArcData { name: string; curve: string; /** Party fortune (0 to 10) at the end of each stage. */ fortune: number[] }
+export interface PlotsData {
+  version: number;
+  fortune: { start: number; min: number; max: number };
+  limits: { maxMilestones: number };
+  patterns: Record<PlotPattern, PlotPatternData>;
+  arcs: Record<PlotArc, PlotArcData>;
+}
+export const PLOTS = plotsJson as unknown as PlotsData;

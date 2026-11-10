@@ -3,13 +3,17 @@ import { AbilitySchema } from "./ability";
 import { AbilityScoresSchema, CharacterCreateSchema, CharacterViewSchema, SpriteRecipeSchema } from "./character";
 import {
   AbilityScoreKeySchema, ConditionSchema, ContentRatingSchema, DirectionSchema, DispositionSchema, PlayerStatusSchema,
+  PlotArcSettingSchema, PlotPatternSettingSchema,
 } from "./enums";
 import { EntityIdSchema, MapIdSchema, text } from "./common";
 import { MapSchema } from "./map";
 import { QuestSchema } from "./world";
 
-/** 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged. */
-export const WS_VERSION = 2;
+/**
+ * 3: room settings gained plot_pattern and plot_arc.
+ * 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged.
+ */
+export const WS_VERSION = 3;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
@@ -25,6 +29,10 @@ export const RoomSettingsSchema = z.strictObject({
   content_rating: ContentRatingSchema,
   campaign_pitch: text(300, 0),
   dev_solo: z.boolean(),
+  /** Plot pattern id or "auto". Missing means auto. */
+  plot_pattern: PlotPatternSettingSchema.optional(),
+  /** Emotional arc id or "auto". Missing means auto. */
+  plot_arc: PlotArcSettingSchema.optional(),
 });
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 export const RoomSettingsPatchSchema = RoomSettingsSchema.partial();

@@ -158,3 +158,19 @@ export type Environment = z.infer<typeof EnvironmentSchema>;
 export const MOODS = ["bright", "neutral", "dim", "dark", "eerie"] as const;
 export const MoodSchema = z.enum(MOODS);
 export type Mood = z.infer<typeof MoodSchema>;
+
+/** The seven classic plot patterns (stages and pacing data live in packages/engine/data/plots.json). */
+export const PLOT_PATTERNS = [
+  "overcoming_the_monster", "rags_to_riches", "the_quest", "voyage_and_return", "comedy", "tragedy", "rebirth",
+] as const;
+export const PlotPatternSchema = z.enum(PLOT_PATTERNS);
+export type PlotPattern = z.infer<typeof PlotPatternSchema>;
+
+/** The six emotional arcs: the party's fortune curve across the campaign. */
+export const PLOT_ARCS = ["rise", "fall", "fall_rise", "rise_fall", "rise_fall_rise", "fall_rise_fall"] as const;
+export const PlotArcSchema = z.enum(PLOT_ARCS);
+export type PlotArc = z.infer<typeof PlotArcSchema>;
+
+/** Room setting: a pattern or arc id, or "auto" (the engine picks deterministically from the pitch and seed). */
+export const PlotPatternSettingSchema = z.enum(["auto", ...PLOT_PATTERNS]);
+export const PlotArcSettingSchema = z.enum(["auto", ...PLOT_ARCS]);

@@ -15,6 +15,19 @@ export const BIBLE: StoryBible = {
   quests: [{ id: "q_edda", title: "Find Edda Marrow", status: "active", notes: [] }],
 };
 
+/** A bible with a tragedy / rise_fall plot: two milestones (m1..m10) in each of the five stages. */
+export const PLOT_BIBLE: StoryBible = (() => {
+  const stages = ["anticipation", "dream", "frustration", "nightmare", "downfall"];
+  return {
+    ...BIBLE,
+    plot: { pattern: "tragedy", arc: "rise_fall", stages: stages.map((id) => ({ id, title: id, goal: `Goal of ${id}.` })) },
+    milestones: stages.flatMap((stage, i) => [
+      { id: `m${i * 2 + 1}`, description: `${stage} one`, completed: false, stage },
+      { id: `m${i * 2 + 2}`, description: `${stage} two`, completed: false, stage },
+    ]),
+  };
+})();
+
 export const FACTS: WorldFact[] = [
   { subject: "Hollow Pell", predicate: "is_alive", object: "false" },
   { subject: "Odalys Brand", predicate: "disposition", object: "friendly" },
@@ -41,9 +54,9 @@ export const chorister: Enemy = {
   }],
 };
 
-export function makeWorld(seed = 7, opts: { walls?: [number, number][] } = {}): { state: GameState; rng: Rng } {
+export function makeWorld(seed = 7, opts: { walls?: [number, number][]; bible?: StoryBible } = {}): { state: GameState; rng: Rng } {
   const rng = createRng(seed);
-  let state = createGameState({ seed, bible: BIBLE, facts: FACTS, contentRating: "teen" });
+  let state = createGameState({ seed, bible: opts.bible ?? BIBLE, facts: FACTS, contentRating: "teen" });
   for (const c of fixtures.SPIKE_PARTY) {
     const r = addCharacter(state, c, c.user_id);
     if (!r.ok) throw new Error(r.errors.join("; "));
