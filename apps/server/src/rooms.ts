@@ -26,7 +26,7 @@ export interface Player {
   graceTimer: unknown;
 }
 
-export const DEFAULT_SETTINGS: RoomSettings = { content_rating: "teen", campaign_pitch: "", dev_solo: false };
+export const DEFAULT_SETTINGS: RoomSettings = { content_rating: "teen", campaign_pitch: "", dev_solo: false, plot_pattern: "auto", plot_arc: "auto" };
 
 export class Room {
   hostId: string | null = null;

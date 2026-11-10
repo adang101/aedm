@@ -10,7 +10,7 @@ import { PREMADE_SPECS } from "../state/sprite-builder";
 type Payload = Record<string, unknown>;
 type PlayerStatus = "online" | "away" | "offline" | "autopilot";
 interface MockPlayer { player_id: string; display_name: string; status: PlayerStatus; ready: boolean; character_id: string | null }
-interface Settings { content_rating: "family" | "teen" | "mature"; campaign_pitch: string; dev_solo: boolean }
+interface Settings { content_rating: "family" | "teen" | "mature"; campaign_pitch: string; dev_solo: boolean; plot_pattern?: string; plot_arc?: string }
 
 const ME = "p_me";
 const ME_CHAR = "ch_me";
@@ -94,7 +94,7 @@ export class MockServer {
   private hostId = ME;
   private hostIsFake = false;
   private phase: "lobby" | "playing" = "lobby";
-  private settings: Settings = { content_rating: "teen", campaign_pitch: "", dev_solo: false };
+  private settings: Settings = { content_rating: "teen", campaign_pitch: "", dev_solo: false, plot_pattern: "auto", plot_arc: "auto" };
   private players: MockPlayer[] = [];
   private myName = "Player";
   private myChar: CharacterView | null = null;

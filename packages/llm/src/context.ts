@@ -28,6 +28,20 @@ export interface PartyMemberContext {
   present: boolean;
 }
 
+export interface PacingContext {
+  patternName: string;
+  arcName: string;
+  stageIndex: number;
+  stageCount: number;
+  finished: boolean;
+  stage: { id: string; name: string; title: string; goal: string; purpose: string };
+  next: { id: string; name: string; title: string; goal: string } | null;
+  tension: number;
+  difficulty: string;
+  trendText: string;
+  openMilestones: number;
+}
+
 export interface DmContextPack {
   /** Material ids the DM may name in a map brief (the engine's library). Omitted: a short placeholder list. */
   materialIds?: readonly string[];
@@ -46,7 +60,9 @@ export interface DmContextPack {
   };
   party: PartyMemberContext[];
   quests: { id: string; title: string; status: string; notes?: string[] }[];
-  milestones: { id: string; description: string; completed: boolean }[];
+  milestones: { id: string; description: string; completed: boolean; stage?: string }[];
+  /** Story structure pacing (engine `pacingBlock`). Omitted for campaigns without a plot. */
+  pacing?: PacingContext | undefined;
   /**
    * Recent history, oldest first. The server must pass in-character turns only: OOC chat never
    * reaches the DM. As a second line of defence, entries marked channel "ooc" are dropped here.
@@ -162,10 +178,26 @@ export function buildDmContext(pack: DmContextPack): { system: string; user: str
     "</quests>",
     "<milestones>",
     ...(pack.milestones.length
-      ? pack.milestones.map((m) => `- id=${m.id} ${m.completed ? "completed" : "open"}: ${m.description}`)
+      ? pack.milestones.map((m) => `- id=${m.id}${m.stage ? ` stage=${m.stage}` : ""} ${m.completed ? "completed" : "open"}: ${m.description}`)
       : ["(none)"]),
     "</milestones>",
   );
+
+  if (pack.pacing) {
+    const p = pack.pacing;
+    s.push(
+      "<pacing>",
+      `Plot: ${attr(p.patternName)}. Emotional arc: ${attr(p.arcName)}.`,
+      p.finished
+        ? `All stages are complete (final stage: ${attr(p.stage.name)} - "${attr(p.stage.title)}"). Bring the story to a satisfying close.`
+        : `Current stage ${p.stageIndex + 1} of ${p.stageCount}: ${attr(p.stage.name)} - "${attr(p.stage.title)}". Purpose: ${p.stage.purpose} Goal: ${escapeUntrusted(p.stage.goal, 300)} (${p.openMilestones} milestone(s) still open in this stage)`,
+      `Next stage: ${p.next ? `${attr(p.next.name)} - "${attr(p.next.title)}"` : "none, this is the last stage"}.`,
+      `Tension target: ${p.tension} of 10.`,
+      `Fortune: ${p.trendText}.`,
+      `Suggested encounter difficulty: ${p.difficulty} (the engine's threat budgets still apply).`,
+      "</pacing>",
+    );
+  }
 
   const turns = pack.recentTurns.filter((t) => t.channel !== "ooc");
   s.push(

@@ -2,7 +2,7 @@ import {
   addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, basicAttack, clampEnemy, cloneState, combatOutcome,
   computePartyLevel, createGameState, currentMap, describeEvent, endCombat, endTurn, enemyRangesForLevel,
   enemyTakeTurn, entitiesOnMap, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
-  placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
+  pickPlot, placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
   skipAbilityPick, spendScorePoint, STARTER_BRIEFS, toCharacterView,
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
   type CheckRequest, type CreateEnemyAction, type EngineEvent, type Entity, type GameState,
@@ -181,9 +181,10 @@ export class GameSession {
       return c ? `${c.name}, ${c.title}: ${c.description}`.slice(0, 280) : p.name;
     });
     const pitch = room.settings.campaign_pitch.trim() || "An open-ended fantasy adventure in a mysterious region.";
-    const bible = await generateStoryBible(deps.provider, { pitch, partyBriefs: briefs, contentRating: room.settings.content_rating });
-    const facts = bible.digest === LANTERN_MARSH_BIBLE.digest ? LANTERN_MARSH_FACTS.map((f) => ({ ...f })) : [];
     const seed = Math.floor(deps.random() * 0x7fffffff);
+    const plot = pickPlot({ pattern: room.settings.plot_pattern, arc: room.settings.plot_arc, pitch, seed });
+    const bible = await generateStoryBible(deps.provider, { pitch, partyBriefs: briefs, contentRating: room.settings.content_rating, plot });
+    const facts = bible.digest === LANTERN_MARSH_BIBLE.digest ? LANTERN_MARSH_FACTS.map((f) => ({ ...f })) : [];
     let state = createGameState({ seed, bible, facts, contentRating: room.settings.content_rating, campaignId: `cmp_${room.id}` });
     state.nextId = room.scratch.nextId;
     for (const p of participants) {

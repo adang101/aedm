@@ -2,7 +2,8 @@
  * Offline "improv" generators used by the fake provider. Deterministic: the same input always gives
  * the same output. They read the exact tagged formats our own context builders produce.
  */
-import { LANTERN_MARSH_BIBLE } from "../default-bible";
+import { PLOT_ARCS, PLOT_PATTERNS, type PlotArc, type PlotPattern } from "@aedm/schemas";
+import { lanternMarshBible } from "../default-bible";
 import type { ModelRequest } from "../provider";
 
 // ---------- helpers ----------
@@ -615,8 +616,14 @@ export function improvSprite(user: string): string {
 
 // ---------- bible / summary ----------
 
-export function improvBible(): string {
-  return JSON.stringify(LANTERN_MARSH_BIBLE);
+/** The offline bible: the Lantern Marsh, with a plot of the pattern and arc named in the request's <plot_plan> (if any). */
+export function improvBible(user = ""): string {
+  const plan = /<plot_plan>([\s\S]*?)<\/plot_plan>/.exec(user)?.[1] ?? "";
+  const pattern = /^pattern: (\w+)/m.exec(plan)?.[1];
+  const arc = /^arc: (\w+)/m.exec(plan)?.[1];
+  const p = (PLOT_PATTERNS as readonly string[]).includes(pattern ?? "") ? (pattern as PlotPattern) : undefined;
+  const a = (PLOT_ARCS as readonly string[]).includes(arc ?? "") ? (arc as PlotArc) : undefined;
+  return JSON.stringify(lanternMarshBible(p, a));
 }
 
 export function improvSummary(user: string): string {
@@ -635,7 +642,7 @@ export function improvFor(req: ModelRequest): string {
   if (first.includes("<ability_text>")) return improvForge(first, req.system);
   if (first.includes("<enemy_concept>")) return improvEnemy(first, req.system);
   if (req.purpose === "sprite" || (first.includes("<concept>") && first.includes("<appearance>"))) return improvSprite(first);
-  if (first.includes("<story_pitch>")) return improvBible();
+  if (first.includes("<story_pitch>")) return improvBible(first);
   if (first.includes("<turns>")) return improvSummary(first);
   return improvDm(first);
 }

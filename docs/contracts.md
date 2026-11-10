@@ -39,7 +39,8 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | `generate_map` | brief (see Map brief) | `setting.layout` and `setting.environment` from the allowed lists, at most 12 rooms, size class limits. Unknown material ids resolve by id, then tag, then role. **Shape change (v2): `biome` is replaced by `setting`; the DM response `v` stays 1.** |
 | `change_scene` | map_id, entry (spawn name) | Map exists; the party is at an exit, or the DM narrates the travel |
 | `award_growth` | character_id, amount (1 to 25), reason (at most 120) | Session caps from `rules-numbers.md` |
-| `complete_milestone` | milestone_id | Exists in the story bible and is not yet completed; the engine grants 100 growth to each present character |
+| `complete_milestone` | milestone_id | Exists in the story bible and is not yet completed; the engine grants 100 growth to each present character. With a plot, a milestone of a later stage than the current one is rejected (stages complete in order); finishing the last open milestone of a stage advances the stage. |
+| `adjust_plot` | stages (1 to 7): stage_id, goal (at most 300), milestones (1 to 4: id, description at most 300) | The campaign has a plot. Each stage id is in the plot, appears once, and comes after the current stage (the stage of the first incomplete milestone), so started stages and completed milestones never change. New milestone ids must not clash with kept milestones or each other, and the bible keeps at most 30. All or nothing: any bad entry rejects the action. The engine replaces the goals and milestones of those stages and keeps stage order. |
 | `suggest_actions` | chips (2 to 4 strings, at most 4 words each) | Shown as quick-reply chips, mainly for phones |
 
 The DM never changes HP, stats, dice results or inventory directly. Those change only as results of engine rules.
@@ -204,7 +205,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 
 **WebSocket messages**
 
-Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 2: the envelopes are unchanged, but the Map payload changed shape (v2 map), so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second.
+Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 3: the envelopes are unchanged, but the Map payload changed shape (v2 map) and room settings gained `plot_pattern` and `plot_arc`, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second.
 
 | `type` | Direction | Payload |
 | --- | --- | --- |
@@ -212,7 +213,7 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `room_created` | Server to client | room_id, invite_code |
 | `join_room` | Client to server | invite_code, display_name (1 to 24), auth_token (optional; the reconnect token from `joined`) |
 | `joined` | Server to client | player_id, auth_token, room_id |
-| `lobby_state` | Server to client | room_id, invite_code, host_player_id, phase (lobby, playing), settings (content_rating family, teen or mature; campaign_pitch at most 300 characters; dev_solo boolean), players (player_id, display_name, status online, away, offline or autopilot, ready, character_id or null), resume_save (optional: save_id, name; set on a room opened by `resume_campaign`) |
+| `lobby_state` | Server to client | room_id, invite_code, host_player_id, phase (lobby, playing), settings (content_rating family, teen or mature; campaign_pitch at most 300 characters; dev_solo boolean; plot_pattern and plot_arc, optional, a pattern or arc id or `auto`, missing means auto), players (player_id, display_name, status online, away, offline or autopilot, ready, character_id or null), resume_save (optional: save_id, name; set on a room opened by `resume_campaign`) |
 | `set_ready` | Client to server | ready |
 | `update_settings` | Client to server | Host only. Any subset of the `settings` fields |
 | `start_game` | Client to server | Host only. None |
@@ -314,6 +315,17 @@ Optional; guests use none of this. The login belongs to the connection and works
 
 Stored template (`data/accounts/users.json`, per user): id (`ch_...`), saved_at, character (the Character create object), forged_abilities (optional). Save files add `owner_user_id`, `campaign_title` and `room.player_user_ids` (player_id to account id); older saves without them are guest saves.
 
+**Story structure (built)**
+
+| Contract | Fields |
+| --- | --- |
+| Story bible `plot` | Optional (older saves parse without it): `{ pattern, arc, stages: [{ id, title (at most 60), goal (at most 300) }] }`. `pattern` is one of `overcoming_the_monster`, `rags_to_riches`, `the_quest`, `voyage_and_return`, `comedy`, `tragedy`, `rebirth`. `arc` is one of `rise`, `fall`, `fall_rise`, `rise_fall`, `rise_fall_rise`, `fall_rise_fall`. Stage ids are the pattern's five, in order (`packages/engine/data/plots.json`). |
+| Milestone `stage` | Optional stage id. With a plot every milestone must carry one, every stage needs at least one milestone, and milestones are listed in stage order (engine `validateBiblePlot`; a bible that fails gets one repair call, then the built-in fallback). |
+| Room settings | `plot_pattern` (a pattern id or `auto`) and `plot_arc` (an arc id or `auto`), both optional, missing means `auto`. `auto` is resolved by the engine (`pickPlot`) from the pitch keywords and the seed; an auto arc is one of the pattern's recommended arcs. Any explicit pairing is allowed. |
+| DM action `adjust_plot` | See the action table. The DM response `v` stays 1 (an added action type only). |
+| Engine events | `stage_advanced` (stageId, stageName, title) and `plot_adjusted` (stages), narrated to the DM as engine lines. |
+| DM context | A `<pacing>` block built by the engine from the bible: plot and arc names, current stage with purpose and goal, next stage, tension target (0 to 10), fortune trend, suggested encounter difficulty. Milestone lines carry `stage=`. |
+
 **Planned contracts (designed in `design.md`, not yet implemented)**
 
 These become Zod schemas when the features are built; shapes may still change.
@@ -323,9 +335,7 @@ These become Zod schemas when the features are built; shapes may still change.
 | `PixelSprite` (recipe kind `pixel`) | `kind: "pixel"`, `v: 1`, `width: 48`, `height: 64`, `palette` (1 to 32 master-palette colors), `pixels` (run-length encoded palette indices, 0 transparent), `size` (tiny to huge), `base?` (`SpriteSpec` it was painted over), `traits` (at most 160) |
 | Workshop asset | `id` (`as_`), `owner_user_id`, `name` (at most 40), `role_hint` (pc, npc, enemy, prop), `concept` (at most 200), `recipe` (shape, spec or pixel), `source` (designed, painted_over, painted), `created_at`, `updated_at` |
 | `create_npc` / `create_enemy` | gain optional `asset_ref` (an approved cast asset id from the context pack) |
-| Story bible | gains `plot: { pattern, arc, stages: [{ id, title (at most 60), goal (at most 300) }] }`; each milestone gains `stage` |
-| `adjust_plot` DM action | `stages` (replacement goals and milestones for stages not yet started) |
-| Room settings | gain `custom_cast` (off, host_approval, open), `custom_paintings` (boolean), `plot_pattern` and `plot_arc` (or `surprise`) |
+| Room settings | gain `custom_cast` (off, host_approval, open) and `custom_paintings` (boolean) |
 
 | WS `type` | Direction | Payload |
 | --- | --- | --- |

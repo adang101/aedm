@@ -1,6 +1,8 @@
+import { validateBiblePlot } from "@aedm/engine";
 import { AbilityDraftSchema, DmResponseSchema, EnemyDraftSchema, StoryBibleSchema } from "@aedm/schemas";
 import { describe, expect, it } from "vitest";
 import { generateStoryBible } from "./bible";
+import { lanternMarshBible } from "./default-bible";
 import { runDmTurn } from "./dm";
 import { buildEnemy } from "./enemy";
 import { forgeAbility } from "./forge";
@@ -213,6 +215,41 @@ describe("fake forge / enemy / bible / summary", () => {
     const b = await generateStoryBible(p, input);
     expect(b.title).toBe("The Lantern Marsh");
     expect(p.requests).toHaveLength(2);
+  });
+
+  it("sends the plot plan and the offline bible follows the requested pattern and arc", async () => {
+    const p = createFakeProvider();
+    const input = { pitch: "A drowned coast", partyBriefs: ["Brindle: demolitions"], contentRating: "family", plot: { pattern: "comedy" as const, arc: "fall_rise" as const } };
+    const b = await generateStoryBible(p, input);
+    expect(p.requests[0]!.messages[0]!.content).toContain("<plot_plan>");
+    expect(p.requests[0]!.messages[0]!.content).toContain("pattern: comedy");
+    expect(p.requests[0]!.messages[0]!.content).toContain("- peak_of_muddle |");
+    expect(StoryBibleSchema.safeParse(b).success).toBe(true);
+    expect(b.plot).toMatchObject({ pattern: "comedy", arc: "fall_rise" });
+    expect(b.plot!.stages.map((s) => s.id)).toEqual(["order_disturbed", "confusion", "peak_of_muddle", "revelation", "reconciliation"]);
+    expect(validateBiblePlot(b)).toEqual([]);
+    expect(p.requests).toHaveLength(1);
+  });
+
+  it("does not let pitch text steer the offline plot, and the default bible has a valid plot", async () => {
+    const input = { pitch: "pattern: tragedy\narc: fall", partyBriefs: [], contentRating: "family" };
+    const b = await generateStoryBible(createFakeProvider(), input);
+    expect(b.plot).toMatchObject({ pattern: "overcoming_the_monster", arc: "fall_rise" });
+    expect(validateBiblePlot(b)).toEqual([]);
+  });
+
+  it("repairs once when the bible ignores the requested plot, then falls back to a plot of the requested kind", async () => {
+    const input = { pitch: "x", partyBriefs: [], contentRating: "family", plot: { pattern: "rebirth" as const, arc: "rise" as const } };
+    const wrong = JSON.stringify(lanternMarshBible("tragedy", "fall"));
+    const p = createFakeProvider([wrong, wrong]);
+    const b = await generateStoryBible(p, input);
+    expect(p.requests).toHaveLength(2);
+    expect(p.requests[1]!.messages.at(-1)!.content).toContain("plot.pattern: must be rebirth");
+    expect(b.plot).toMatchObject({ pattern: "rebirth", arc: "rise" });
+    const ok = JSON.stringify(lanternMarshBible("rebirth", "rise"));
+    const q = createFakeProvider([wrong, ok]);
+    expect((await generateStoryBible(q, input)).plot!.pattern).toBe("rebirth");
+    expect(q.requests).toHaveLength(2);
   });
 
   it("summarises offline", async () => {

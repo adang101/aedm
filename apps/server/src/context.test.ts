@@ -42,7 +42,9 @@ describe("buildContextPack", () => {
     expect(pack.party[0]).toMatchObject({ id: "ch_brindle", level: 1, present: true });
     expect(pack.party[0]!.abilities).toEqual(["Shaped Charge", "Tripwire Cache", "Smoke Pop"]);
     expect(pack.quests.map((q) => q.id)).toEqual(["q_edda", "q_sleepers"]);
-    expect(pack.milestones).toHaveLength(3);
+    expect(pack.milestones).toHaveLength(5);
+    expect(pack.pacing).toMatchObject({ patternName: "Overcoming the Monster", stageIndex: 0, finished: false });
+    expect(pack.pacing!.stage.id).toBe("call");
     expect(pack.facts.length).toBe(LANTERN_MARSH_FACTS.length);
     expect(pack.partyLevel).toBe(1);
     expect(pack.lootRemaining).toBe(30);

@@ -137,6 +137,38 @@ describe("starting the game", () => {
   });
 });
 
+describe("story structure", () => {
+  it("passes the room's plot settings to bible generation and gives the DM a pacing block", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const a = await h.connect();
+    await a.createAndJoin("Solo");
+    await a.request("claim_character", { character_id: "new", character: brindle() });
+    await a.request("update_settings", { dev_solo: true, plot_pattern: "tragedy", plot_arc: "rise_fall" });
+    await a.request("start_game", {});
+    await a.wait("state_snapshot", () => true);
+    const bibleReq = provider.requests.find((r) => r.purpose === "bible")!;
+    expect(bibleReq.messages[0]!.content).toContain("pattern: tragedy");
+    expect(bibleReq.messages[0]!.content).toContain("arc: rise_fall");
+    const user = provider.dmRequests()[0]!.messages[0]!.content;
+    expect(user).toContain("<pacing>");
+    expect(user).toContain("Plot: Tragedy. Emotional arc: Soaring, then falling.");
+    expect(user).toContain("Current stage 1 of 5: Anticipation");
+  });
+  it("auto picks a valid plot", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const a = await h.connect();
+    await a.createAndJoin("Solo");
+    await a.request("claim_character", { character_id: "new", character: brindle() });
+    await a.request("update_settings", { dev_solo: true, campaign_pitch: "A monster in the lair beneath the hill" });
+    await a.request("start_game", {});
+    await a.wait("state_snapshot", () => true);
+    expect(provider.requests.find((r) => r.purpose === "bible")!.messages[0]!.content).toContain("pattern: overcoming_the_monster");
+    expect(provider.dmRequests()[0]!.messages[0]!.content).toContain("<pacing>");
+  });
+});
+
 describe("beats and the DM", () => {
   it("two IC says make one DM call; OOC chat never reaches a provider request", async () => {
     const provider = scriptedProvider();

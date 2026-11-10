@@ -1,6 +1,6 @@
 import type { DmContextPack, SceneEntity } from "@aedm/llm";
 import {
-  MATERIAL_IDS, RULES, computePartyLevel, currentMap, entitiesOnMap, getObjects, lootCap, type GameState,
+  MATERIAL_IDS, RULES, computePartyLevel, currentMap, entitiesOnMap, getObjects, lootCap, pacingBlock, type GameState,
 } from "@aedm/engine";
 
 export interface RecentTurn {
@@ -115,7 +115,8 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     },
     party,
     quests: state.bible.quests.map((q) => ({ id: q.id, title: q.title, status: q.status, notes: [...q.notes] })),
-    milestones: state.bible.milestones.map((m) => ({ id: m.id, description: m.description, completed: m.completed })),
+    milestones: state.bible.milestones.map((m) => ({ id: m.id, description: m.description, completed: m.completed, ...(m.stage ? { stage: m.stage } : {}) })),
+    pacing: pacingBlock(state.bible) ?? undefined,
     recentTurns: recent.map((t) => ({ speaker: t.speaker, text: t.text, kind: t.kind, channel: t.channel ?? "ic" })),
     engineLines: [...(input.engineLines ?? [])],
     intents: input.intents.map((i) => ({ ...i })),

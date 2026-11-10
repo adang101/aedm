@@ -88,7 +88,7 @@ Players can make the look of their own character, and of NPCs and enemies they o
 
 **Limits.** 200 Workshop assets and 5 MB per account; sprite design calls are rate limited per account (they cost money once a real model is attached).
 
-## Story structure (planned)
+## Story structure
 
 Every campaign follows one of seven classic **plot patterns** and one of six **emotional arcs**. The pattern decides *what kind* of story it is and its stages; the arc decides whether the party's fortunes trend up or down between them. Both guide pacing; player choices still win, and the DM re-aligns the plan rather than railroading.
 
@@ -119,13 +119,15 @@ Every campaign follows one of seven classic **plot patterns** and one of six **e
 
 **Flow.**
 
-1. In the lobby the host picks a pattern and an arc, or "Surprise me". Surprise picks deterministically from the pitch keywords and the seed.
+1. In the lobby the host picks a pattern and an arc, or leaves either on "Auto". Auto picks deterministically from the pitch keywords and the seed.
 2. The story bible prompt receives the stage list and the fortune curve. The bible gains `plot: { pattern, arc, stages: [{ id, title, goal }] }` and every milestone carries a `stage` id. The engine validates that every stage has at least one milestone, in stage order.
 3. During play the context pack adds a pacing block: current stage and its purpose, tension target, fortune trend ("this stretch should leave the party worse off"), and the suggested difficulty. The current stage is the stage of the first incomplete milestone; completing the last milestone of a stage advances it.
 4. Suggested difficulty only sets the default for encounters; the engine's threat budgets still apply.
 5. If the party abandons the planned path, the DM may re-plan the remaining stages with an `adjust_plot` action (new stage goals and milestones for stages not yet started; completed milestones never change).
 
-**Evals.** New scenarios check that the DM respects the current stage and fortune trend (rated), never completes a milestone out of stage order, and keeps "tragedy" within the content rating.
+**Built.** `plots.json` holds each stage's id, name, purpose, tension target and suggested difficulty, each arc's fortune per stage, and per pattern keywords and recommended arcs; scene kinds and milestone templates are not in the data yet. Engine: `pickPlot`, `plotOutline`, `validateBiblePlot`, `currentStage`, `pacingBlock`, and `adjust_plot` and stage-order checks in `applyDmActions`. The server resolves the room settings before bible generation and the bible prompt receives a `<plot_plan>`. Divergences from the plan above: the lobby option is called "Auto" (setting value `auto`); the engine also rejects `complete_milestone` for a stage later than the current one, so stages complete in order.
+
+**Evals (not yet written).** New scenarios should check that the DM respects the current stage and fortune trend (rated), never completes a milestone out of stage order, and keeps "tragedy" within the content rating.
 
 ## Capability check (as of this branch)
 
@@ -135,7 +137,7 @@ Every campaign follows one of seven classic **plot patterns** and one of six **e
 | Players create enemy and NPC sprites | No | Workshop, campaign cast, `asset_ref` on `create_npc` and `create_enemy` |
 | Paint over an existing sprite | No | `pixel` recipe kind, rasterizer, pixel editor |
 | Paint from scratch | No | Same editor with a blank canvas |
-| Stories follow classic plots and emotional arcs | No: the story bible has acts and milestones but no pattern, stage or arc | `plots.json`, bible `plot` field, milestone stages, pacing block, `adjust_plot` |
+| Stories follow classic plots and emotional arcs | Yes: `plots.json`, bible `plot` field, milestone stages, pacing block in the DM context, `adjust_plot`, lobby selects | Eval scenarios for stage and fortune adherence (below), scene kinds and milestone templates in `plots.json` |
 
 ## Decisions and MVP scope
 
