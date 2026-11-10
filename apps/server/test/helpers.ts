@@ -51,6 +51,7 @@ export interface Harness {
   server: GameServer;
   provider: ModelProvider;
   saveDir: string;
+  dataDir: string;
   url: string;
   clients: TestClient[];
   connect(): Promise<TestClient>;
@@ -58,17 +59,18 @@ export interface Harness {
 }
 
 export async function startHarness(opts: { provider?: ModelProvider; config?: GameServerOptions["config"]; random?: () => number } = {}): Promise<Harness> {
-  const saveDir = await mkdtemp(join(tmpdir(), "aedm-saves-"));
+  const dataDir = await mkdtemp(join(tmpdir(), "aedm-data-"));
+  const saveDir = join(dataDir, "saves");
   const provider = opts.provider ?? createFakeProvider();
   const server = await createGameServer({
-    port: 0, host: "127.0.0.1", provider, saveDir, logger: silentLogger,
+    port: 0, host: "127.0.0.1", provider, saveDir, dataDir, logger: silentLogger,
     config: { ...FAST, ...opts.config, limits: { ...FAST.limits, ...opts.config?.limits } },
     ...(opts.random ? { random: opts.random } : {}),
   });
   const url = `ws://127.0.0.1:${server.port}`;
   const clients: TestClient[] = [];
   return {
-    server, provider, saveDir, url, clients,
+    server, provider, saveDir, dataDir, url, clients,
     async connect() {
       const c = await TestClient.connect(url);
       clients.push(c);
@@ -77,7 +79,7 @@ export async function startHarness(opts: { provider?: ModelProvider; config?: Ga
     async stop() {
       for (const c of clients) c.close();
       await server.close();
-      await rm(saveDir, { recursive: true, force: true });
+      await rm(dataDir, { recursive: true, force: true });
     },
   };
 }

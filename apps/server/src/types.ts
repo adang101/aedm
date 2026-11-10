@@ -1,4 +1,5 @@
 import type { ModelProvider } from "@aedm/llm";
+import type { AccountStore } from "./accounts/store";
 
 /** Timer functions, injectable so tests can run fast or fully fake. */
 export interface Timers {
@@ -75,6 +76,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
 export interface Deps {
   provider: ModelProvider;
   saveDir: string;
+  accounts: AccountStore;
   clock: () => number;
   /** Returns a float in [0, 1). Used for seeds and invite codes. */
   random: () => number;

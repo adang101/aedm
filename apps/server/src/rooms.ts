@@ -15,6 +15,8 @@ export interface Player {
   name: string;
   /** Secret reconnect token, per player per room. */
   token: string;
+  /** The account this seat belongs to, if the player was logged in. */
+  userId: string | null;
   conn: Conn | null;
   status: PlayerStatus;
   ready: boolean;
@@ -36,6 +38,10 @@ export class Room {
   game: GameSession | null = null;
   starting = false;
   idleTimer: unknown = null;
+  /** Account that owns the campaign (set when a room is opened with resume_campaign). */
+  ownerUserId: string | null = null;
+  /** Set by resume_campaign: where the save to load lives. */
+  resume: { roomId: string; saveId: string; name: string } | null = null;
 
   constructor(
     readonly id: string,
@@ -52,6 +58,10 @@ export class Room {
 
   playerByToken(token: string): Player | undefined {
     return this.players.find((p) => p.token === token);
+  }
+
+  playerByUser(userId: string | null | undefined): Player | undefined {
+    return userId ? this.players.find((p) => p.userId === userId) : undefined;
   }
 
   playerByCharacter(characterId: string): Player | undefined {
@@ -73,6 +83,7 @@ export class Room {
       host_player_id: this.hostId ?? "",
       phase: this.phase,
       settings: { ...this.settings },
+      ...(this.resume ? { resume_save: { save_id: this.resume.saveId, name: this.resume.name } } : {}),
       players: this.players.map((p) => ({
         player_id: p.id,
         display_name: p.name,
