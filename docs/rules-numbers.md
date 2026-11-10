@@ -48,6 +48,11 @@ Level cap for the MVP is 10. Growth needed per level is 100. HP at level 1 is 10
 
 Power budget is 25 + 5 times level. Per-ability cap is 45% of the budget, rounded down. Maximum average damage per effect is 5 + 2 times level. A character's abilities must total at most the budget, and no single ability may exceed the cap.
 
+How the caps apply to abilities:
+
+- **Max condition turns** applies to conditions the DM imposes with `apply_condition` (clamped, not rejected). Inside abilities only stunned is capped, by **max stun turns**; other ability conditions may last up to 3 turns, and the cost formula prices the longer duration through the duration multiplier.
+- **Max area radius** applies to damage, heal and terrain effects. Reveal is not capped by it (radius 1 to 2 at any level).
+
 **Gear**
 
 | Item | Rule |
@@ -139,7 +144,7 @@ Checks at level 1: Brindle's three abilities total 19, Tamsin's 13, Orrin's 8 an
 
 **Enemy numbers**
 
-Threat score = HP / 4 + 2 x (Defense - 10) + 1.5 x damage per round + 0.5 x (sum of ability costs) + (speed - 6). Damage per round is the average damage of the enemy's best repeatable action, assuming it hits.
+Threat score = HP / 4 + 2 x (Defense - 10) + 1.5 x damage per round + 0.5 x (sum of ability costs) + (speed - 6). Damage per round is the average damage of the enemy's best repeatable action, assuming it hits. Use the exact dice average (1d6 is 3.5, not 4).
 
 | Party level | HP | Defense | Attack bonus | Damage per round | Threat of a standard enemy |
 | --- | --- | --- | --- | --- | --- |
@@ -154,7 +159,7 @@ Interpolate between rows. The enemy builder's allowed ranges are HP and damage w
 - **Encounter budget (standard)** = party size x (10 + 3 x party level). For 3 level-1 characters that is 39, and for 4 it is 52.
 - **Difficulty multipliers:** easy 0.5, standard 1.0, hard 1.5, deadly 2.0.
 - **Roles:** a minion has half the standard HP, 75% of the damage and no abilities. An elite may have up to 1.5 times standard HP and damage and 1 to 2 abilities. A boss may have up to 2 times HP, 1.5 times damage and 1 to 3 abilities, and one boss may spend up to 1.5 times the standard budget alone. Minions come out of the remaining budget.
-- **Worked example:** a robed chorister at level 1 has HP 10, Defense 12, attack +3, damage 4 per round, and Borrowed Voice (dazzled 1 turn, save, range 6, cooldown 3: 2 x0.75 x1.10 x0.85 = 1.40, costs 2). Threat = 2.5 + 4 + 6 + 1 = 13.5. Two of them total 27, inside the budget of 39.
+- **Worked example:** a robed chorister at level 1 has HP 10, Defense 12, attack +3, damage 4 per round, and Borrowed Voice (dazzled 1 turn, save, range 6, cooldown 3: 2 x0.75 x1.10 x0.85 = 1.40, costs 2). With a 1d6 basic attack (average 3.5): threat = 2.5 + 4 + 5.25 + 1 = 12.75. Two of them total 25.5, inside the budget of 39. (The table's "damage per round 4" is a target for the enemy builder, not a fixed value.)
 
 **Growth**
 
