@@ -6,6 +6,7 @@ import {
 import { EnemyIdSchema, EntityIdSchema, MapIdSchema, countWords, maxWords, shortWord, text, wordRange } from "./common";
 import { MapBriefSchema } from "./map";
 import { StageIdSchema } from "./world";
+import { AssetIdSchema } from "./asset";
 import { AppearanceSchema } from "./sprite";
 
 const coord = z.number().int().min(0).max(255);
@@ -31,6 +32,8 @@ export const CreateNpcActionSchema = z.strictObject({
   sprite_tags: z.array(shortWord).max(5),
   /** Optional look hint for the sprite designer (at most 160 chars). */
   appearance: AppearanceSchema.optional(),
+  /** Optional approved cast asset id from the context pack. The look comes from the cast; stats and everything else stay with the engine. */
+  asset_ref: AssetIdSchema.optional(),
 });
 
 export const NpcSayActionSchema = z.strictObject({
@@ -48,6 +51,8 @@ export const CreateEnemyActionSchema = z.strictObject({
   appearance: AppearanceSchema.optional(),
   /** Optional handle (en_ + snake_case, at most 40 chars). The server registers the built archetype under it so spawn_entity can use it as archetype_id. */
   ref: z.string().trim().max(40).regex(/^en_[a-z0-9_]+$/, "ref must be en_ plus snake_case").optional(),
+  /** Optional approved cast asset id from the context pack. The look comes from the cast; stats still come from the enemy builder and engine. */
+  asset_ref: AssetIdSchema.optional(),
 });
 
 export const SpawnEntityActionSchema = z

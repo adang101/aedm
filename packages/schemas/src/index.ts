@@ -9,6 +9,7 @@ export * from "./sprite";
 export * from "./pixel";
 export * from "./map";
 export * from "./asset";
+export * from "./workshop";
 export * from "./dm";
 export * from "./world";
 export * from "./ws";

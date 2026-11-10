@@ -8,15 +8,21 @@ import {
 import { EntityIdSchema, MapIdSchema, text } from "./common";
 import { MapSchema } from "./map";
 import { SpriteSpecSchema } from "./sprite";
+import {
+  CastDecisionPayload, CastStatePayload, CustomCastSchema, DeleteSpriteAssetPayload, ListSpriteAssetsPayload, OfferToCastPayload,
+  SaveSpriteAssetPayload, SpriteAssetsListPayload, SpriteRoleHintSchema,
+} from "./workshop";
 import { QuestSchema } from "./world";
 
 /**
+ * 6: Workshop and campaign cast: save_sprite_asset, delete_sprite_asset, list_sprite_assets, offer_to_cast, cast_decision (client),
+ *    sprite_assets_list, cast_state (server); room settings gained custom_cast and custom_paintings.
  * 5: sprite recipes gained the `pixel` kind (CharacterCreate); new error code invalid_sprite.
  * 4: added design_sprite (client) and sprite_designed (server).
  * 3: room settings gained plot_pattern and plot_arc.
  * 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged.
  */
-export const WS_VERSION = 5;
+export const WS_VERSION = 6;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
@@ -36,6 +42,10 @@ export const RoomSettingsSchema = z.strictObject({
   plot_pattern: PlotPatternSettingSchema.optional(),
   /** Emotional arc id or "auto". Missing means auto. */
   plot_arc: PlotArcSettingSchema.optional(),
+  /** Whether Workshop sprites may be offered to the campaign cast. Missing means host_approval. */
+  custom_cast: CustomCastSchema.optional(),
+  /** Whether painted (pixel) sprites are allowed in the room. Missing means true. */
+  custom_paintings: z.boolean().optional(),
 });
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 export const RoomSettingsPatchSchema = RoomSettingsSchema.partial();
@@ -222,9 +232,6 @@ export type LevelUpResult = z.infer<typeof LevelUpResultPayload>;
 // ---------- sprite designer (describe your look) ----------
 
 export const SPRITE_PROMPT_MAX = 300;
-export const SPRITE_ROLE_HINTS = ["pc", "npc", "enemy", "prop"] as const;
-export const SpriteRoleHintSchema = z.enum(SPRITE_ROLE_HINTS);
-export type SpriteRoleHint = z.infer<typeof SpriteRoleHintSchema>;
 
 /** Correlated by the envelope id: the reply carries it as `ack_id`. A refusal (rate_limited, bad_message) is an `error` with the same ack_id. */
 export const DesignSpritePayload = z.strictObject({
@@ -378,6 +385,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   client("ping", PingPayload),
   client("level_up_choice", LevelUpChoicePayload),
   client("design_sprite", DesignSpritePayload),
+  client("save_sprite_asset", SaveSpriteAssetPayload),
+  client("delete_sprite_asset", DeleteSpriteAssetPayload),
+  client("list_sprite_assets", ListSpriteAssetsPayload),
+  client("offer_to_cast", OfferToCastPayload),
+  client("cast_decision", CastDecisionPayload),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export type ClientMessageType = ClientMessage["type"];
@@ -406,6 +418,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   server("level_up_state", LevelUpStatePayload),
   server("level_up_result", LevelUpResultPayload),
   server("sprite_designed", SpriteDesignedPayload),
+  server("sprite_assets_list", SpriteAssetsListPayload),
+  server("cast_state", CastStatePayload),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export type ServerMessageType = ServerMessage["type"];
