@@ -1,0 +1,58 @@
+import { z } from "zod";
+import { AbilityDraftSchema, AbilitySchema } from "./ability";
+import { ConditionSchema, DamageTypeSchema, EnemyRoleSchema } from "./enums";
+import { DiceSchema, EnemyIdSchema, shortWord, text } from "./common";
+
+export const EnemyStatsSchema = z.strictObject({
+  hp: z.number().int().min(1).max(500),
+  defense: z.number().int().min(5).max(30),
+  attack_bonus: z.number().int().min(-2).max(15),
+  speed: z.number().int().min(1).max(12),
+  damage_dice: DiceSchema,
+});
+export type EnemyStats = z.infer<typeof EnemyStatsSchema>;
+
+const weakness = z.union([DamageTypeSchema, ConditionSchema]).nullable();
+const resistance = DamageTypeSchema.nullable();
+
+const enemyFields = {
+  name: text(40),
+  concept: text(200),
+  role: EnemyRoleSchema,
+  stats: EnemyStatsSchema,
+  weakness,
+  resistance,
+  behavior: z.array(text(80)).min(2).max(3),
+  loot_hint: text(80, 0).default(""),
+  sprite_tags: z.array(shortWord).max(5).default([]),
+};
+
+export const EnemySchema = z
+  .strictObject({
+    v: z.literal(1),
+    id: EnemyIdSchema.optional(),
+    ...enemyFields,
+    abilities: z.array(AbilitySchema).max(3),
+    /** Computed by the engine; ignored on input. */
+    threat: z.number().optional(),
+  })
+  .refine((e) => e.role !== "minion" || e.abilities.length === 0, {
+    message: "minions have no abilities",
+    path: ["abilities"],
+  });
+export type Enemy = z.infer<typeof EnemySchema>;
+
+/** What the enemy builder model returns. */
+export const EnemyDraftSchema = z
+  .strictObject({
+    v: z.literal(1).optional(),
+    id: z.string().optional(),
+    ...enemyFields,
+    abilities: z.array(AbilityDraftSchema).max(3),
+    threat: z.unknown().optional(),
+  })
+  .refine((e) => e.role !== "minion" || e.abilities.length === 0, {
+    message: "minions have no abilities",
+    path: ["abilities"],
+  });
+export type EnemyDraft = z.infer<typeof EnemyDraftSchema>;

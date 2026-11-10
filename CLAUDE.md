@@ -14,7 +14,7 @@ If a doc and the code disagree, ask which is right before changing either.
 
 ## Current phase
 
-Pre-development spikes (see `docs/spike-kit.md`), then milestone M0. Do not create `apps/web` or `apps/server` until the three spikes pass.
+Milestone M0 (see `docs/design.md` roadmap). The spike kit's fixtures and evals are reused as tests, but are no longer a gate before `apps/web` and `apps/server`. The docs are guides, followed loosely; `docs/design.md` records deliberate divergences.
 
 ## Rules for working in this repo
 
@@ -40,6 +40,8 @@ Update these as the scripts are added.
 - `pnpm typecheck`
 - `pnpm lint`
 - `pnpm eval` (LLM evals, which cost money; run only when asked)
+- `pnpm dev:server` (game server, defaults to the fake offline DM; set `AEDM_LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` for a real model)
+- `pnpm dev:web` (Vite client)
 
 ## Conventions
 

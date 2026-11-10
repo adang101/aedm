@@ -1,0 +1,28 @@
+{
+  "threat": {
+    "hpHundredthsPerHp": 25,
+    "defenseBase": 10,
+    "defenseHundredths": 200,
+    "damageHundredthsMult": 150,
+    "abilityCostHundredths": 50,
+    "speedBase": 6,
+    "speedHundredths": 100
+  },
+  "table": [
+    { "level": 1, "hp": 10, "defense": 12, "attack": 3, "damage": 4, "threat": 12.5 },
+    { "level": 3, "hp": 22, "defense": 13, "attack": 4, "damage": 7, "threat": 22.0 },
+    { "level": 5, "hp": 40, "defense": 15, "attack": 6, "damage": 12, "threat": 38.0 },
+    { "level": 7, "hp": 60, "defense": 16, "attack": 7, "damage": 16, "threat": 51.0 },
+    { "level": 10, "hp": 90, "defense": 18, "attack": 9, "damage": 22, "threat": 71.5 }
+  ],
+  "tolerance": { "hpPct": 20, "damagePct": 20, "defense": 1, "attack": 1 },
+  "speedRange": { "min": 4, "max": 8 },
+  "roles": {
+    "minion": { "hpPct": 50, "damagePct": 75, "abilitiesMin": 0, "abilitiesMax": 0 },
+    "standard": { "hpPct": 100, "damagePct": 100, "abilitiesMin": 0, "abilitiesMax": 2 },
+    "elite": { "hpPct": 150, "damagePct": 150, "abilitiesMin": 1, "abilitiesMax": 2 },
+    "boss": { "hpPct": 200, "damagePct": 150, "abilitiesMin": 1, "abilitiesMax": 3 }
+  },
+  "budget": { "perCharacterBase": 10, "perLevel": 3, "bossMultiplierPct": 150 },
+  "difficultyPct": { "easy": 50, "standard": 100, "hard": 150, "deadly": 200 }
+}

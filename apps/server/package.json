@@ -1,0 +1,18 @@
+{
+  "name": "@aedm/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@aedm/schemas": "workspace:*",
+    "@aedm/engine": "workspace:*",
+    "@aedm/llm": "workspace:*",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": { "@types/ws": "^8.5.0", "tsx": "^4.20.0" }
+}

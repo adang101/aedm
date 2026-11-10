@@ -1,0 +1,14 @@
+{
+  "stunned": { "hostile": true, "canAct": false, "canMove": false, "attackedAdvantage": true },
+  "slowed": { "hostile": true, "speedDelta": -2, "defenseDelta": -1 },
+  "rooted": { "hostile": true, "speedSet": 0 },
+  "prone": { "hostile": true, "adjacentAttackAdvantage": true, "rangedAttackDisadvantage": true },
+  "burning": { "hostile": true, "startOfTurnDamage": { "dice": "1d6", "type": "fire" }, "extinguishWithAction": true },
+  "bleeding": { "hostile": true, "startOfTurnDamage": { "dice": "1d4", "type": "sharp" }, "endsOnHeal": true },
+  "shielded": { "hostile": false },
+  "hasted": { "hostile": false, "speedDelta": 2, "defenseDelta": 2 },
+  "marked": { "hostile": true, "attackedToHit": 2 },
+  "taunted": { "hostile": true, "attackDisadvantageExceptSource": true },
+  "dazzled": { "hostile": true, "attackDisadvantage": true },
+  "evasive": { "hostile": false, "attackedDisadvantage": true }
+}
