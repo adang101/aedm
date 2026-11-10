@@ -125,8 +125,9 @@ describe("level-up flow", () => {
     // b has its own pending pick; its choice never changes a's character
     const aChar = lastLevelUp(t.a).character_id;
     // Compare only level-up fields: combat is live, so enemy turns may change HP meanwhile.
+    const hh = h;
     const growth = () => {
-      const c = stateOf(h).characters[aChar]!;
+      const c = stateOf(hh).characters[aChar]!;
       return JSON.stringify({ level: c.level, abilities: c.abilities, scores: c.scores });
     };
     const before = growth();
