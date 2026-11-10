@@ -43,9 +43,22 @@ apps/web  ──WebSocket (contracts.md messages)──▶  apps/server
 - The fake provider returns scripted, schema-valid responses. Tests and offline play use it; no test calls a real model.
 - Prompts live in `packages/llm/prompts/*.md`.
 
-## Assets
+## Content model (maps and sprites)
 
-For now every map tile, character and enemy is drawn procedurally as blocks and shapes from a placeholder tileset (`ts_blocks`) and sprite recipes (shape, color, glyph). The asset catalog interface is kept so an image model can fill it later (see `style-bible.md`).
+The DM can ask for any place or creature the story needs. It never draws tiles or pixels; it writes a structured *spec*, and deterministic engine code turns the spec into a valid, renderable component. The same spec later feeds the image model, so procedural placeholders and generated art share one contract.
+
+**Maps: setting + layout + materials.**
+
+- A map brief names an open-ended `setting` (any name: "sunken cathedral", "airship deck", "glacier rift") instead of choosing from five biomes. The setting picks one of a fixed set of **layout generators** (rooms and corridors, cave, open field, settlement, trail, arena, maze, islands), an environment (indoor, outdoor, underground), a mood, and a set of **materials** for each role: floor, path, wall, obstacle, liquid, hazard, decor props.
+- **Materials** come from a data library in `packages/engine/data/materials.json` (each has a role, two colors from the palette, a pattern, walkability, sight blocking, tags and a `prompt_traits` line for the image model). The DM may also define a new material inline; the engine validates it, snaps its colors to the master palette and picks a pattern from the allowed list. A name the library does not know resolves by id, then tag, then role, so an unusual request never fails.
+- Each generated map carries **its own inline tileset** built from the resolved materials, so the client can draw any map with no fixed catalog. The five old biomes become **setting presets** in data.
+- Reliability: the brief is schema-checked, materials resolve to a known role, the layout generator runs with a seed, and the map must pass the 7 validation rules (3 seeds, then a preset fallback).
+
+**Sprites: body plan + parts + palette.**
+
+- Every NPC, enemy, character and prop uses one `SpriteSpec`: a **body plan** (humanoid, beast, avian, serpent, insectoid, amorphous, construct, spirit, plant, object), a **size** (tiny to huge), a **palette** (primary, secondary, accent, detail colors snapped to the master palette), up to 6 **parts** from a catalog (horns, wings, tail, hood, robe, armor, shield, weapon kinds, crown, mask, glowing eyes, tentacles, spikes, aura, and so on), and a `traits` line for the image model.
+- A **sprite designer** step turns a concept ("a robed chorister who borrows the voices of the drowned") into a spec: a fast-tier model call through `ModelProvider`, validated by schema, with a deterministic keyword designer as the offline fallback. The web client composes the spec procedurally on the 48 x 64 canvas.
+- **Asset store:** specs (settings, materials, sprites) are cached by a hash of their concept, so recurring places and creatures reuse their look across a campaign. An `image_asset_id` slot on each spec is where generated art will plug in (M3).
 
 ## Decisions and MVP scope
 
@@ -61,7 +74,7 @@ For now every map tile, character and enemy is drawn procedurally as blocks and 
    - *Saved characters:* a template is the creator's `CharacterCreate` plus an id and, once used, the forged abilities (display only). Claiming one (`claim_character` with `character_id: "template"`) re-runs the normal forge path.
    - *Saves:* save files carry `owner_user_id` (the host's account at save time; null for guest rooms), `campaign_title`, and `room.player_user_ids`. `list_campaigns` scans the save folders for saves the account owns (latest autosave per campaign plus named saves). `resume_campaign` opens a new lobby; the host loads the save with `load_save`, and logged-in players get their own characters back by account. An account-owned save can only be loaded by its owner. Guest-hosted saves belong to nobody and appear in no list.
    - *Not built yet:* email and password reset, OAuth, per-IP rate limits, changing the password or display name, deleting an account.
-5. **Biomes:** forest, dungeon, desert, town, interior.
+5. **Open settings:** maps are described by an open-ended setting, a layout generator and materials (see Content model). Forest, dungeon, desert, town and interior survive only as setting presets.
 6. **Level cap 10**, party size 2 to 6 (1 allowed in dev mode).
 7. **Map generation is procedural and deterministic** from the DM's map brief and a seed; the model never emits tiles.
 8. **Server turn loop** (`apps/server`): one serialized async queue per room runs DM turns, AI combat turns and timeouts; player actions that are plain engine calls (a move, an attack on your own turn) apply immediately and synchronously. DM actions are applied one at a time in order. `create_enemy` carries an optional `ref` (`en_` + snake_case) that the server registers the built archetype under, so a later `spawn_entity` and `start_combat` in the same response can name it. The server snaps a blocked spawn tile to the nearest free one and swaps archetype ids in `start_combat` for the spawned entity ids.
