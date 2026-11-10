@@ -3,6 +3,7 @@ import { AbilityDraftSchema, AbilitySchema } from "./ability";
 import { AbilityScoreKeySchema, CheckTagSchema, SpriteShapeSchema } from "./enums";
 import { EntityIdSchema, HexColorSchema, text } from "./common";
 import { ItemSchema } from "./world";
+import { PixelSpriteSchema } from "./pixel";
 import { SpriteSpecSchema } from "./sprite";
 
 const glyph = z.string().trim().refine((s) => {
@@ -21,14 +22,19 @@ export type ShapeSpriteRecipe = z.infer<typeof ShapeSpriteRecipeSchema>;
 
 /**
  * Discriminated on `kind`: `spec` (body plan, parts, palette; see sprite.ts) is the standard for new content,
- * `shape` (colored shape plus glyph) stays for backward compatibility and as the fallback drawing.
+ * `pixel` (player-painted 48 x 64 image, optional `base` spec), `shape` (colored shape plus glyph) stays for backward compatibility and as the fallback drawing.
  */
-export const SpriteRecipeSchema = z.discriminatedUnion("kind", [ShapeSpriteRecipeSchema, SpriteSpecSchema]);
+export const SpriteRecipeSchema = z.discriminatedUnion("kind", [ShapeSpriteRecipeSchema, SpriteSpecSchema, PixelSpriteSchema]);
 export type SpriteRecipe = z.infer<typeof SpriteRecipeSchema>;
 
 /** Two colors and a short glyph for badges, initiative dots and list swatches, whatever the recipe kind. */
 export function spriteSwatch(r: SpriteRecipe, fallbackName = "?"): { color: string; accent: string; glyph: string } {
   if (r.kind === "shape") return { color: r.color, accent: r.accent, glyph: r.glyph };
+  if (r.kind === "pixel") {
+    const b = r.base;
+    const glyph = b?.glyph ?? ([...fallbackName.trim()][0] ?? "?").toUpperCase();
+    return { color: b?.palette.primary ?? r.palette[0]!, accent: b?.palette.accent ?? r.palette[r.palette.length - 1]!, glyph };
+  }
   const glyph = r.glyph ?? ([...fallbackName.trim()][0] ?? "?").toUpperCase();
   return { color: r.palette.primary, accent: r.palette.accent, glyph };
 }

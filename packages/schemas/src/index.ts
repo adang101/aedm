@@ -6,6 +6,7 @@ export * from "./character";
 export * from "./palette";
 export * from "./material";
 export * from "./sprite";
+export * from "./pixel";
 export * from "./map";
 export * from "./asset";
 export * from "./dm";

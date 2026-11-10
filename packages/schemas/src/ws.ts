@@ -11,11 +11,12 @@ import { SpriteSpecSchema } from "./sprite";
 import { QuestSchema } from "./world";
 
 /**
+ * 5: sprite recipes gained the `pixel` kind (CharacterCreate); new error code invalid_sprite.
  * 4: added design_sprite (client) and sprite_designed (server).
  * 3: room settings gained plot_pattern and plot_arc.
  * 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged.
  */
-export const WS_VERSION = 4;
+export const WS_VERSION = 5;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
@@ -23,7 +24,7 @@ const id = z.string().trim().min(1).max(64);
 const displayName = text(24);
 const tile = z.number().int().min(0).max(255);
 
-export const WS_ERROR_CODES = ["version_mismatch", "bad_message", "rate_limited", "not_host", "not_found", "forbidden", "invalid_state"] as const;
+export const WS_ERROR_CODES = ["version_mismatch", "bad_message", "rate_limited", "not_host", "not_found", "forbidden", "invalid_state", "invalid_sprite"] as const;
 
 // ---------- shared payload pieces ----------
 

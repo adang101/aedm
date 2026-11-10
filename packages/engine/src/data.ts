@@ -9,6 +9,7 @@ import conditionsJson from "../data/conditions.json" with { type: "json" };
 import costsJson from "../data/costs.json" with { type: "json" };
 import enemiesJson from "../data/enemies.json" with { type: "json" };
 import plotsJson from "../data/plots.json" with { type: "json" };
+import pixelJson from "../data/pixel.json" with { type: "json" };
 
 export interface ArmorInfo { name: string; dexCap: number | null; speedPenalty: number }
 
@@ -130,3 +131,7 @@ export interface PlotsData {
   arcs: Record<PlotArc, PlotArcData>;
 }
 export const PLOTS = plotsJson as unknown as PlotsData;
+
+/** Limits for player-painted sprites (see pixel.ts). */
+export interface PixelRules { maxColors: number; minOpaque: number; margin: number; feetY: number; feetTolerance: number; maxRecipeBytes: number }
+export const PIXEL_RULES: PixelRules = pixelJson;

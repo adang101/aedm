@@ -2,7 +2,8 @@ import type { Condition, EntityView, SpritePose } from "@aedm/schemas";
 import { SPRITE_H, TILE } from "./camera";
 import { OUTLINE, hashString } from "./palette";
 import { drawShapeBody } from "./shape-recipe";
-import { POSE_SHADOW, composeSprite, effectivePose, type Facing } from "./sprite-composer";
+import { composeRecipe, fallbackShape } from "./pixel-sprite";
+import { POSE_SHADOW, effectivePose, type Facing } from "./sprite-composer";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -52,9 +53,8 @@ const feet = (o: EntityDrawOpts) => ({ x: o.x + TILE / 2, y: o.y + TILE - 4 });
 /** Top of the entity's sprite in world pixels, for markers and pips above the head. */
 function spriteTop(e: EntityView, o: EntityDrawOpts): number {
   const f = feet(o);
-  if (e.sprite.kind !== "spec") return f.y - 62;
-  const s = composeSprite(e.sprite, "right", 0, poseFor(e, o.activeTurn));
-  return f.y - 62 * s.scale;
+  const s = composeRecipe(e.sprite, "right", 0, poseFor(e, o.activeTurn));
+  return s ? f.y - 62 * s.scale : f.y - 62;
 }
 
 /** The ground ring, shadow and the sprite itself. */
@@ -63,8 +63,10 @@ export function drawEntityBody(ctx: Ctx, e: EntityView, o: EntityDrawOpts): void
   const dead = e.hp <= 0;
   const f = feet(o);
   const pose = poseFor(e, o.activeTurn);
-  const shadowK = e.sprite.kind === "spec" ? POSE_SHADOW[effectivePose(e.sprite, pose)] : 1;
-  const sizeK = e.sprite.kind === "spec" ? Math.max(0.7, composeSprite(e.sprite, "right", 0, pose).scale) : 1;
+  const body = e.sprite.kind === "pixel" ? e.sprite.base : e.sprite;
+  const shadowK = body?.kind === "spec" ? POSE_SHADOW[effectivePose(body, pose)] : 1;
+  const composed = composeRecipe(e.sprite, "right", 0, pose);
+  const sizeK = composed ? Math.max(0.7, composed.scale) : 1;
 
   ctx.save();
   ctx.globalAlpha = dead ? 0.45 : 1;
@@ -96,14 +98,14 @@ export function drawEntityBody(ctx: Ctx, e: EntityView, o: EntityDrawOpts): void
     ctx.lineWidth = 2.5; ctx.strokeStyle = o.targetable ? "#e8683a" : "#f6e8a0"; ctx.stroke();
   }
 
-  if (e.sprite.kind === "spec") {
-    const frame = Math.floor(o.time / 420 + phase) % 2;
-    const s = composeSprite(e.sprite, o.facing ?? "right", frame, pose);
+  const frame = Math.floor(o.time / 420 + phase) % 2;
+  const s = composeRecipe(e.sprite, o.facing ?? "right", frame, pose);
+  if (s) {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(s.canvas, Math.round(f.x - s.footX), Math.round(f.y - s.footY));
   } else {
     const bob = Math.sin(o.time / 380 + phase);
-    drawShapeBody(ctx, e.sprite, f.x, o.y + TILE - SPRITE_H + 40 + bob);
+    drawShapeBody(ctx, fallbackShape(e.sprite, e.name), f.x, o.y + TILE - SPRITE_H + 40 + bob);
   }
   ctx.restore();
 }

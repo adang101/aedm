@@ -9,7 +9,7 @@ const view = { id: "ch_a", kind: "pc", name: "A", x: 1, y: 2, hp: 5, hp_max: 10,
 
 describe("ws constants", () => {
   it("exports", () => {
-    expect(WS_VERSION).toBe(4);
+    expect(WS_VERSION).toBe(5);
     expect(MAX_MESSAGE_BYTES).toBe(8192);
     expect(exceedsMaxBytes("x".repeat(8193))).toBe(true);
     expect(exceedsMaxBytes("x".repeat(8192))).toBe(false);

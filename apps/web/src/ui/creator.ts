@@ -1,6 +1,7 @@
-import { ABILITIES, BODY_PLANS, CHECK_TAGS, PART_GROUPS, SPRITE_PROMPT_MAX, type CheckTag, type PartGroup, type SpriteRecipe, type SpriteShape, type SpriteSpec } from "@aedm/schemas";
+import { ABILITIES, BODY_PLANS, CHECK_TAGS, PART_GROUPS, SPRITE_PROMPT_MAX, spriteSwatch, type CheckTag, type PartGroup, type PixelSprite, type SpriteRecipe, type SpriteShape, type SpriteSpec } from "@aedm/schemas";
 import { drawShapeBody } from "../render/shape-recipe";
-import { composeSprite } from "../render/sprite-composer";
+import { composePixelSprite } from "../render/pixel-sprite";
+import { MARGIN, composeSprite } from "../render/sprite-composer";
 import {
   MAX_ABILITIES, MAX_TRAITS, buildCreate, emptyForm, premadeForms, toggleTrait,
   type CreatorForm, type FormErrors,
@@ -45,9 +46,28 @@ export function specIcon(spec: SpriteSpec, size = 40): HTMLCanvasElement {
   return c;
 }
 
+/** A painted sprite at a small size; falls back to its base spec, then to a shape, if it cannot be drawn. */
+export function pixelIcon(recipe: PixelSprite, name: string, size = 40): HTMLCanvasElement {
+  const comp = composePixelSprite(recipe, "right", 0);
+  if (!comp) return recipe.base ? specIcon(recipe.base, size) : shapeIcon("circle", ...swatchArgs(recipe, name), size);
+  const c = h("canvas", { width: size * 2, height: size * 2, style: `width:${size}px;height:${size}px` });
+  const g = c.getContext("2d");
+  if (g) {
+    const k = (size * 2) / 64;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(comp.canvas, MARGIN, MARGIN, 48, 64, (size * 2 - 48 * k) / 2, 0, 48 * k, 64 * k);
+  }
+  return c;
+}
+
+function swatchArgs(r: SpriteRecipe, name: string): [string, string, string] {
+  const w = spriteSwatch(r, name);
+  return [w.color, w.accent, w.glyph];
+}
+
 export function recipeIcon(recipe: SpriteRecipe, name: string, size = 40): HTMLCanvasElement {
   if (recipe.kind === "spec") return specIcon(recipe, size);
-  void name;
+  if (recipe.kind === "pixel") return pixelIcon(recipe, name, size);
   return shapeIcon(recipe.shape, recipe.color, recipe.accent, recipe.glyph, size);
 }
 
