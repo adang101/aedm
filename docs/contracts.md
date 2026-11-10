@@ -140,11 +140,11 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `room_created` | Server to client | room_id, invite_code |
 | `join_room` | Client to server | invite_code, display_name (1 to 24), auth_token (optional; the reconnect token from `joined`) |
 | `joined` | Server to client | player_id, auth_token, room_id |
-| `lobby_state` | Server to client | room_id, invite_code, host_player_id, phase (lobby, playing), settings (content_rating family, teen or mature; campaign_pitch at most 300 characters; dev_solo boolean), players (player_id, display_name, status online, away, offline or autopilot, ready, character_id or null) |
+| `lobby_state` | Server to client | room_id, invite_code, host_player_id, phase (lobby, playing), settings (content_rating family, teen or mature; campaign_pitch at most 300 characters; dev_solo boolean), players (player_id, display_name, status online, away, offline or autopilot, ready, character_id or null), resume_save (optional: save_id, name; set on a room opened by `resume_campaign`) |
 | `set_ready` | Client to server | ready |
 | `update_settings` | Client to server | Host only. Any subset of the `settings` fields |
 | `start_game` | Client to server | Host only. None |
-| `claim_character` | Client to server | character_id, or "new" plus a character object |
+| `claim_character` | Client to server | character_id, or "new" plus a character object, or `"template"` plus `template_id` (accounts only: a saved character; the normal forge path runs) |
 | `move_intent` | Client to server | target tile (x, y) or direction (n, s, e, w) |
 | `act` | Client to server | verb (interact, examine, talk), target_id |
 | `use_ability` | Client to server | ability_id, target (entity ID or tile) |
@@ -154,7 +154,7 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `say` | Client to server | text (at most 500 characters), channel (ic or ooc). OOC never reaches the DM prompt. |
 | `vote_cast` | Client to server | vote_id, choice (skip, wait, autopilot) |
 | `request_save` | Client to server | name (at most 30 characters) |
-| `load_save` | Client to server | save_id (owner only) |
+| `load_save` | Client to server | save_id (host only; a save owned by an account loads only for that account) |
 | `ping` | Client to server | none |
 | `level_up_choice` | Client to server | Discriminated on `kind`: `score` (ability: str, dex, con, int, wis or cha), `new_ability` (text, 1 to 300 characters), `reforge` (ability_id, text 1 to 300), `skip_ability` (none). Applies to the sender's own character only; out of combat only. |
 | `state_snapshot` | Server to client | seq, mode (exploration, combat), map (Map JSON), entities (EntityView), party (CharacterView), quests, combat (optional CombatState) |
@@ -213,3 +213,26 @@ A map is valid only if all of these hold. If any fails, regenerate with a new se
 5. No two objects share a tile.
 6. Exits sit on walkable tiles on the map boundary or in a door tile.
 7. The serialized map is at most 250 KB before compression.
+
+**Accounts**
+
+Optional; guests use none of this. The login belongs to the connection and works before `create_room` or `join_room`. Wire limits are loose (max lengths only): the server checks the rules and answers `auth_error` with code `invalid`. Account messages without a login get `error` `forbidden`.
+
+| `type` | Direction | Payload |
+| --- | --- | --- |
+| `register` | Client to server | username (3 to 20: letters, digits, `_`, `-`; stored lowercase), password (8 to 128), display_name (1 to 24) |
+| `login` | Client to server | username, password |
+| `resume_session` | Client to server | session_token |
+| `logout` | Client to server | none |
+| `auth_ok` | Server to client | user (id, username, display_name), session_token (only after `register` and `login`), characters (CharacterSummary list) |
+| `auth_error` | Server to client | code (invalid_credentials, username_taken, invalid, rate_limited), message. Unknown user and wrong password are identical. |
+| `logged_out` | Server to client | none |
+| `list_characters` | Client to server | none |
+| `characters_list` | Server to client | characters: id, name, title, key_ability, sprite_recipe, ability_names (up to 3), forged (boolean), saved_at. Also sent unrequested when a claim refreshes a template's forged abilities. |
+| `save_character_template` | Client to server | character (a Character create object). Replaces a saved character with the same name. At most 20. Answered with `characters_list`. |
+| `delete_character_template` | Client to server | id. Answered with `characters_list`. |
+| `list_campaigns` | Client to server | none |
+| `campaigns_list` | Server to client | campaigns: save_id, room_id (the save folder; autosave ids repeat), kind (autosave, named), name, campaign_title, updated_at (ISO), players (display names), can_resume |
+| `resume_campaign` | Client to server | save_id, room_id. Opens a new lobby for a save the account owns and answers `room_created`; the client joins it, then the host sends `load_save`. |
+
+Stored template (`data/accounts/users.json`, per user): id (`ch_...`), saved_at, character (the Character create object), forged_abilities (optional). Save files add `owner_user_id`, `campaign_title` and `room.player_user_ids` (player_id to account id); older saves without them are guest saves.

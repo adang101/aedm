@@ -8,3 +8,4 @@ dist/
 coverage/
 data/saves/
 .claude/worktrees/
+data/accounts/

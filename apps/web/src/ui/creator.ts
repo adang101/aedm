@@ -8,6 +8,7 @@ import {
 import {
   POINT_BUY_BUDGET, adjust, canDecrease, canIncrease, nextCost, pointsLeft, scoreCost,
 } from "../state/pointbuy";
+import type { AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
 import type { Ctx } from "./types";
 
@@ -15,7 +16,7 @@ const ABILITY_NAMES: Record<string, string> = {
   str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma",
 };
 
-function shapeIcon(shape: SpriteShape, color: string, accent: string, glyph: string, size = 40): HTMLCanvasElement {
+export function shapeIcon(shape: SpriteShape, color: string, accent: string, glyph: string, size = 40): HTMLCanvasElement {
   const c = h("canvas", { width: size * 2, height: size * 2, style: `width:${size}px;height:${size}px` });
   const ctx = c.getContext("2d");
   if (ctx) {
@@ -29,6 +30,8 @@ export interface Creator {
   el: HTMLElement;
   /** Fill the form from a previously claimed character name (no-op placeholder to keep API small). */
   focusName(): void;
+  /** Refresh the account-only parts (saved characters, save checkbox). */
+  update(s: AppState): void;
 }
 
 export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
@@ -154,10 +157,39 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
       type: "button", class: "chip", onClick: () => { form = structuredClone(p.form); errors = {}; syncAll(); },
     }, p.label)));
 
+  // ----- accounts: saved characters and "save this one" -----
+  const savedBox = h("section", { class: "stack tight saved-chars", "aria-label": "From my characters" });
+  const saveChk = h("input", { type: "checkbox", id: "save-character", checked: true });
+  const saveRow = h("label", { class: "inline check", for: "save-character" }, saveChk, "Save to my characters");
+  let savedKey = "";
+  function updateAccount(s: AppState): void {
+    const signedIn = !!s.auth.user;
+    saveRow.hidden = !signedIn;
+    const list = signedIn ? s.auth.characters : [];
+    savedBox.hidden = list.length === 0;
+    const key = JSON.stringify(list.map((c) => [c.id, c.name]));
+    if (key === savedKey) return;
+    savedKey = key;
+    replaceChildren(savedBox,
+      h("h3", null, "From my characters"),
+      h("div", { class: "chip-row wrap" }, ...list.map((c) => h("button", {
+        type: "button", class: "chip saved-chip", title: c.ability_names.join(", "),
+        onClick: () => {
+          const id = ctx.client.send("claim_character", { character_id: "template", template_id: c.id });
+          if (id) {
+            ctx.store.update((st) => { st.myCharacterName = c.name; });
+            onClaimed?.();
+          }
+        },
+      }, shapeIcon(c.sprite_recipe.shape, c.sprite_recipe.color, c.sprite_recipe.accent, c.sprite_recipe.glyph, 24), h("span", null, c.name)))),
+      h("p", { class: "muted" }, "Pick one to claim it, or build a new character below."));
+  }
+
   // ----- submit -----
   const summary = h("p", { class: "field-error", role: "alert" });
   const submit = h("button", { type: "submit", class: "btn primary big" }, "Claim this character");
   const formEl = h("form", { class: "creator stack", novalidate: true, autocomplete: "off" },
+    savedBox,
     h("div", { class: "row between wrap" }, h("h2", null, "Create your character"), premadeRow),
     h("div", { class: "grid2" },
       h("div", { class: "stack" },
@@ -179,6 +211,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
       h("p", { class: "muted" }, "Describe each ability in your own words. The DM's forge will turn it into rules, and may tone it down."),
       abilityBox, addAbility, errEls.abilities!),
     summary,
+    saveRow,
     submit,
   );
 
@@ -201,10 +234,17 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
     const id = ctx.client.send("claim_character", { character_id: "new", character: r.value });
     if (id) {
       ctx.store.update((s) => { s.myCharacterName = r.value.name; });
+      if (ctx.store.state.auth.user && saveChk.checked) {
+        // only once the claim has worked (the forge can refuse or fail)
+        ctx.client.afterReply(id, (type) => {
+          if (type === "character_claimed") ctx.client.send("save_character_template", { character: r.value });
+        });
+      }
       onClaimed?.();
     }
   });
 
   syncAll();
-  return { el: formEl, focusName: () => nameIn.focus() };
+  updateAccount(ctx.store.state);
+  return { el: formEl, focusName: () => nameIn.focus(), update: updateAccount };
 }

@@ -1,5 +1,5 @@
 import type {
-  CombatState, CharacterView, EntityView, GameMap, LevelUpResult, LevelUpState, Quest, ServerMessage,
+  AuthUser, CampaignInfo, CharacterSummary, CombatState, CharacterView, EntityView, GameMap, LevelUpResult, LevelUpState, Quest, ServerMessage,
 } from "@aedm/schemas";
 
 type Msg<T extends ServerMessage["type"]> = Extract<ServerMessage, { type: T }>["payload"];
@@ -46,7 +46,23 @@ export interface VoteView {
   myChoice: string | null;
 }
 
+/** The logged-in account, if any. Survives leaving a room. */
+export interface AuthState {
+  user: AuthUser | null;
+  /** True from sending register/login/resume_session until the reply arrives. */
+  pending: boolean;
+  /** Last auth_error message, shown on the login form. */
+  error: string | null;
+  /** Saved character summaries. */
+  characters: CharacterSummary[];
+  /** Null until list_campaigns has been answered. */
+  campaigns: CampaignInfo[] | null;
+}
+
+export const createAuthState = (): AuthState => ({ user: null, pending: false, error: null, characters: [], campaigns: null });
+
 export interface AppState {
+  auth: AuthState;
   conn: ConnStatus;
   mock: boolean;
   versionMismatch: boolean;
@@ -85,6 +101,7 @@ export const MAX_LOG = 400;
 
 export function createInitialState(): AppState {
   return {
+    auth: createAuthState(),
     conn: "idle", mock: false, versionMismatch: false, busy: false,
     displayName: "", playerId: null, roomId: null, inviteCode: null, authToken: null,
     lobby: null, myCharacterName: null, claimed: {},
@@ -243,6 +260,26 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
       // Surfaced as a toast by the client; also clears a pending "busy" join.
       s.busy = false;
       s.levelUpBusy = false;
+      return;
+    case "auth_ok":
+      s.auth.user = msg.payload.user;
+      s.auth.characters = msg.payload.characters;
+      s.auth.pending = false;
+      s.auth.error = null;
+      if (!s.displayName) s.displayName = msg.payload.user.display_name;
+      return;
+    case "auth_error":
+      s.auth.pending = false;
+      s.auth.error = msg.payload.message;
+      return;
+    case "logged_out":
+      s.auth = createAuthState();
+      return;
+    case "characters_list":
+      s.auth.characters = msg.payload.characters;
+      return;
+    case "campaigns_list":
+      s.auth.campaigns = msg.payload.campaigns;
       return;
     case "map_load":
     case "save_created":

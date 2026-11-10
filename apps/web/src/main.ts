@@ -49,7 +49,14 @@ const connText = h("span", null);
 const conn = h("span", { class: "conn", role: "status" }, connDot, connText);
 const roomPill = h("span", { class: "room-pill", hidden: true });
 const leaveBtn = h("button", { type: "button", class: "btn tiny ghost", hidden: true, onClick: () => client.leave() }, "Leave");
-const header = h("header", { class: "topbar" }, h("span", { class: "brand" }, h("b", null, "AEDM"), h("span", { class: "muted" }, " AI Dungeon Master")), h("span", { class: "grow" }), roomPill, conn, leaveBtn);
+const saveBtn = h("button", {
+  type: "button", class: "btn tiny ghost", hidden: true, title: "Write a named save of this campaign",
+  onClick: () => {
+    const t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    client.send("request_save", { name: `Save ${t}` });
+  },
+}, "Save");
+const header = h("header", { class: "topbar" }, h("span", { class: "brand" }, h("b", null, "AEDM"), h("span", { class: "muted" }, " AI Dungeon Master")), h("span", { class: "grow" }), roomPill, conn, saveBtn, leaveBtn);
 
 const reloadModal = h("div", { class: "modal", hidden: true },
   h("div", { class: "modal-card stack", role: "alertdialog", "aria-modal": "true" },
@@ -90,8 +97,10 @@ function render(s: AppState): void {
   roomPill.hidden = !s.inviteCode || r === "home";
   roomPill.textContent = s.inviteCode ?? "";
   leaveBtn.hidden = r === "home";
+  saveBtn.hidden = r !== "game";
   reloadModal.hidden = !s.versionMismatch;
 }
 
 store.subscribe(render);
 render(store.state);
+client.connect(); // the home screen needs a connection for log in, register and the account lists

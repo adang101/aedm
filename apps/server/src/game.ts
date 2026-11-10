@@ -222,7 +222,7 @@ export class GameSession {
     this.dmNotes = save.dm_notes ?? [];
     this.pendingLines = [];
     this.beat = null;
-    this.rebindOwners();
+    this.rebindOwners(save.room.player_user_ids);
     this.refreshAbsent();
     if (this.state.combat) this.lastNarratedRound = this.state.combat.round;
     this.broadcastSnapshot();
@@ -232,7 +232,8 @@ export class GameSession {
     }
   }
 
-  private rebindOwners(): void {
+  /** `savedAccounts` maps the saving room's player ids to account ids, so logged-in players get their own characters back. */
+  private rebindOwners(savedAccounts: Record<string, string> = {}): void {
     const s = cloneState(this.state);
     const players = this.room.players;
     for (const p of players) p.characterId = null;
@@ -241,6 +242,14 @@ export class GameSession {
       const owner = players.find((p) => p.id === c.user_id && p.characterId === null);
       if (owner) owner.characterId = c.id;
       else unclaimed.push(c.id);
+    }
+    for (const id of [...unclaimed]) {
+      const account = savedAccounts[(s.characters[id] as { user_id: string }).user_id];
+      const owner = account ? players.find((p) => p.userId === account && p.characterId === null) : undefined;
+      if (!owner) continue;
+      owner.characterId = id;
+      (s.characters[id] as { user_id: string }).user_id = owner.id;
+      unclaimed.splice(unclaimed.indexOf(id), 1);
     }
     for (const p of players) {
       if (p.characterId !== null) continue;
@@ -1211,7 +1220,10 @@ export class GameSession {
         invite_code: this.room.code,
         settings: { ...this.room.settings },
         players: this.room.players.map((p) => ({ player_id: p.id, display_name: p.name, character_id: p.characterId })),
+        player_user_ids: Object.fromEntries(this.room.players.filter((p) => p.userId).map((p) => [p.id, p.userId as string])),
       },
+      owner_user_id: this.room.ownerUserId ?? this.room.player(this.room.hostId)?.userId ?? null,
+      campaign_title: this.state.bible.title,
       state: this.state,
       turns: this.recent,
       summaries: this.summaries,

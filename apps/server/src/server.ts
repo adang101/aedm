@@ -2,7 +2,9 @@ import {
   ClientMessageSchema, WS_VERSION, exceedsMaxBytes, type ClientMessage,
 } from "@aedm/schemas";
 import type { ModelProvider } from "@aedm/llm";
+import { join } from "node:path";
 import { WebSocketServer, type RawData } from "ws";
+import { JsonAccountStore, type AccountStore } from "./accounts/store";
 import { Handlers } from "./handlers";
 import { Conn } from "./net";
 import type { RoomRegistry } from "./rooms";
@@ -16,6 +18,10 @@ export interface GameServerOptions {
   host?: string;
   provider: ModelProvider;
   saveDir: string;
+  /** Folder for account files (default: a hidden folder inside saveDir). */
+  dataDir?: string;
+  /** Replace the JSON-file account storage (a database, or a fake in tests). */
+  accounts?: AccountStore;
   clock?: () => number;
   random?: () => number;
   timers?: Timers;
@@ -48,6 +54,7 @@ export async function createGameServer(opts: GameServerOptions): Promise<GameSer
   const deps: Deps = {
     provider: opts.provider,
     saveDir: opts.saveDir,
+    accounts: opts.accounts ?? new JsonAccountStore({ dir: join(opts.dataDir ?? join(opts.saveDir, ".data"), "accounts"), clock: opts.clock }),
     clock: opts.clock ?? Date.now,
     random: opts.random ?? Math.random,
     timers: opts.timers ?? realTimers,

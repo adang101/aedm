@@ -1,10 +1,11 @@
 import { addCharacter, cloneState, validatePointBuy } from "@aedm/engine";
-import type { ClientMessage } from "@aedm/schemas";
+import type { CharacterCreate, ClientMessage } from "@aedm/schemas";
+import { AccountHandlers } from "./accounts/handlers";
 import { forgeCharacterAbilities, ForgeError } from "./forge";
 import { GameSession, type Reply } from "./game";
 import type { Conn } from "./net";
 import { newToken, Room, RoomRegistry, type Player } from "./rooms";
-import { readSave } from "./saves";
+import { readSave, readSaveExact } from "./saves";
 import type { Deps } from "./types";
 
 type Msg<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
@@ -12,9 +13,11 @@ type Msg<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
 /** Everything that happens when a validated client message arrives. */
 export class Handlers {
   readonly registry: RoomRegistry;
+  private readonly accounts: AccountHandlers;
 
   constructor(private readonly deps: Deps) {
     this.registry = new RoomRegistry(deps);
+    this.accounts = new AccountHandlers(deps, this.registry, { onRoomCreated: (room) => this.scheduleIdleCheck(room) });
   }
 
   private get cfg() { return this.deps.config; }
@@ -29,6 +32,7 @@ export class Handlers {
       case "join_room": return this.joinRoom(conn, msg as Msg<"join_room">);
       default: break;
     }
+    if (this.accounts.handles(msg.type)) return this.accounts.dispatch(conn, msg);
     const room = conn.roomId ? this.registry.get(conn.roomId) : undefined;
     const player = room?.player(conn.playerId);
     if (!room || !player) return conn.error("forbidden", "Join a room first.", ack);
@@ -99,6 +103,7 @@ export class Handlers {
 
     let player = auth_token ? room.playerByToken(auth_token) : undefined;
     if (!player && conn.playerId) player = room.player(conn.playerId); // same connection asking for a fresh state
+    if (!player) player = room.playerByUser(conn.userId); // a logged-in user is rebound without the room token
     if (player) {
       // reconnect (or resync) with the same seat
       if (player.conn && player.conn !== conn) {
@@ -108,6 +113,7 @@ export class Handlers {
       }
       this.deps.timers.clearTimeout(player.graceTimer);
       player.graceTimer = null;
+      player.userId ??= conn.userId;
       player.conn = conn;
       conn.playerId = player.id;
       conn.roomId = room.id;
@@ -121,6 +127,7 @@ export class Handlers {
         id: `p_${room.players.length + 1}_${Math.floor(this.deps.random() * 36 ** 4).toString(36)}`,
         name: this.uniqueName(room, display_name),
         token: newToken(),
+        userId: conn.userId,
         conn,
         status: "online",
         ready: false,
@@ -218,7 +225,7 @@ export class Handlers {
     if (player.forging) return reply("error", "invalid_state", "Your character is already being forged.");
     const p = msg.payload;
 
-    if (p.character_id !== "new") {
+    if (p.character_id !== "new" && p.character_id !== "template") {
       const ch = room.scratch.characters[p.character_id];
       const owner = room.playerByCharacter(p.character_id);
       if (!ch) return reply("error", "not_found", "No such character.");
@@ -231,8 +238,17 @@ export class Handlers {
       return;
     }
 
-    if (!("character" in p)) return reply("error", "bad_message", "Missing character.");
-    const create = p.character;
+    let create: CharacterCreate;
+    let templateId: string | undefined;
+    if (p.character_id === "template" && "template_id" in p) {
+      const tpl = await this.accounts.loadTemplate(conn, p.template_id);
+      if (!tpl) return reply("error", "not_found", "No such saved character. Log in to use your saved characters.");
+      create = tpl.character;
+      templateId = tpl.id;
+    } else {
+      if (!("character" in p)) return reply("error", "bad_message", "Missing character.");
+      create = p.character;
+    }
     const pb = validatePointBuy(create.scores);
     if (!pb.ok) return reply("error", "invalid_state", pb.errors.join(" "));
     const lowerName = create.name.toLowerCase();
@@ -257,6 +273,7 @@ export class Handlers {
       }
       room.scratch = added.state;
       player.characterId = added.character.id;
+      await this.accounts.afterForge(conn, create, forged.abilities, templateId);
       conn.send("character_claimed", { character_id: added.character.id, player_id: player.id }, msg.id);
       room.broadcast("character_claimed", { character_id: added.character.id, player_id: player.id });
       for (const line of forged.notices) conn.send("log", { kind: "system", text: line });
@@ -318,8 +335,14 @@ export class Handlers {
 
   private async loadSave(room: Room, player: Player, msg: Msg<"load_save">, reply: Reply): Promise<void> {
     if (player.id !== room.hostId) return reply("error", "not_host", "Only the host can load a save.");
-    const save = await readSave(this.deps.saveDir, room.id, msg.payload.save_id);
+    const from = room.resume && room.resume.saveId === msg.payload.save_id ? room.resume : null;
+    const save = from
+      ? await readSaveExact(this.deps.saveDir, from.roomId, from.saveId)
+      : await readSave(this.deps.saveDir, room.id, msg.payload.save_id);
     if (!save) return reply("error", "not_found", "No such save.");
+    // a campaign saved by an account can only be loaded by that account
+    if (save.owner_user_id && save.owner_user_id !== player.userId) return reply("error", "not_found", "No such save.");
+    room.resume = null;
     reply("ok");
     let game = room.game;
     if (!game) {

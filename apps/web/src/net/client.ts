@@ -1,15 +1,17 @@
 import {
   ClientMessageSchema, ServerMessageSchema, WS_VERSION, exceedsMaxBytes, type ClientMessage,
 } from "@aedm/schemas";
-import { clearAuth, loadAuth, saveAuth } from "../state/storage";
-import { resetRoom, type Store } from "../state/store";
+import {
+  clearAuth, clearSessionToken, loadAuth, loadSessionToken, saveAuth, saveSessionToken,
+} from "../state/storage";
+import { createAuthState, resetRoom, type Store } from "../state/store";
 import { AckTracker, backoffDelay, createIdGenerator, makeEnvelope } from "./envelope";
 import type { Transport, TransportFactory } from "./transport";
 
 export type ClientType = ClientMessage["type"];
 export type ClientPayload<T extends ClientType> = Extract<ClientMessage, { type: T }>["payload"];
 
-type Entry = { kind: "create" } | { kind: "join"; code: string };
+type Entry = { kind: "create" } | { kind: "join"; code: string } | { kind: "resume"; save_id: string; room_id: string };
 
 export interface ClientHooks {
   /** Show a user-visible error (toast). */
@@ -24,6 +26,18 @@ export class GameClient {
   private closing = false;
   private resyncAsked = false;
   private entry: Entry | null = null;
+  /** Bumped on every open and teardown so a stale transport's callbacks are ignored. */
+  private gen = 0;
+  /** Keep a connection open on the home screen (for account actions) and reconnect it when it drops. */
+  private keepAlive = false;
+  /** Runs once the resume_session reply (or a timeout) arrives; holds back create/join so the account is bound first. */
+  private afterAuth: (() => void) | null = null;
+  private authTimer: ReturnType<typeof setTimeout> | undefined;
+  private resumeAck: string | null = null;
+  /** Ack id of the last create_room, resume_campaign or join_room, so only its failure kicks us back to the home screen. */
+  private entryAck: string | null = null;
+  private wantCampaigns = false;
+  private readonly replyWaiters = new Map<string, (type: string) => void>();
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private pingTimer: ReturnType<typeof setInterval> | undefined;
   private readonly acks = new AckTracker();
@@ -37,6 +51,46 @@ export class GameClient {
 
   // ---------- public API ----------
 
+  /** Open the connection without a room (home screen): needed for log in, register and the account lists. */
+  connect(): void {
+    this.keepAlive = true;
+    if (this.transport) return;
+    this.open();
+  }
+
+  register(username: string, password: string, displayName: string): string | null {
+    this.store.update((s) => { s.auth.pending = true; s.auth.error = null; });
+    const id = this.send("register", { username, password, display_name: displayName });
+    if (!id) this.store.update((s) => { s.auth.pending = false; });
+    return id;
+  }
+
+  login(username: string, password: string): string | null {
+    this.store.update((s) => { s.auth.pending = true; s.auth.error = null; });
+    const id = this.send("login", { username, password });
+    if (!id) this.store.update((s) => { s.auth.pending = false; });
+    return id;
+  }
+
+  logout(): void {
+    clearSessionToken();
+    if (this.transport && this.store.state.conn === "open") this.send("logout", {});
+    else this.store.update((s) => { s.auth = createAuthState(); });
+  }
+
+  refreshCampaigns(): void {
+    if (!this.store.state.auth.user) return;
+    if (this.afterAuth) this.wantCampaigns = true; // the connection is not logged in yet: ask once it is
+    else this.send("list_campaigns", {});
+  }
+
+  /** Open a lobby for a saved campaign; the host presses Load there. */
+  resumeCampaign(c: { save_id: string; room_id: string }, displayName: string): void {
+    this.entry = { kind: "resume", save_id: c.save_id, room_id: c.room_id };
+    this.store.update((s) => { resetRoom(s); s.displayName = displayName; s.busy = true; });
+    this.runEntry();
+  }
+
   host(displayName: string): void {
     this.begin({ kind: "create" }, displayName);
   }
@@ -49,6 +103,7 @@ export class GameClient {
   leave(): void {
     this.teardown();
     this.store.update((s) => { resetRoom(s); s.conn = "idle"; });
+    if (this.keepAlive) this.open(); // back to the home screen with an account connection
   }
 
   /** Validate and send a client message. Returns its id, or null if it was not sent. */
@@ -75,6 +130,11 @@ export class GameClient {
     return id;
   }
 
+  /** Run `fn` once, with the type of the server's reply to message `id` (its ack). */
+  afterReply(id: string, fn: (replyType: string) => void): void {
+    this.replyWaiters.set(id, fn);
+  }
+
   get pendingAcks(): number {
     return this.acks.size;
   }
@@ -82,7 +142,8 @@ export class GameClient {
   // ---------- connection lifecycle ----------
 
   private begin(entry: Entry, displayName: string): void {
-    this.teardown();
+    const reuse = !!this.transport && this.store.state.conn === "open" && !this.store.state.playerId;
+    if (!reuse) this.teardown();
     this.entry = entry;
     this.store.update((s) => {
       resetRoom(s);
@@ -90,21 +151,27 @@ export class GameClient {
       s.busy = true;
       if (entry.kind === "join") s.inviteCode = entry.code;
     });
-    this.open();
+    if (!reuse) this.open();
+    else if (!this.afterAuth) this.runEntry(); // the open connection already carries the login
   }
 
   private open(): void {
     this.closing = false;
+    const gen = ++this.gen;
     this.store.update((s) => { s.conn = this.attempt > 0 ? "reconnecting" : "connecting"; });
     this.transport = this.factory({
-      onOpen: () => this.handleOpen(),
-      onMessage: (raw) => this.handleMessage(raw),
-      onClose: () => this.handleClose(),
+      onOpen: () => { if (gen === this.gen) this.handleOpen(); },
+      onMessage: (raw) => { if (gen === this.gen) this.handleMessage(raw); },
+      onClose: () => { if (gen === this.gen) this.handleClose(); },
     });
   }
 
   private teardown(): void {
     this.closing = true;
+    this.gen++;
+    clearTimeout(this.authTimer);
+    this.afterAuth = null;
+    this.replyWaiters.clear();
     clearTimeout(this.reconnectTimer);
     clearInterval(this.pingTimer);
     this.transport?.close();
@@ -116,16 +183,44 @@ export class GameClient {
 
   private handleOpen(): void {
     this.attempt = 0;
+    const token = loadSessionToken();
+    if (token) this.afterAuth = () => this.runEntry(); // set before subscribers see "open", so they wait for the login
     this.store.update((s) => { s.conn = "open"; });
     clearInterval(this.pingTimer);
     this.pingTimer = setInterval(() => {
       this.acks.expire(Date.now(), 60_000);
       this.send("ping", {});
     }, PING_MS);
+    if (token) {
+      // bind the account before anything else, so create/join/reconnect see it
+      this.store.update((s) => { s.auth.pending = !s.auth.user; });
+      clearTimeout(this.authTimer);
+      this.authTimer = setTimeout(() => this.flushAfterAuth(), 4000);
+      this.resumeAck = this.send("resume_session", { session_token: token });
+      if (!this.resumeAck) this.flushAfterAuth();
+    } else {
+      this.runEntry();
+    }
+  }
+
+  private flushAfterAuth(): void {
+    clearTimeout(this.authTimer);
+    const fn = this.afterAuth;
+    this.afterAuth = null;
+    fn?.();
+    if (this.wantCampaigns) {
+      this.wantCampaigns = false;
+      if (this.store.state.auth.user) this.send("list_campaigns", {});
+    }
+  }
+
+  private runEntry(): void {
     const s = this.store.state;
     const entry = this.entry;
     if (entry?.kind === "create") {
-      this.send("create_room", { display_name: s.displayName });
+      this.entryAck = this.send("create_room", { display_name: s.displayName });
+    } else if (entry?.kind === "resume") {
+      this.entryAck = this.send("resume_campaign", { save_id: entry.save_id, room_id: entry.room_id });
     } else if (entry?.kind === "join") {
       this.sendJoin(entry.code);
       this.entry = null;
@@ -137,7 +232,7 @@ export class GameClient {
   private sendJoin(code: string): void {
     const s = this.store.state;
     const token = s.authToken ?? loadAuth(code)?.auth_token;
-    this.send("join_room", {
+    this.entryAck = this.send("join_room", {
       invite_code: code,
       display_name: s.displayName,
       ...(token ? { auth_token: token } : {}),
@@ -152,7 +247,10 @@ export class GameClient {
       return;
     }
     const s = this.store.state;
-    if (!s.playerId && !this.entry) return;
+    if (!s.playerId && !this.entry) {
+      if (this.keepAlive) this.scheduleReconnect(); // an idle account connection came back down
+      return;
+    }
     if (!s.playerId) {
       // never got into a room: report instead of retrying forever
       this.entry = null;
@@ -160,6 +258,10 @@ export class GameClient {
       this.hooks.notify("Could not reach the game server.");
       return;
     }
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect(): void {
     this.store.update((st) => { st.conn = "reconnecting"; });
     const delay = backoffDelay(this.attempt++, Math.random());
     this.reconnectTimer = setTimeout(() => this.open(), delay);
@@ -185,12 +287,35 @@ export class GameClient {
       return;
     }
     const msg = parsed.data;
-    if (msg.ack_id) this.acks.ack(msg.ack_id);
+    if (msg.ack_id) {
+      this.acks.ack(msg.ack_id);
+      const waiter = this.replyWaiters.get(msg.ack_id);
+      if (waiter) { this.replyWaiters.delete(msg.ack_id); waiter(msg.type); }
+    }
     this.store.apply(msg, Date.now());
 
     switch (msg.type) {
+      case "auth_ok":
+        if (msg.payload.session_token) saveSessionToken(msg.payload.session_token);
+        this.flushAfterAuth();
+        break;
+      case "auth_error":
+        if (msg.ack_id && msg.ack_id === this.resumeAck) {
+          // a stale stored session is not an error worth showing
+          if (msg.payload.code === "invalid_credentials") clearSessionToken();
+          this.store.update((s) => { s.auth = createAuthState(); });
+        }
+        this.flushAfterAuth();
+        break;
+      case "logged_out":
+        clearSessionToken();
+        break;
+      case "save_created":
+        this.hooks.notify(`Saved "${msg.payload.name}"`, "info");
+        break;
       case "room_created":
         // The creator then joins its own room like any other player.
+        this.entry = null;
         this.sendJoin(msg.payload.invite_code);
         break;
       case "joined": {
@@ -200,12 +325,14 @@ export class GameClient {
       }
       case "error":
         this.hooks.notify(msg.payload.message, "error");
-        if (!this.store.state.playerId && ["not_found", "forbidden", "bad_message", "invalid_state"].includes(msg.payload.code)) {
+        if (!this.store.state.playerId && this.entryAck !== null && msg.ack_id === this.entryAck
+          && ["not_found", "forbidden", "bad_message", "invalid_state"].includes(msg.payload.code)) {
           // a failed join: stay on the home screen
           const code = this.store.state.inviteCode;
           if (code && msg.payload.code === "forbidden") clearAuth(code);
           this.teardown();
           this.store.update((s) => { resetRoom(s); s.conn = "idle"; });
+          if (this.keepAlive) this.open();
         }
         break;
       case "state_diff":

@@ -19,7 +19,8 @@ async function main(): Promise<void> {
   loadDotEnv();
   const port = Number(process.env.AEDM_PORT ?? 8787);
   const kind = (process.env.AEDM_LLM_PROVIDER ?? "fake").toLowerCase();
-  const saveDir = process.env.AEDM_SAVE_DIR ?? join(REPO_ROOT, "data", "saves");
+  const dataDir = process.env.AEDM_DATA_DIR ? resolve(process.env.AEDM_DATA_DIR) : join(REPO_ROOT, "data");
+  const saveDir = process.env.AEDM_SAVE_DIR ?? join(dataDir, "saves");
 
   let provider: ModelProvider;
   if (kind === "anthropic") {
@@ -35,8 +36,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const server = await createGameServer({ port, provider, saveDir, config: { devLog: process.env.AEDM_DEV_LOG === "1" } });
-  console.log(`AEDM server listening on ws://localhost:${server.port} (LLM provider: ${provider.name}, saves: ${saveDir})`);
+  const server = await createGameServer({ port, provider, saveDir, dataDir, config: { devLog: process.env.AEDM_DEV_LOG === "1" } });
+  console.log(`AEDM server listening on ws://localhost:${server.port} (LLM provider: ${provider.name}, saves: ${saveDir}, accounts: ${join(dataDir, "accounts")})`);
 
   const stop = (): void => {
     void server.close().finally(() => process.exit(0));

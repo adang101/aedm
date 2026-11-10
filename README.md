@@ -33,4 +33,6 @@ The DM awards growth through milestones and contextual awards; 100 growth is a l
 
 **Dev only:** in a room with *dev solo mode* on, typing `/dev grow 100` in OOC chat grants growth to your character through the engine (so you can reach a level-up without playing for it). With dev solo off the command does nothing. Never enable dev solo on a shared server.
 
-Other server settings: `AEDM_PORT` (default 8787), `AEDM_SAVE_DIR` (default `data/saves`; each room autosaves to `<room>/autosave.json` after every DM turn, and `request_save` writes named saves), `AEDM_DEV_LOG=1` (log DM actions the engine rejected). If the server runs on another host, build the web app with `VITE_AEDM_WS_URL=ws://host:8787`.
+Accounts are optional. Guests play as before. **Create account** on the home screen (or **Log in**) keeps your characters and campaigns: tick **Save to my characters** in the creator, press **Save** in a game, and later pick **Resume** under **My campaigns**, wait for friends in the lobby and press **Load campaign**. Accounts and sessions are JSON files in `data/accounts/`; passwords are stored only as scrypt hashes.
+
+Other server settings: `AEDM_PORT` (default 8787), `AEDM_DATA_DIR` (default `data/`; holds `saves/` and `accounts/`), `AEDM_SAVE_DIR` (default `<data>/saves`; each room autosaves to `<room>/autosave.json` after every DM turn, and `request_save` writes named saves), `AEDM_DEV_LOG=1` (log DM actions the engine rejected). If the server runs on another host, build the web app with `VITE_AEDM_WS_URL=ws://host:8787`.

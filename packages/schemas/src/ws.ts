@@ -76,7 +76,8 @@ export const UpdateSettingsPayload = RoomSettingsPatchSchema; // host only
 export const StartGamePayload = z.strictObject({}); // host only
 export const ClaimCharacterPayload = z.union([
   z.strictObject({ character_id: z.literal("new"), character: CharacterCreateSchema }),
-  z.strictObject({ character_id: EntityIdSchema.refine((s) => s !== "new") }),
+  z.strictObject({ character_id: z.literal("template"), template_id: id }), // accounts only: a saved character
+  z.strictObject({ character_id: EntityIdSchema.refine((s) => s !== "new" && s !== "template") }),
 ]);
 export const MoveIntentPayload = z.union([
   z.strictObject({ x: tile, y: tile }),
@@ -110,6 +111,8 @@ export const LobbyStatePayload = z.strictObject({
   phase: z.enum(["lobby", "playing"]),
   settings: RoomSettingsSchema,
   players: z.array(LobbyPlayerSchema).max(6),
+  /** Set on a room opened by resume_campaign: the host presses load_save with this id. */
+  resume_save: z.strictObject({ save_id: id, name: text(30) }).optional(),
 });
 export const ChatPayload = z.strictObject({
   from_id: id,
@@ -226,7 +229,100 @@ const client = <T extends string, P extends z.ZodType>(type: T, payload: P) =>
 const server = <T extends string, P extends z.ZodType>(type: T, payload: P) =>
   z.strictObject({ ...envelope, type: z.literal(type), payload, ack_id: id.optional() });
 
+
+// ---------- accounts (separate block; see docs/contracts.md "Accounts") ----------
+
+export const USERNAME_PATTERN = /^[A-Za-z0-9_-]{3,20}$/;
+export const PASSWORD_MIN = 8;
+export const PASSWORD_MAX = 128;
+export const MAX_SAVED_CHARACTERS = 20;
+
+/** Wire limits are loose on purpose: the server validates the rules and answers with auth_error "invalid". */
+export const RegisterPayload = z.strictObject({
+  username: z.string().max(64),
+  password: z.string().max(256),
+  display_name: z.string().max(100),
+});
+export const LoginPayload = z.strictObject({ username: z.string().max(64), password: z.string().max(256) });
+export const ResumeSessionPayload = z.strictObject({ session_token: text(128) });
+export const LogoutPayload = z.strictObject({});
+export const ListCharactersPayload = z.strictObject({});
+export const SaveCharacterTemplatePayload = z.strictObject({ character: CharacterCreateSchema });
+export const DeleteCharacterTemplatePayload = z.strictObject({ id });
+export const ListCampaignsPayload = z.strictObject({});
+/** `room_id` is the folder the save lives in (autosave ids repeat across rooms). */
+export const ResumeCampaignPayload = z.strictObject({ save_id: id, room_id: id });
+
+/** Returns a user-facing problem with register input, or null. Shared by server and client. */
+export function validateRegistration(v: { username: string; password: string; display_name: string }): string | null {
+  if (!USERNAME_PATTERN.test(v.username.trim())) return "Usernames are 3 to 20 characters: letters, digits, _ or -.";
+  if (v.password.length < PASSWORD_MIN || v.password.length > PASSWORD_MAX) return `Passwords are ${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`;
+  const n = [...v.display_name.trim()].length;
+  if (n < 1 || n > 24) return "Display names are 1 to 24 characters.";
+  return null;
+}
+
+export const AuthUserSchema = z.strictObject({ id: id, username: z.string().max(20), display_name: displayName });
+export type AuthUser = z.infer<typeof AuthUserSchema>;
+
+/** What the list shows. The full template (CharacterCreate) never leaves the server. */
+export const CharacterSummarySchema = z.strictObject({
+  id,
+  name: text(30),
+  title: text(40, 0),
+  key_ability: AbilityScoreKeySchema,
+  sprite_recipe: SpriteRecipeSchema,
+  ability_names: z.array(text(60)).max(3),
+  forged: z.boolean(),
+  saved_at: text(40),
+});
+export type CharacterSummary = z.infer<typeof CharacterSummarySchema>;
+
+export const CampaignInfoSchema = z.strictObject({
+  save_id: id,
+  room_id: id,
+  kind: z.enum(["autosave", "named"]),
+  name: text(30),
+  campaign_title: text(80, 0),
+  updated_at: text(40),
+  players: z.array(displayName).max(6),
+  can_resume: z.boolean(),
+});
+export type CampaignInfo = z.infer<typeof CampaignInfoSchema>;
+
+export const AUTH_ERROR_CODES = ["invalid_credentials", "username_taken", "invalid", "rate_limited"] as const;
+export const AuthOkPayload = z.strictObject({
+  user: AuthUserSchema,
+  /** Only on register and login. A resumed session keeps its token. */
+  session_token: text(128).optional(),
+  characters: z.array(CharacterSummarySchema).max(MAX_SAVED_CHARACTERS),
+});
+export const AuthErrorPayload = z.strictObject({ code: z.enum(AUTH_ERROR_CODES), message: text(300) });
+export const LoggedOutPayload = z.strictObject({});
+export const CharactersListPayload = z.strictObject({ characters: z.array(CharacterSummarySchema).max(MAX_SAVED_CHARACTERS) });
+export const CampaignsListPayload = z.strictObject({ campaigns: z.array(CampaignInfoSchema).max(100) });
+
+const accountClientMessages = [
+  client("register", RegisterPayload),
+  client("login", LoginPayload),
+  client("resume_session", ResumeSessionPayload),
+  client("logout", LogoutPayload),
+  client("list_characters", ListCharactersPayload),
+  client("save_character_template", SaveCharacterTemplatePayload),
+  client("delete_character_template", DeleteCharacterTemplatePayload),
+  client("list_campaigns", ListCampaignsPayload),
+  client("resume_campaign", ResumeCampaignPayload),
+] as const;
+const accountServerMessages = [
+  server("auth_ok", AuthOkPayload),
+  server("auth_error", AuthErrorPayload),
+  server("logged_out", LoggedOutPayload),
+  server("characters_list", CharactersListPayload),
+  server("campaigns_list", CampaignsListPayload),
+] as const;
+
 export const ClientMessageSchema = z.discriminatedUnion("type", [
+  ...accountClientMessages,
   client("create_room", CreateRoomPayload),
   client("join_room", JoinRoomPayload),
   client("set_ready", SetReadyPayload),
@@ -250,6 +346,7 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export type ClientMessageType = ClientMessage["type"];
 
 export const ServerMessageSchema = z.discriminatedUnion("type", [
+  ...accountServerMessages,
   server("room_created", RoomCreatedPayload),
   server("joined", JoinedPayload),
   server("lobby_state", LobbyStatePayload),

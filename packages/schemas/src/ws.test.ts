@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ClientMessageSchema, MAX_MESSAGE_BYTES, ServerMessageSchema, WS_VERSION, WsEnvelopeSchema, exceedsMaxBytes } from "./ws";
+import { ClientMessageSchema, MAX_MESSAGE_BYTES, ServerMessageSchema, WS_VERSION, WsEnvelopeSchema, exceedsMaxBytes, validateRegistration } from "./ws";
 import { BRINDLE } from "./fixtures/party";
 import { makeMap } from "./fixtures/map";
 
@@ -143,5 +143,50 @@ describe("level-up messages", () => {
     expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: true, message: "Learned it", forge_notes: ["a"], ability })).success).toBe(true);
     expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: false, message: "Finish the fight first.", forge_notes: [] })).success).toBe(true);
     expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: true, message: "x" })).success).toBe(false);
+  });
+});
+
+describe("account messages", () => {
+  const sprite2 = { kind: "shape", shape: "circle", color: "#112233", accent: "#445566", glyph: "A" };
+  const summary = { id: "ch_1", name: "Ana", title: "", key_ability: "str", sprite_recipe: sprite2, ability_names: ["Slash"], forged: false, saved_at: "2026-01-01T00:00:00Z" };
+
+  it("parses the client account messages", () => {
+    const create = { v: 1, name: "Ana", key_ability: "str", scores: { str: 15, dex: 8, con: 15, int: 8, wis: 8, cha: 8 }, trait_tags: ["athletics", "stealth"], sprite_recipe: sprite2, ability_texts: ["Slash: hit hard."] };
+    for (const m of [
+      env("register", { username: "ana_1", password: "longenough", display_name: "Ana" }),
+      env("login", { username: "ana_1", password: "longenough" }),
+      env("resume_session", { session_token: "tok" }),
+      env("logout", {}),
+      env("list_characters", {}),
+      env("save_character_template", { character: create }),
+      env("delete_character_template", { id: "ch_1" }),
+      env("list_campaigns", {}),
+      env("resume_campaign", { save_id: "autosave", room_id: "room_1_ab" }),
+      env("claim_character", { character_id: "template", template_id: "ch_1" }),
+    ]) expect(ClientMessageSchema.safeParse(m).success, JSON.stringify(m)).toBe(true);
+    expect(ClientMessageSchema.safeParse(env("claim_character", { character_id: "template" })).success).toBe(false);
+    expect(ClientMessageSchema.safeParse(env("login", { username: "a", password: "p", extra: 1 })).success).toBe(false);
+  });
+
+  it("validates registration input the same way for client and server", () => {
+    expect(validateRegistration({ username: "ana_1", password: "longenough", display_name: "Ana" })).toBeNull();
+    expect(validateRegistration({ username: "an", password: "longenough", display_name: "Ana" })).not.toBeNull();
+    expect(validateRegistration({ username: "ana 1", password: "longenough", display_name: "Ana" })).not.toBeNull();
+    expect(validateRegistration({ username: "ana_1", password: "short", display_name: "Ana" })).not.toBeNull();
+    expect(validateRegistration({ username: "ana_1", password: "x".repeat(129), display_name: "Ana" })).not.toBeNull();
+    expect(validateRegistration({ username: "ana_1", password: "longenough", display_name: "  " })).not.toBeNull();
+  });
+
+  it("parses the server account messages", () => {
+    const user = { id: "u_1", username: "ana_1", display_name: "Ana" };
+    for (const m of [
+      env("auth_ok", { user, session_token: "tok", characters: [summary] }, { ack_id: "c1" }),
+      env("auth_ok", { user, characters: [] }),
+      env("auth_error", { code: "rate_limited", message: "slow down" }),
+      env("logged_out", {}),
+      env("characters_list", { characters: [summary] }),
+      env("campaigns_list", { campaigns: [{ save_id: "autosave", room_id: "room_1", kind: "autosave", name: "autosave", campaign_title: "T", updated_at: "2026-01-01T00:00:00Z", players: ["Ana"], can_resume: true }] }),
+    ]) expect(ServerMessageSchema.safeParse(m).success, JSON.stringify(m)).toBe(true);
+    expect(ServerMessageSchema.safeParse(env("auth_error", { code: "nope", message: "x" })).success).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { WS_VERSION, type ServerMessageType } from "@aedm/schemas";
+import { WS_VERSION, type Ability, type ServerMessageType } from "@aedm/schemas";
 import { WebSocket } from "ws";
 
 /** Bounded set of recently seen message ids (idempotency). */
@@ -42,6 +42,12 @@ export class Conn {
   readonly id = nextConnId++;
   playerId: string | null = null;
   roomId: string | null = null;
+  /** Set by register, login or resume_session. */
+  userId: string | null = null;
+  /** The session token this connection authenticated with (so logout can delete it). */
+  sessionToken: string | null = null;
+  /** The last forge result for this connection, so "Save to my characters" can keep the forged abilities. */
+  lastForged: { name: string; abilities: Ability[] } | null = null;
   readonly recent = new RecentIds();
   readonly limiter = new RateLimiter();
 

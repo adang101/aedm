@@ -1,6 +1,7 @@
 import {
-  ClientMessageSchema, WS_VERSION, fixtures, parseDice,
-  type Ability, type CharacterCreate, type CharacterView, type EntityView, type GameMap, type ServerMessageType,
+  ClientMessageSchema, WS_VERSION, fixtures, parseDice, validateRegistration,
+  type Ability, type CampaignInfo, type CharacterCreate, type CharacterSummary, type CharacterView, type EntityView, type GameMap,
+  type ServerMessageType,
 } from "@aedm/schemas";
 import type { Transport, TransportFactory, TransportHandlers } from "./transport";
 import { MOCK_H, MOCK_W, NARRATION_OPENING, NPC_ODALYS, buildMockMap, choristerEntities, wallAt } from "./mock-world";
@@ -57,6 +58,22 @@ export function mockCharacterFrom(c: CharacterCreate): CharacterView {
   };
 }
 
+interface MockTemplate { id: string; character: CharacterCreate; forged: boolean; saved_at: string }
+interface MockAccount { id: string; username: string; password: string; display_name: string; templates: MockTemplate[]; campaigns: CampaignInfo[] }
+
+function mockAbilityNames(c: CharacterCreate): string[] {
+  const texts = c.ability_texts ?? (c.abilities ?? []).map((a) => `${a.name}: ${a.description}`);
+  return texts.map((t) => {
+    const head = t.split(":")[0] ?? t;
+    return (head.length < t.length && head.length <= 40 ? head : t.split(/\s+/).slice(0, 3).join(" ")).trim().slice(0, 60);
+  }).filter(Boolean).slice(0, 3);
+}
+
+const summaryOf = (t: MockTemplate): CharacterSummary => ({
+  id: t.id, name: t.character.name, title: t.character.title, key_ability: t.character.key_ability,
+  sprite_recipe: t.character.sprite_recipe, ability_names: mockAbilityNames(t.character), forged: t.forged, saved_at: t.saved_at,
+});
+
 /**
  * In-browser stand-in for apps/server. It speaks the same JSON envelope protocol through the same
  * Transport interface, so the UI cannot tell the difference. State lives for the page's lifetime and
@@ -78,6 +95,12 @@ export class MockServer {
   private players: MockPlayer[] = [];
   private myName = "Player";
   private myChar: CharacterView | null = null;
+  private resume: { save_id: string; name: string } | null = null;
+
+  // accounts (in memory for the page's lifetime; the login itself belongs to the connection, as on the real server)
+  private accounts = new Map<string, MockAccount>();
+  private sessions = new Map<string, string>();
+  private authUser: MockAccount | null = null;
 
   // game
   private map: GameMap = buildMockMap();
@@ -107,6 +130,7 @@ export class MockServer {
   private connect(h: TransportHandlers): Transport {
     const c = { h, open: false };
     this.conn = c;
+    this.authUser = null;
     this.later(() => { c.open = true; h.onOpen(); }, 120);
     return {
       send: (raw) => { if (c.open) this.later(() => this.receive(raw), LATENCY_MS); },
@@ -142,6 +166,7 @@ export class MockServer {
     this.emit("lobby_state", {
       room_id: "room_mock", invite_code: this.code, host_player_id: this.hostId, phase: this.phase,
       settings: this.settings, players: this.players,
+      ...(this.resume ? { resume_save: this.resume } : {}),
     });
   }
 
@@ -161,6 +186,9 @@ export class MockServer {
       case "create_room": return this.onCreate(String(p.display_name), ack);
       case "join_room": return this.onJoin(String(p.invite_code), String(p.display_name), ack);
       case "ping": return this.emit("pong", {}, ack);
+      case "register": case "login": case "resume_session": case "logout": case "list_characters":
+      case "save_character_template": case "delete_character_template": case "list_campaigns": case "resume_campaign":
+        return this.onAccount(m.type, p, ack);
       default: break;
     }
     if (!this.joined) return this.fail("forbidden", "Join a room first.", ack);
@@ -168,7 +196,7 @@ export class MockServer {
       case "set_ready": return this.onReady(Boolean(p.ready), ack);
       case "update_settings": return this.onSettings(p, ack);
       case "start_game": return this.onStart(ack);
-      case "claim_character": return this.onClaim(m.payload as { character_id: string; character?: CharacterCreate }, ack);
+      case "claim_character": return this.onClaim(m.payload as { character_id: string; character?: CharacterCreate; template_id?: string }, ack);
       case "move_intent": return this.onMove(p, ack);
       case "act": return this.onAct(String(p.verb), String(p.target_id), ack);
       case "basic_attack": return this.onBasicAttack(String(p.target_id), ack);
@@ -178,8 +206,8 @@ export class MockServer {
       case "say": return this.onSay(String(p.text), p.channel as "ic" | "ooc", ack);
       case "vote_cast": return this.onVoteCast(String(p.choice), ack);
       case "level_up_choice": return this.onLevelUpChoice(p, ack);
-      case "request_save": this.emit("save_created", { save_id: `sv_${this.n}`, name: String(p.name) }, ack); return;
-      case "load_save": return this.fail("not_found", "Saves are not available in the mock.", ack);
+      case "request_save": return this.onSave(String(p.name), ack);
+      case "load_save": return this.onLoadSave(String(p.save_id), ack);
       default: return;
     }
   }
@@ -255,8 +283,119 @@ export class MockServer {
     this.lobbyState();
   }
 
-  private onClaim(p: { character_id: string; character?: CharacterCreate }, ack: string): void {
+  // ---------- accounts ----------
+
+  private authOk(a: MockAccount, ack: string, token?: string): void {
+    this.authUser = a;
+    this.emit("auth_ok", {
+      user: { id: a.id, username: a.username, display_name: a.display_name },
+      ...(token ? { session_token: token } : {}),
+      characters: a.templates.map(summaryOf),
+    }, ack);
+  }
+
+  private newSession(a: MockAccount): string {
+    const token = `mock-session-${a.username}-${Math.random().toString(36).slice(2, 12)}`;
+    this.sessions.set(token, a.username);
+    return token;
+  }
+
+  private onAccount(type: string, p: Payload, ack: string): void {
+    const authErr = (code: string, message: string) => this.emit("auth_error", { code, message }, ack);
+    switch (type) {
+      case "register": {
+        const input = { username: String(p.username), password: String(p.password), display_name: String(p.display_name) };
+        const problem = validateRegistration(input);
+        if (problem) return authErr("invalid", problem);
+        const username = input.username.trim().toLowerCase();
+        if (this.accounts.has(username)) return authErr("username_taken", "That username is taken.");
+        const a: MockAccount = { id: `u_mock_${username}`, username, password: input.password, display_name: input.display_name.trim(), templates: [], campaigns: [] };
+        this.accounts.set(username, a);
+        return this.authOk(a, ack, this.newSession(a));
+      }
+      case "login": {
+        const a = this.accounts.get(String(p.username).trim().toLowerCase());
+        if (!a || a.password !== p.password) return authErr("invalid_credentials", "Wrong username or password.");
+        return this.authOk(a, ack, this.newSession(a));
+      }
+      case "resume_session": {
+        const name = this.sessions.get(String(p.session_token));
+        const a = name ? this.accounts.get(name) : undefined;
+        if (!a) return authErr("invalid_credentials", "Your session has expired. Please log in again.");
+        return this.authOk(a, ack);
+      }
+      case "logout":
+        this.authUser = null;
+        return this.emit("logged_out", {}, ack);
+      default: break;
+    }
+    const a = this.authUser;
+    if (!a) return this.fail("forbidden", "Log in to do that.", ack);
+    switch (type) {
+      case "list_characters":
+        return this.emit("characters_list", { characters: a.templates.map(summaryOf) }, ack);
+      case "save_character_template": {
+        const character = p.character as CharacterCreate;
+        const existing = a.templates.find((t) => t.character.name.toLowerCase() === character.name.toLowerCase());
+        const tpl: MockTemplate = { id: existing?.id ?? `ch_mock_${a.templates.length + 1}_${this.n}`, character, forged: existing?.forged ?? false, saved_at: new Date().toISOString() };
+        if (existing) a.templates[a.templates.indexOf(existing)] = tpl;
+        else a.templates.push(tpl);
+        return this.emit("characters_list", { characters: a.templates.map(summaryOf) }, ack);
+      }
+      case "delete_character_template": {
+        const i = a.templates.findIndex((t) => t.id === p.id);
+        if (i < 0) return this.fail("not_found", "No such saved character.", ack);
+        a.templates.splice(i, 1);
+        return this.emit("characters_list", { characters: a.templates.map(summaryOf) }, ack);
+      }
+      case "list_campaigns":
+        return this.emit("campaigns_list", { campaigns: a.campaigns }, ack);
+      case "resume_campaign": {
+        const c = a.campaigns.find((x) => x.save_id === p.save_id);
+        if (!c) return this.fail("not_found", "No such campaign.", ack);
+        this.onCreate(a.display_name, ack);
+        this.resume = { save_id: c.save_id, name: c.name };
+        return;
+      }
+      default: return;
+    }
+  }
+
+  private onSave(name: string, ack: string): void {
+    const id = `sv_${this.n}`;
+    const a = this.authUser;
+    if (a) {
+      a.campaigns = a.campaigns.filter((c) => c.kind !== "autosave");
+      a.campaigns.unshift({
+        save_id: id, room_id: "room_mock", kind: "named", name, campaign_title: "The Lantern Marsh",
+        updated_at: new Date().toISOString(), players: this.players.map((x) => x.display_name).slice(0, 6), can_resume: true,
+      });
+    }
+    this.emit("save_created", { save_id: id, name }, ack);
+  }
+
+  private onLoadSave(saveId: string, ack: string): void {
+    if (this.hostId !== ME) return this.fail("not_host", "Only the host can load a save.", ack);
+    if (!this.resume || this.resume.save_id !== saveId) return this.fail("not_found", "No such save.", ack);
+    this.resume = null;
+    if (!this.myChar) {
+      this.myChar = { ...toView(fixtures.BRINDLE), id: ME_CHAR };
+      const me = this.me();
+      if (me) me.character_id = ME_CHAR;
+    }
+    this.emit("presence", { player_id: ME, status: "online" }, ack);
+    this.beginGame();
+  }
+
+  private onClaim(p: { character_id: string; character?: CharacterCreate; template_id?: string }, ack: string): void {
     if (this.phase !== "lobby") return this.fail("invalid_state", "The game has already started.", ack);
+    if (p.character_id === "template") {
+      const tpl = this.authUser?.templates.find((t) => t.id === p.template_id);
+      if (!tpl) return this.fail("not_found", "No such saved character. Log in to use your saved characters.", ack);
+      p = { character_id: "new", character: tpl.character };
+      tpl.forged = true;
+      this.emit("characters_list", { characters: this.authUser?.templates.map(summaryOf) ?? [] });
+    }
     if (p.character_id !== "new" || !p.character) return this.fail("not_found", "No such character.", ack);
     this.myChar = mockCharacterFrom(p.character);
     const me = this.me();
@@ -294,8 +433,20 @@ export class MockServer {
 
   // ---------- game start ----------
 
+  /** Like the real server's autosave: one entry per campaign, replaced as play goes on. */
+  private recordAutosave(): void {
+    const a = this.authUser;
+    if (!a) return;
+    a.campaigns = a.campaigns.filter((c) => c.kind !== "autosave");
+    a.campaigns.unshift({
+      save_id: "autosave", room_id: "room_mock", kind: "autosave", name: "autosave", campaign_title: "The Lantern Marsh",
+      updated_at: new Date().toISOString(), players: this.players.map((x) => x.display_name).slice(0, 6), can_resume: true,
+    });
+  }
+
   private beginGame(): void {
     this.phase = "playing";
+    this.recordAutosave();
     this.map = buildMockMap();
     this.ents = {};
     this.party = [];
