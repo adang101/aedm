@@ -1,17 +1,20 @@
-import { ABILITIES, CHECK_TAGS, SPRITE_SHAPES, type CheckTag, type SpriteRecipe, type SpriteShape } from "@aedm/schemas";
-import { ACCENT_SWATCHES, BODY_SWATCHES } from "../render/palette";
-import { drawShapeBody } from "../render/sprites";
+import { ABILITIES, BODY_PLANS, CHECK_TAGS, PART_GROUPS, type CheckTag, type PartGroup, type SpriteRecipe, type SpriteShape, type SpriteSpec } from "@aedm/schemas";
+import { drawShapeBody } from "../render/shape-recipe";
+import { composeSprite } from "../render/sprite-composer";
 import {
-  MAX_ABILITIES, MAX_TRAITS, autoGlyph, buildCreate, emptyForm, premadeForms, toggleTrait,
+  MAX_ABILITIES, MAX_TRAITS, buildCreate, emptyForm, premadeForms, toggleTrait,
   type CreatorForm, type FormErrors,
 } from "../state/creator";
+import {
+  BODY_LABEL, BUILDER_SIZES, GROUP_LABEL, MAX_BUILDER_PARTS, PALETTE_SLOTS, SLOT_LABEL, SWATCHES,
+  buildSpriteSpec, randomLook, togglePart, type PaletteSlot,
+} from "../state/sprite-builder";
 import {
   POINT_BUY_BUDGET, adjust, canDecrease, canIncrease, nextCost, pointsLeft, scoreCost,
 } from "../state/pointbuy";
 import type { AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
 import type { Ctx } from "./types";
-import { asShape } from "../render/shape-fallback";
 
 const ABILITY_NAMES: Record<string, string> = {
   str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma",
@@ -27,9 +30,25 @@ export function shapeIcon(shape: SpriteShape, color: string, accent: string, gly
   return c;
 }
 
+/** A composed `spec` sprite at a small size (48 x 64 crop, scaled to fit a `size` square). */
+export function specIcon(spec: SpriteSpec, size = 40): HTMLCanvasElement {
+  const c = h("canvas", { width: size * 2, height: size * 2, style: `width:${size}px;height:${size}px` });
+  const g = c.getContext("2d");
+  if (g) {
+    const s = composeSprite(spec, "right", 0);
+    const k = (size * 2) / 64;
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "medium";
+    const sx = s.footX - 24 * s.scale - 4 * s.scale, sy = s.footY - 60 * s.scale - 2 * s.scale;
+    g.drawImage(s.canvas, sx, sy, 56 * s.scale, 66 * s.scale, (size * 2 - 56 * k * 0.97) / 2, 0, 56 * k * 0.97, 66 * k * 0.97);
+  }
+  return c;
+}
+
 export function recipeIcon(recipe: SpriteRecipe, name: string, size = 40): HTMLCanvasElement {
-  const s = asShape(recipe, name);
-  return shapeIcon(s.shape, s.color, s.accent, s.glyph, size);
+  if (recipe.kind === "spec") return specIcon(recipe, size);
+  void name;
+  return shapeIcon(recipe.shape, recipe.color, recipe.accent, recipe.glyph, size);
 }
 
 export interface Creator {
@@ -49,7 +68,6 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
   const titleIn = h("input", { type: "text", maxlength: 40, placeholder: "e.g. demolitions expert", autocomplete: "off" });
   const descIn = h("textarea", { rows: 2, maxlength: 300, placeholder: "Looks, manner, a hint of history. Used for flavor and the portrait." });
   const keySel = h("select", null, ...ABILITIES.map((a) => h("option", { value: a }, `${ABILITY_NAMES[a]} (${a.toUpperCase()})`)));
-  const glyphIn = h("input", { type: "text", maxlength: 2, class: "glyph-input", "aria-label": "Sprite glyph" });
 
   const errBox = (key: keyof FormErrors) => h("p", { class: "field-error", "data-error": key, role: "alert" });
   const errEls: Record<string, HTMLElement> = {};
@@ -57,17 +75,11 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
 
   nameIn.addEventListener("input", () => {
     form.name = nameIn.value;
-    if (!form.glyphTouched) { form.glyph = autoGlyph(form.name); glyphIn.value = form.glyph; }
     refreshPreview();
   });
   titleIn.addEventListener("input", () => { form.title = titleIn.value; });
   descIn.addEventListener("input", () => { form.description = descIn.value; });
   keySel.addEventListener("change", () => { form.key_ability = keySel.value as CreatorForm["key_ability"]; });
-  glyphIn.addEventListener("input", () => {
-    form.glyphTouched = glyphIn.value.trim() !== "";
-    form.glyph = glyphIn.value.trim() || autoGlyph(form.name);
-    refreshPreview();
-  });
 
   // ----- point buy -----
   const counter = h("div", { class: "points" });
@@ -123,37 +135,83 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
     addAbility.hidden = form.abilityTexts.length >= MAX_ABILITIES;
   }
 
-  // ----- sprite -----
-  const preview = h("canvas", { class: "sprite-preview", width: 96, height: 128, "aria-label": "Sprite preview" });
-  const shapeBox = h("div", { class: "chip-row" });
-  const colorBox = h("div", { class: "swatches" });
-  const accentBox = h("div", { class: "swatches" });
-  function refreshPreview(): void {
+  // ----- sprite builder -----
+  let slot: PaletteSlot = "primary";
+  let previewFrame = 0;
+  const preview = h("canvas", { class: "sprite-preview", width: 144, height: 192, "aria-label": "Sprite preview" });
+  const bodyBox = h("div", { class: "chip-row wrap" });
+  const sizeBox = h("div", { class: "chip-row" });
+  const slotBox = h("div", { class: "chip-row" });
+  const swatchBox = h("div", { class: "swatches wide" });
+  const partsBox = h("div", { class: "stack tight" });
+  const partCount = h("span", { class: "muted" });
+  const currentSpec = (): SpriteSpec => buildSpriteSpec(form.sprite, form.name);
+
+  function drawPreview(): void {
     const g = preview.getContext("2d");
-    if (g) {
-      g.setTransform(1, 0, 0, 1, 0, 0);
-      g.clearRect(0, 0, 96, 128);
-      g.scale(2, 2);
-      g.fillStyle = "rgba(10,6,20,0.38)";
-      g.beginPath(); g.ellipse(24, 58, 17, 6, 0, 0, Math.PI * 2); g.fill();
-      drawShapeBody(g, { kind: "shape", shape: form.shape, color: form.color, accent: form.accent, glyph: form.glyph || "?" }, 24, 38);
+    if (!g) return;
+    const spec = currentSpec();
+    const s = composeSprite(spec, "right", previewFrame);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, preview.width, preview.height);
+    const k = 3; // 48 x 64 canvas drawn at 3x
+    const fx = 72, fy = 60 * k + 6;
+    g.fillStyle = "rgba(10,6,20,0.38)";
+    g.beginPath(); g.ellipse(fx, fy - 2, 17 * k * 0.75 * Math.max(1, s.scale * 0.9), 6 * k * 0.7, 0, 0, Math.PI * 2); g.fill();
+    g.imageSmoothingEnabled = false;
+    const fit = Math.min(1, 1 / s.scale * 1.1);
+    g.drawImage(s.canvas, fx - s.footX * k * fit, fy - s.footY * k * fit, s.canvas.width * k * fit, s.canvas.height * k * fit);
+  }
+  function refreshPreview(): void {
+    drawPreview();
+    for (const b of bodyBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.body === form.sprite.body);
+    for (const b of sizeBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.size === form.sprite.size);
+    for (const b of slotBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.slot === slot);
+    for (const b of swatchBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.color === form.sprite.palette[slot]);
+    const n = form.sprite.parts.length;
+    partCount.textContent = `${n} of ${MAX_BUILDER_PARTS} chosen`;
+    for (const b of partsBox.querySelectorAll("button")) {
+      const on = form.sprite.parts.includes(b.dataset.part as never);
+      b.classList.toggle("on", on);
+      b.classList.toggle("dim", !on && n >= MAX_BUILDER_PARTS);
+      b.setAttribute("aria-pressed", String(on));
     }
-    for (const b of shapeBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.shape === form.shape);
-    for (const b of colorBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.color === form.color);
-    for (const b of accentBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.color === form.accent);
   }
   function buildSpriteControls(): void {
-    replaceChildren(shapeBox, ...SPRITE_SHAPES.map((s) => h("button", {
-      type: "button", class: "chip icon", "data-shape": s, "aria-label": s, title: s,
-      onClick: () => { form.shape = s; refreshPreview(); },
-    }, shapeIcon(s, form.color, form.accent, "", 34))));
-    const sw = (list: readonly string[], key: "color" | "accent") => list.map((c) => h("button", {
-      type: "button", class: "swatch", "data-color": c, style: `background:${c}`, "aria-label": `${key} ${c}`,
-      onClick: () => { form[key] = c; buildSpriteControls(); refreshPreview(); },
-    }));
-    replaceChildren(colorBox, ...sw(BODY_SWATCHES, "color"));
-    replaceChildren(accentBox, ...sw(ACCENT_SWATCHES, "accent"));
+    replaceChildren(bodyBox, ...BODY_PLANS.map((b) => h("button", {
+      type: "button", class: "chip", "data-body": b, onClick: () => { form.sprite.body = b; refreshPreview(); },
+    }, BODY_LABEL[b])));
+    replaceChildren(sizeBox, ...BUILDER_SIZES.map((z) => h("button", {
+      type: "button", class: "chip", "data-size": z, onClick: () => { form.sprite.size = z; refreshPreview(); },
+    }, z)));
+    replaceChildren(slotBox, ...PALETTE_SLOTS.map((k) => h("button", {
+      type: "button", class: "chip slot", "data-slot": k, onClick: () => { slot = k; buildSpriteControls(); refreshPreview(); },
+    }, h("span", { class: "dot", style: `background:${form.sprite.palette[k]}` }), SLOT_LABEL[k])));
+    replaceChildren(swatchBox, ...SWATCHES.map((c) => h("button", {
+      type: "button", class: "swatch", "data-color": c, style: `background:${c}`, "aria-label": `${SLOT_LABEL[slot]} color ${c}`,
+      onClick: () => { form.sprite.palette[slot] = c; buildSpriteControls(); refreshPreview(); },
+    })));
+    replaceChildren(partsBox, ...(Object.keys(PART_GROUPS) as PartGroup[]).map((g) => h("div", { class: "part-group" },
+      h("b", null, GROUP_LABEL[g]),
+      h("div", { class: "chip-row wrap" }, ...PART_GROUPS[g].map((part) => h("button", {
+        type: "button", class: "chip toggle small", "data-part": part,
+        onClick: () => { form.sprite.parts = togglePart(form.sprite.parts, part); refreshPreview(); },
+      }, part.replace(/_/g, " ")))))));
   }
+  const randomBtn = h("button", {
+    type: "button", class: "btn small",
+    onClick: () => {
+      form.sprite = randomLook(form.name, form.sprite.rolls + 1);
+      buildSpriteControls(); refreshPreview();
+    },
+  }, "Randomize look");
+  let seen = false;
+  const bob = setInterval(() => {
+    if (preview.isConnected) seen = true;
+    else if (seen) { clearInterval(bob); return; }
+    previewFrame = 1 - previewFrame;
+    drawPreview();
+  }, 450);
 
   // ----- premades -----
   const premades = premadeForms();
@@ -206,11 +264,15 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
       ),
       h("div", { class: "stack" },
         h("div", { class: "sprite-col" }, preview,
-          h("div", { class: "stack tight" }, h("b", null, "Shape"), shapeBox)),
-        h("div", { class: "stack tight" }, h("b", null, "Color"), colorBox, h("b", null, "Accent"), accentBox,
-          h("label", { class: "inline" }, "Glyph", glyphIn), errEls.glyph!, errEls.sprite!),
+          h("div", { class: "stack tight" }, h("b", null, "Body plan"), bodyBox, h("b", null, "Size"), sizeBox, randomBtn)),
       ),
     ),
+    h("section", { class: "stack tight sprite-builder" },
+      h("h3", null, "Look"),
+      h("p", { class: "muted" }, "Pick colors for each slot from the master palette."),
+      slotBox, swatchBox,
+      h("div", { class: "row between" }, h("b", null, "Parts"), partCount),
+      partsBox, errEls.sprite!, errEls.glyph!),
     h("section", { class: "stack tight" }, h("h3", null, "Ability scores"), h("p", { class: "muted" }, `Spend exactly ${POINT_BUY_BUDGET} points. Each score is 8 to 15.`), counter, scoreRows, errEls.scores!),
     h("section", { class: "stack tight" }, h("h3", null, "Two traits"), h("div", { class: "row" }, traitCount), traitBox, errEls.traits!),
     h("section", { class: "stack tight" }, h("h3", null, "Abilities (1 to 3)"),
@@ -228,7 +290,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
 
   function syncAll(): void {
     nameIn.value = form.name; titleIn.value = form.title; descIn.value = form.description;
-    keySel.value = form.key_ability; glyphIn.value = form.glyph === "?" && !form.name ? "" : form.glyph;
+    keySel.value = form.key_ability;
     refreshScores(); refreshTraits(); refreshAbilities(); buildSpriteControls(); refreshPreview(); showErrors();
   }
 

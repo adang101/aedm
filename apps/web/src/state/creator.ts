@@ -1,10 +1,9 @@
 import {
-  CHECK_TAGS, CharacterCreateSchema, SPRITE_SHAPES, fixtures,
-  type AbilityScoreKey, type CharacterCreate, type CheckTag, type SpriteShape,
+  CHECK_TAGS, CharacterCreateSchema, fixtures,
+  type AbilityScoreKey, type CharacterCreate, type CheckTag,
 } from "@aedm/schemas";
-import { ACCENT_SWATCHES, BODY_SWATCHES } from "../render/palette";
 import { POINT_BUY_BUDGET, baseScores, pointsLeft, type Scores } from "./pointbuy";
-import { asShape } from "../render/shape-fallback";
+import { PREMADE_SPECS, buildSpriteSpec, defaultSpriteForm, formFromSpec, type SpriteForm } from "./sprite-builder";
 
 export interface CreatorForm {
   name: string;
@@ -14,12 +13,8 @@ export interface CreatorForm {
   scores: Scores;
   traits: CheckTag[];
   abilityTexts: string[];
-  shape: SpriteShape;
-  color: string;
-  accent: string;
-  glyph: string;
-  /** True once the player typed their own glyph, so it stops following the name. */
-  glyphTouched: boolean;
+  /** The sprite builder's state; `buildCreate` turns it into a `spec` recipe. */
+  sprite: SpriteForm;
 }
 
 export const MAX_TRAITS = 2;
@@ -28,8 +23,7 @@ export const MAX_ABILITIES = 3;
 export function emptyForm(): CreatorForm {
   return {
     name: "", title: "", description: "", key_ability: "str", scores: baseScores(), traits: [],
-    abilityTexts: [""], shape: SPRITE_SHAPES[0], color: BODY_SWATCHES[2] ?? "#7cb342", accent: ACCENT_SWATCHES[1] ?? "#f6e8a0",
-    glyph: "?", glyphTouched: false,
+    abilityTexts: [""], sprite: defaultSpriteForm(),
   };
 }
 
@@ -69,7 +63,7 @@ export function buildCreate(form: CreatorForm): BuildResult {
     key_ability: form.key_ability,
     scores: form.scores,
     trait_tags: form.traits,
-    sprite_recipe: { kind: "shape", shape: form.shape, color: form.color, accent: form.accent, glyph: form.glyph.trim() || autoGlyph(form.name) },
+    sprite_recipe: buildSpriteSpec(form.sprite, form.name),
     ability_texts: texts,
   };
   const parsed = CharacterCreateSchema.safeParse(candidate);
@@ -115,13 +109,13 @@ const PREMADE_TEXTS: Record<string, string[]> = {
 
 export function premadeForms(): { label: string; form: CreatorForm }[] {
   return fixtures.SPIKE_PARTY.map((c) => {
-    const sprite = asShape(c.sprite_recipe, c.name);
+    const look = PREMADE_SPECS[c.id];
     return {
       label: c.name.split(" ")[0] ?? c.name,
       form: {
         name: c.name, title: c.title, description: c.description, key_ability: c.key_ability, scores: { ...c.scores },
         traits: [...c.trait_tags], abilityTexts: [...(PREMADE_TEXTS[c.id] ?? [])],
-        shape: sprite.shape, color: sprite.color, accent: sprite.accent, glyph: sprite.glyph, glyphTouched: true,
+        sprite: look ? formFromSpec(look) : defaultSpriteForm(),
       },
     };
   });
