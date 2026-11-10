@@ -43,7 +43,8 @@ interface Intent { characterId: string; name: string; text: string }
 
 export interface ParsedDmContext {
   mapId: string;
-  biome: string;
+  /** Free-text setting name from the <scene> tag. */
+  setting: string;
   description: string;
   entities: Ent[];
   party: Member[];
@@ -54,7 +55,7 @@ export interface ParsedDmContext {
 }
 
 export function parseDmUser(user: string): ParsedDmContext {
-  const scene = /<scene map_id="([^"]*)" biome="([^"]*)">([\s\S]*?)<\/scene>/.exec(user);
+  const scene = /<scene map_id="([^"]*)" setting="([^"]*)">([\s\S]*?)<\/scene>/.exec(user);
   const entities: Ent[] = [];
   for (const m of (scene?.[3] ?? "").matchAll(/^- id=(\S+) kind=(\S+) name="([^"]*)" at=\((\d+),(\d+)\)(?: hp=\S+)?(?: disposition=(\S+))?/gm)) {
     entities.push({ id: m[1]!, kind: m[2]!, name: m[3]!, x: Number(m[4]), y: Number(m[5]), ...(m[6] ? { disposition: m[6] } : {}) });
@@ -69,7 +70,7 @@ export function parseDmUser(user: string): ParsedDmContext {
   }
   return {
     mapId: scene?.[1] ?? "m_start",
-    biome: scene?.[2] ?? "town",
+    setting: scene?.[2] ?? "town",
     description: /^Description: (.*)$/m.exec(scene?.[3] ?? "")?.[1] ?? "",
     entities,
     party,
@@ -109,13 +110,70 @@ const CHECK_RULES: CheckRule[] = [
   { rx: /\b(search|look|examine|inspect|spot|listen|check|scout|investigate|watch)\b/i, ability: "wis", tags: ["perception"], reason: "Searching carefully" },
 ];
 
-const BIOME_RX: [RegExp, string][] = [
-  [/\b(cave|dungeon|crypt|cellar|tomb|catacomb|mine|sewer)\b/i, "dungeon"],
-  [/\b(forest|wood|marsh|swamp|bog|fen|grove|trail)\b/i, "forest"],
-  [/\b(desert|dune|sand|oasis)\b/i, "desert"],
-  [/\b(lighthouse|tower|house|inside|hall|manor|keep|temple|study|desk)\b/i, "interior"],
-  [/\b(town|village|inn|market|square|street|harbor|quay)\b/i, "town"],
+type Layout = "rooms_and_corridors" | "cave" | "open_field" | "settlement" | "trail" | "arena" | "maze" | "islands";
+type Environment = "indoor" | "outdoor" | "underground";
+type Mood = "bright" | "neutral" | "dim" | "dark" | "eerie";
+
+interface SettingRule {
+  rx: RegExp;
+  name: string;
+  preset?: string;
+  layout: Layout;
+  environment: Environment;
+  mood: Mood;
+  /** Key into OPENERS for narration flavor. */
+  flavor: string;
+  materials?: Record<string, unknown[]>;
+}
+
+// First match wins, so specific words come before general ones.
+const SETTING_RULES: SettingRule[] = [
+  { rx: /\b(ship|deck|vessel|galleon|galley|sloop)\b/i, name: "Ship deck", preset: "ship_deck", layout: "arena", environment: "outdoor", mood: "bright", flavor: "town", materials: { floor: ["wooden_planks"], obstacle: ["crate", "barrel"] } },
+  { rx: /\b(snow|ice|glacier|frozen|tundra|frost)\b/i, name: "Frozen rift", preset: "snowfield", layout: "open_field", environment: "outdoor", mood: "bright", flavor: "desert", materials: { floor: ["snow", { name: "Blue ice", role: "floor", color: "#9fd4f5", accent: "#4f9fe0", pattern: "cracks", tags: ["ice", "slippery"] }] } },
+  { rx: /\b(volcano|volcanic|lava|magma)\b/i, name: "Ashen caldera", preset: "volcanic", layout: "cave", environment: "underground", mood: "dark", flavor: "dungeon", materials: { liquid: ["lava"] } },
+  { rx: /\b(crypt|tomb|catacomb|graveyard)\b/i, name: "Old crypt", preset: "crypt", layout: "rooms_and_corridors", environment: "underground", mood: "eerie", flavor: "dungeon" },
+  { rx: /\b(sewer|drain)\b/i, name: "Flooded sewer", preset: "sewer", layout: "rooms_and_corridors", environment: "underground", mood: "dim", flavor: "dungeon" },
+  { rx: /\b(cave|cavern|grotto|mine)\b/i, name: "Deep cave", preset: "cave", layout: "cave", environment: "underground", mood: "dark", flavor: "dungeon" },
+  { rx: /\b(maze|labyrinth)\b/i, name: "Hedge maze", layout: "maze", environment: "outdoor", mood: "eerie", flavor: "forest" },
+  { rx: /\b(arena|pit|duel ring|colosseum)\b/i, name: "Fighting pit", layout: "arena", environment: "outdoor", mood: "bright", flavor: "desert" },
+  { rx: /\b(island|archipelago|atoll)\b/i, name: "Scattered isles", layout: "islands", environment: "outdoor", mood: "bright", flavor: "desert" },
+  { rx: /\b(temple|shrine|sanctum|cathedral)\b/i, name: "Quiet temple", preset: "temple", layout: "rooms_and_corridors", environment: "indoor", mood: "dim", flavor: "interior" },
+  { rx: /\b(castle|fortress|keep|citadel)\b/i, name: "Stone keep", preset: "castle", layout: "rooms_and_corridors", environment: "indoor", mood: "dim", flavor: "interior" },
+  { rx: /\b(library|archive|scriptorium)\b/i, name: "Dusty library", preset: "library", layout: "rooms_and_corridors", environment: "indoor", mood: "dim", flavor: "interior" },
+  { rx: /\b(ruin|ruins|overgrown)\b/i, name: "Broken ruins", preset: "ruins", layout: "open_field", environment: "outdoor", mood: "neutral", flavor: "forest" },
+  { rx: /\b(swamp|marsh|bog|fen)\b/i, name: "Misty marsh", preset: "swamp", layout: "trail", environment: "outdoor", mood: "eerie", flavor: "forest" },
+  { rx: /\b(forest|wood|woods|grove|trail)\b/i, name: "Old forest", preset: "forest", layout: "trail", environment: "outdoor", mood: "neutral", flavor: "forest" },
+  { rx: /\b(mountain|pass|cliff|ridge)\b/i, name: "Mountain pass", preset: "mountain_pass", layout: "trail", environment: "outdoor", mood: "neutral", flavor: "desert" },
+  { rx: /\b(desert|dune|dunes|sand|oasis)\b/i, name: "Dune sea", preset: "desert", layout: "open_field", environment: "outdoor", mood: "bright", flavor: "desert" },
+  { rx: /\b(beach|shore|coast|cove)\b/i, name: "Pebble beach", preset: "beach", layout: "open_field", environment: "outdoor", mood: "bright", flavor: "desert" },
+  { rx: /\b(farm|barn|field|orchard)\b/i, name: "Quiet farmland", preset: "farmland", layout: "open_field", environment: "outdoor", mood: "bright", flavor: "forest" },
+  { rx: /\b(market|bazaar|stalls?)\b/i, name: "Busy market", preset: "market", layout: "settlement", environment: "outdoor", mood: "bright", flavor: "town" },
+  { rx: /\b(town|village|inn|square|street|harbor|harbour|quay)\b/i, name: "Harbor village", preset: "town", layout: "settlement", environment: "outdoor", mood: "neutral", flavor: "town" },
+  { rx: /\b(dungeon|cellar|vault|dark corridors?)\b/i, name: "Old dungeon", preset: "dungeon", layout: "rooms_and_corridors", environment: "underground", mood: "dark", flavor: "dungeon" },
+  { rx: /\b(lighthouse|tower|house|inside|hall|manor|study|desk|room)\b/i, name: "Old house", preset: "interior", layout: "rooms_and_corridors", environment: "indoor", mood: "dim", flavor: "interior" },
 ];
+
+const STOP = new Set(["we", "i", "you", "the", "a", "an", "to", "into", "toward", "towards", "through", "and", "then", "follow", "go", "head", "travel", "enter", "explore", "venture", "set", "out", "for", "of", "in", "on", "it", "them", "our", "my", "us", "walk", "cross", "descend", "climb", "down", "up", "leave", "all", "is", "are"]);
+
+/** Unknown places become an open outdoor field named from the intent's own words. */
+function freeTextName(text: string): string {
+  const w = text.replace(/[^A-Za-z' -]/g, " ").split(/\s+/).filter((x) => x.length > 2 && !STOP.has(x.toLowerCase())).slice(0, 3);
+  return (w.map(cap).join(" ") || "Open country").slice(0, 40);
+}
+
+function settingFromText(text: string, current: string): SettingRule {
+  for (const r of SETTING_RULES) if (r.rx.test(text)) return r;
+  const named = freeTextName(text);
+  const stay = SETTING_RULES.find((r) => r.rx.test(current));
+  return {
+    rx: /$^/, name: named === "Open country" && stay ? stay.name : named, layout: "open_field", environment: "outdoor",
+    mood: "neutral", flavor: stay?.flavor ?? "town",
+  };
+}
+
+function flavorOf(setting: string): string {
+  return SETTING_RULES.find((r) => r.rx.test(setting))?.flavor ?? "town";
+}
 
 const OPENERS: Record<string, string[]> = {
   town: ["Smoke from a dozen chimneys threads into the cooling air above the rooftops.", "Shutters bang somewhere nearby, and the street smells of tar, fish and wet rope."],
@@ -197,11 +255,6 @@ function categorize(text: string): Category {
   return "other";
 }
 
-function biomeFromText(text: string, fallback: string): string {
-  for (const [rx, b] of BIOME_RX) if (rx.test(text)) return b;
-  return ["forest", "dungeon", "desert", "town", "interior"].includes(fallback) ? fallback : "town";
-}
-
 function engineSentence(lines: string[]): string {
   if (!lines.length) return "";
   const l = lines.join(" ").toLowerCase();
@@ -255,8 +308,9 @@ export function improvDm(user: string): string {
     const ids = (present.length ? present : ctx.party).map((p) => p.id);
     if (!foe) {
       actions.push({
-        type: "create_enemy", concept: `A ${name} met in ${ctx.biome} terrain, hostile and quick to strike`, role: ids.length >= 5 ? "elite" : "standard",
+        type: "create_enemy", concept: `A ${name} met in ${ctx.setting}, hostile and quick to strike`, role: ids.length >= 5 ? "elite" : "standard",
         setting_notes: ctx.description.slice(0, 120), ref: archetype,
+        appearance: `${pick(["wiry", "hulking", "gaunt", "bristling"], h, 6)} ${name} in ${pick(["mud-brown", "ash-grey", "dark-red", "pale-blue"], h, 7)} rags, ${pick(["glowing eyes", "a notched blade", "bone trinkets", "a patched hood"], h, 8)}`.slice(0, 160),
       });
     }
     const archId = foe ? foe.id : archetype;
@@ -269,14 +323,21 @@ export function improvDm(user: string): string {
     });
   } else if (primary === "travel") {
     const text = intents.map((i) => i.text).join(" ");
-    const biome = biomeFromText(text, ctx.biome);
+    const place = settingFromText(text, ctx.setting);
+    const roomType = place.environment === "outdoor" ? (place.preset === "ship_deck" ? "deck" : "outdoor") : place.layout === "cave" ? "cave" : "chamber";
     actions.push({
       type: "generate_map",
       brief: {
-        biome, theme_tags: [biome, pick(["quiet", "damp", "ancient", "overgrown"], h, 2)], size_class: "small",
+        setting: {
+          name: place.name,
+          ...(place.preset ? { preset: place.preset } : {}),
+          layout: place.layout, environment: place.environment, mood: place.mood,
+          ...(place.materials ? { materials: place.materials } : {}),
+        },
+        theme_tags: [place.flavor, pick(["quiet", "damp", "ancient", "overgrown"], h, 2)], size_class: "small",
         rooms: [
-          { id: "r1", type: biome === "forest" || biome === "desert" ? "outdoor" : "chamber", size: "medium", connects_to: ["r2"] },
-          { id: "r2", type: biome === "forest" || biome === "desert" ? "outdoor" : "hall", size: "small", connects_to: ["r1"] },
+          { id: "r1", type: roomType, size: "medium", connects_to: ["r2"] },
+          { id: "r2", type: roomType === "chamber" ? "hall" : roomType, size: "small", connects_to: ["r1"] },
         ],
         points_of_interest: [{ kind: pick(["chest", "altar", "sign"], h, 4), room_id: "r2" }],
         entity_slots: [{ role: "npc", room_id: "r1", count: 1 }],
@@ -288,7 +349,7 @@ export function improvDm(user: string): string {
   actions.push({ type: "suggest_actions", chips: CHIPS[primary].slice(0, 3 + (h % 2 === 0 ? 0 : 1)).slice(0, 4) });
 
   // Narration, built from phrase banks. Never echoes the player's words.
-  const opener = pick(OPENERS[ctx.biome] ?? OPENERS.town!, h);
+  const opener = pick(OPENERS[flavorOf(ctx.setting)] ?? OPENERS.town!, h);
   const sentences = [opener];
   if (ctx.description && primary !== "injection") sentences.push(ctx.description.split(/(?<=[.!?])\s/)[0]!.slice(0, 160));
   intents.slice(0, 3).forEach((i, k) => sentences.push(pick(REACTIONS[cats[k]!], h, k + 1).replace("{n}", i.name || "Someone")));
@@ -475,6 +536,7 @@ export function improvEnemy(user: string, system: string): string {
     behavior: ["targets the weakest-looking ally", "retreats at 30% HP"],
     loot_hint: "A few coins and a trinket.",
     sprite_tags: nameWords.map((w) => w.toLowerCase()).slice(0, 3),
+    appearance: concept.slice(0, 160),
     abilities,
   });
 }

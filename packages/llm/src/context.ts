@@ -1,4 +1,7 @@
-import { BIOMES, CHECK_TAGS, CONDITIONS, ROOM_TYPES, type WorldFact } from "@aedm/schemas";
+import {
+  BODY_PLANS, CHECK_TAGS, CONDITIONS, LAYOUTS, PART_GROUPS, PATTERNS, ROOM_TYPES, SETTING_PRESETS, type WorldFact,
+} from "@aedm/schemas";
+import { DEFAULT_MATERIAL_IDS } from "./material-ids";
 import { loadPrompt, renderTemplate } from "./template";
 
 export interface SceneEntity {
@@ -33,7 +36,8 @@ export interface DmContextPack {
   facts: WorldFact[];
   scene: {
     mapId: string;
-    biome: string;
+    /** Free-text name of the setting (the map's `meta.setting.name`). */
+    setting: string;
     description: string;
     entities: SceneEntity[];
     exits: { label: string; side?: string; to?: string }[];
@@ -66,17 +70,40 @@ export function escapeUntrusted(text: string, max = MAX_PLAYER_TEXT): string {
 const attr = (s: string) => s.replace(/["\n\r<>]/g, "'").trim();
 const list = (xs: string[]) => xs.map((x) => x.replace(/[;\n\r]/g, ",")).join("; ");
 
-let cachedSystem: string | undefined;
+const systemCache = new Map<string, string>();
 
-/** The stable, cacheable system prompt: rules plus the action catalog. Identical for every campaign. */
-export function buildDmSystem(): string {
-  cachedSystem ??= renderTemplate(loadPrompt("dm-system"), {
+export interface DmSystemOptions {
+  /** Material ids the DM may name in a brief (the engine's library). Defaults to a short placeholder list. */
+  materialIds?: readonly string[];
+}
+
+/** Template values shared by the DM and sprite designer prompts. */
+export function catalogVars(materialIds: readonly string[] = DEFAULT_MATERIAL_IDS): Record<string, string> {
+  return {
+    material_ids: materialIds.join(", "),
+    layouts: LAYOUTS.join("|"),
+    setting_presets: SETTING_PRESETS.join("|"),
+    body_plans: BODY_PLANS.join("|"),
+    sprite_parts: Object.entries(PART_GROUPS).map(([g, ps]) => `${g}: ${ps.join(", ")}`).join("; "),
+    patterns: PATTERNS.join("|"),
+  };
+}
+
+/** The stable, cacheable system prompt: rules plus the action catalog. Identical for every campaign with the same material list. */
+export function buildDmSystem(opts: DmSystemOptions = {}): string {
+  const vars: Record<string, string> = {
     check_tags: CHECK_TAGS.join(", "),
     conditions: CONDITIONS.join(", "),
-    biomes: BIOMES.join("|"),
     room_types: ROOM_TYPES.join("|"),
-  });
-  return cachedSystem;
+    ...catalogVars(opts.materialIds),
+  };
+  const key = vars.material_ids!;
+  let hit = systemCache.get(key);
+  if (hit === undefined) {
+    hit = renderTemplate(loadPrompt("dm-system"), vars);
+    systemCache.set(key, hit);
+  }
+  return hit;
 }
 
 export function buildDmContext(pack: DmContextPack): { system: string; user: string } {
@@ -101,7 +128,7 @@ export function buildDmContext(pack: DmContextPack): { system: string; user: str
 
   const sc = pack.scene;
   s.push(
-    `<scene map_id="${attr(sc.mapId)}" biome="${attr(sc.biome)}">`,
+    `<scene map_id="${attr(sc.mapId)}" setting="${attr(sc.setting)}">`,
     `Description: ${sc.description}`,
     "Entities:",
     ...(sc.entities.length

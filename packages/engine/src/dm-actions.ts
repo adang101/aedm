@@ -307,7 +307,7 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
 
     case "generate_map": {
       out.mapBriefs.push(a.brief);
-      emit(m, { type: "map_requested", biome: a.brief.biome });
+      emit(m, { type: "map_requested", setting: a.brief.setting.name });
       return undefined;
     }
 

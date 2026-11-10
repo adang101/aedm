@@ -1,4 +1,4 @@
-import type { Ability } from "@aedm/schemas";
+import { spriteSwatch, type Ability } from "@aedm/schemas";
 import { myCharacter, myEntity, nameOf, pendingLevelUp, type AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
 
@@ -56,7 +56,7 @@ export function createHud(cb: HudCallbacks): Hud {
       replaceChildren(strip, ...combat.order.map((o) => {
         const e = s.entities[o.entity_id];
         const isActive = o.entity_id === combat.active_id;
-        const sp = e?.sprite;
+        const sp = e ? spriteSwatch(e.sprite, e.name) : undefined;
         return h("div", { class: `init-item ${e?.kind ?? ""}${isActive ? " active" : ""}`, title: `${e?.name ?? o.entity_id}: initiative ${o.initiative}` },
           h("span", { class: "init-dot", style: sp ? `background:${sp.color};border-color:${sp.accent}` : "" }, sp?.glyph ?? "?"),
           h("span", { class: "init-name" }, e?.name ?? o.entity_id),

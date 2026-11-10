@@ -1,6 +1,7 @@
 import { MapBriefSchema } from "@aedm/schemas";
 import type { Biome, GameMap, InteractableKind, MapBrief, MapObject, Room } from "@aedm/schemas";
 import { MapRng } from "./prng";
+import { legacyBiome, legacyInlineTileset } from "./compat";
 import { gidOf, hasTile } from "./tileset";
 import { validateMap } from "./validate";
 
@@ -50,8 +51,9 @@ class Builder {
   readonly biome: Biome;
 
   constructor(readonly brief: MapBrief, readonly rng: MapRng) {
-    this.biome = brief.biome;
-    this.indoor = INDOOR.has(brief.biome);
+    // Compatibility shim: the v2 setting is reduced to one of the five old biomes.
+    this.biome = legacyBiome(brief.setting);
+    this.indoor = INDOOR.has(this.biome);
     const [lo, hi] = SIZE_RANGE[brief.size_class];
     this.w = rng.int(lo, hi);
     this.h = rng.int(lo, hi);
@@ -538,12 +540,12 @@ class Builder {
 
   toMap(id: string, seed: number, generatedAt: string): GameMap {
     return {
-      v: 1,
+      v: 2,
       id,
       width: this.w,
       height: this.h,
       tile_size: 48,
-      tilesets: [{ asset_id: "ts_blocks", first_gid: 1 }],
+      tileset: legacyInlineTileset(),
       layers: [
         { type: "tilelayer", name: "ground", data: this.ground },
         { type: "tilelayer", name: "walls", data: this.walls },
@@ -551,7 +553,16 @@ class Builder {
         { type: "tilelayer", name: "above", data: this.above },
         { type: "objectgroup", name: "objects", objects: this.objects },
       ],
-      meta: { biome: this.biome, theme_tags: [...this.brief.theme_tags], seed, generated_at: generatedAt },
+      meta: {
+        setting: {
+          name: this.brief.setting.name,
+          ...(this.brief.setting.preset ? { preset: this.brief.setting.preset } : {}),
+          layout: this.brief.setting.layout,
+          environment: this.brief.setting.environment,
+          mood: this.brief.setting.mood,
+        },
+        theme_tags: [...this.brief.theme_tags], seed, generated_at: generatedAt,
+      },
     };
   }
 }

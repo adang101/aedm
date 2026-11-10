@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AbilityDraftSchema, AbilitySchema } from "./ability";
 import { ConditionSchema, DamageTypeSchema, EnemyRoleSchema } from "./enums";
+import { AppearanceSchema } from "./sprite";
 import { DiceSchema, EnemyIdSchema, shortWord, text } from "./common";
 
 export const EnemyStatsSchema = z.strictObject({
@@ -25,6 +26,8 @@ const enemyFields = {
   behavior: z.array(text(80)).min(2).max(3),
   loot_hint: text(80, 0).default(""),
   sprite_tags: z.array(shortWord).max(5).default([]),
+  /** Look hint for the sprite designer (concept plus appearance). */
+  appearance: AppearanceSchema.optional(),
 };
 
 export const EnemySchema = z

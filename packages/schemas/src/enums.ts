@@ -27,6 +27,7 @@ export const TERRAIN_KINDS = ["wall", "fire", "trap", "smoke"] as const;
 export const TerrainKindSchema = z.enum(TERRAIN_KINDS);
 export type TerrainKind = z.infer<typeof TerrainKindSchema>;
 
+/** Legacy: the five original biomes. Maps and briefs no longer carry one (they carry `setting`); the engine's compatibility generator still maps a preset to one of these. */
 export const BIOMES = ["forest", "dungeon", "desert", "town", "interior"] as const;
 export const BiomeSchema = z.enum(BIOMES);
 export type Biome = z.infer<typeof BiomeSchema>;
@@ -89,7 +90,9 @@ export const ADVANTAGES = ["none", "advantage", "disadvantage"] as const;
 export const AdvantageSchema = z.enum(ADVANTAGES);
 export type Advantage = z.infer<typeof AdvantageSchema>;
 
-export const ROOM_TYPES = ["hall", "chamber", "corridor", "courtyard", "cave", "outdoor"] as const;
+export const ROOM_TYPES = [
+  "hall", "chamber", "corridor", "courtyard", "cave", "outdoor", "street", "deck", "vault", "garden", "shore",
+] as const;
 export const RoomTypeSchema = z.enum(ROOM_TYPES);
 export type RoomType = z.infer<typeof RoomTypeSchema>;
 
@@ -133,3 +136,25 @@ export type PlayerStatus = z.infer<typeof PlayerStatusSchema>;
 export const SPRITE_SHAPES = ["circle", "square", "diamond", "triangle", "hex"] as const;
 export const SpriteShapeSchema = z.enum(SPRITE_SHAPES);
 export type SpriteShape = z.infer<typeof SpriteShapeSchema>;
+
+/** Named shortcuts that fill missing materials. The first five are the old biomes; their data lives in the engine. */
+export const SETTING_PRESETS = [
+  "forest", "dungeon", "desert", "town", "interior",
+  "cave", "swamp", "snowfield", "mountain_pass", "ruins", "temple", "castle", "ship_deck", "sewer",
+  "volcanic", "crypt", "library", "market", "farmland", "beach",
+] as const;
+export const SettingPresetSchema = z.enum(SETTING_PRESETS);
+export type SettingPreset = z.infer<typeof SettingPresetSchema>;
+
+/** The layout generators. Every setting picks the closest one. */
+export const LAYOUTS = ["rooms_and_corridors", "cave", "open_field", "settlement", "trail", "arena", "maze", "islands"] as const;
+export const LayoutSchema = z.enum(LAYOUTS);
+export type Layout = z.infer<typeof LayoutSchema>;
+
+export const ENVIRONMENTS = ["indoor", "outdoor", "underground"] as const;
+export const EnvironmentSchema = z.enum(ENVIRONMENTS);
+export type Environment = z.infer<typeof EnvironmentSchema>;
+
+export const MOODS = ["bright", "neutral", "dim", "dark", "eerie"] as const;
+export const MoodSchema = z.enum(MOODS);
+export type Mood = z.infer<typeof MoodSchema>;

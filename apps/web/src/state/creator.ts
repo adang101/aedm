@@ -4,6 +4,7 @@ import {
 } from "@aedm/schemas";
 import { ACCENT_SWATCHES, BODY_SWATCHES } from "../render/palette";
 import { POINT_BUY_BUDGET, baseScores, pointsLeft, type Scores } from "./pointbuy";
+import { asShape } from "../render/shape-fallback";
 
 export interface CreatorForm {
   name: string;
@@ -114,7 +115,7 @@ const PREMADE_TEXTS: Record<string, string[]> = {
 
 export function premadeForms(): { label: string; form: CreatorForm }[] {
   return fixtures.SPIKE_PARTY.map((c) => {
-    const sprite = c.sprite_recipe;
+    const sprite = asShape(c.sprite_recipe, c.name);
     return {
       label: c.name.split(" ")[0] ?? c.name,
       form: {

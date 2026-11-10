@@ -276,7 +276,7 @@ describe("quests, scenes, maps, chips", () => {
   it("generate_map and create_enemy are handed back to the server", () => {
     const { state } = makeWorld();
     const brief: MapBrief = {
-      biome: "interior", theme_tags: ["lighthouse"], size_class: "small",
+      setting: { name: "Lighthouse", preset: "interior", layout: "rooms_and_corridors", environment: "indoor", mood: "dim" }, theme_tags: ["lighthouse"], size_class: "small",
       rooms: [{ id: "r1", type: "hall", size: "small", connects_to: [] }], points_of_interest: [], entity_slots: [],
       exits: [{ side: "south", label: "door" }],
     };

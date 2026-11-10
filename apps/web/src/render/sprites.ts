@@ -1,6 +1,7 @@
 import type { Condition, EntityView, SpriteRecipe } from "@aedm/schemas";
 import { SPRITE_H, SPRITE_W, TILE } from "./camera";
 import { OUTLINE, hashString, readableOn } from "./palette";
+import { asShape } from "./shape-fallback";
 
 type Ctx = CanvasRenderingContext2D;
 type Shape = Extract<SpriteRecipe, { kind: "shape" }>["shape"];
@@ -132,7 +133,8 @@ export function drawEntity(ctx: Ctx, e: EntityView, o: EntityDrawOpts): void {
 
   // body
   ctx.translate(0, bob);
-  if (e.sprite.kind === "shape") drawShapeBody(ctx, e.sprite, fx + 24, fy + 40);
+  // Compatibility: `spec` sprites are drawn as their shape fallback until the part renderer exists.
+  drawShapeBody(ctx, asShape(e.sprite, e.name), fx + 24, fy + 40);
   ctx.translate(0, -bob);
 
   // enemy marker: small red chevron above the head

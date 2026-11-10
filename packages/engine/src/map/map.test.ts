@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BIOMES, MapBriefSchema, MapSchema, SIZE_CLASSES } from "@aedm/schemas";
 import type { GameMap, MapBrief } from "@aedm/schemas";
+import { legacyInlineTileset } from "./compat";
 import {
   STARTER_BRIEFS, TILESET_BLOCKS, distance, findFreeTileNear, findPath, generateMap, getObjects, getSpawn,
   hasLineOfSight, isWalkable, renderAscii, serializeSize, tileInfo, validateMap,
@@ -35,8 +36,8 @@ function blank(): GameMap {
   }
   const ground = new Array<number>(n).fill(1);
   return {
-    v: 1, id: "m_test", width: 20, height: 20, tile_size: 48,
-    tilesets: [{ asset_id: "ts_blocks", first_gid: 1 }],
+    v: 2, id: "m_test", width: 20, height: 20, tile_size: 48,
+    tileset: legacyInlineTileset(),
     layers: [
       { type: "tilelayer", name: "ground", data: ground },
       { type: "tilelayer", name: "walls", data: walls },
@@ -44,7 +45,7 @@ function blank(): GameMap {
       { type: "tilelayer", name: "above", data: new Array<number>(n).fill(0) },
       { type: "objectgroup", name: "objects", objects: [{ type: "spawn", name: "party_start", x: 2, y: 2 }] },
     ],
-    meta: { biome: "forest", theme_tags: [], seed: 1, generated_at: "1970-01-01T00:00:00Z" },
+    meta: { setting: { name: "Test field", preset: "forest", layout: "open_field", environment: "outdoor", mood: "bright" }, theme_tags: [], seed: 1, generated_at: "1970-01-01T00:00:00Z" },
   };
 }
 const wallsOf = (m: GameMap) => (m.layers[1] as { data: number[] }).data;
@@ -119,7 +120,7 @@ describe("generateMap", () => {
 
   it("handles the spike lighthouse brief and a marsh forest brief", () => {
     const lighthouse: MapBrief = {
-      biome: "interior", theme_tags: ["lighthouse"], size_class: "small",
+      setting: { name: "Lighthouse", preset: "interior", layout: "rooms_and_corridors", environment: "indoor", mood: "dim" }, theme_tags: ["lighthouse"], size_class: "small",
       rooms: [
         { id: "r1", type: "chamber", size: "medium", connects_to: ["r2"] },
         { id: "r2", type: "corridor", size: "small", connects_to: ["r3", "r4"] },
@@ -246,7 +247,7 @@ describe("validateMap catches each rule", () => {
     (m.layers[2] as { data: number[] }).data.pop();
     expect(validateMap(m).errors.join()).toContain("rule 1");
   });
-  it("rule 2: tile id out of range", () => {
+  it("rule 2: tile id without a TileDef", () => {
     const m = ok();
     (m.layers[0] as { data: number[] }).data[50] = 9999;
     expect(validateMap(m).errors.join()).toContain("rule 2");
@@ -288,7 +289,7 @@ describe("validateMap catches each rule", () => {
 describe("renderAscii", () => {
   it("renders a small generated map (snapshot)", () => {
     const brief: MapBrief = {
-      biome: "dungeon", theme_tags: [], size_class: "small",
+      setting: { name: "Crypt", preset: "dungeon", layout: "rooms_and_corridors", environment: "underground", mood: "dark" }, theme_tags: [], size_class: "small",
       rooms: [
         { id: "a", type: "chamber", size: "small", connects_to: ["b"] },
         { id: "b", type: "chamber", size: "small", connects_to: [] },
@@ -305,5 +306,26 @@ describe("renderAscii", () => {
     expect(art).toContain("E");
     expect(art).toContain("e");
     expect(art).toContain("c");
+  });
+});
+
+describe("compat shim (legacy tileset as v2)", () => {
+  it("legacyInlineTileset mirrors the block tileset gid for gid and parses in a v2 map", () => {
+    const ts = legacyInlineTileset();
+    expect(ts.first_gid).toBe(1);
+    expect(ts.tiles).toHaveLength(TILESET_BLOCKS.tiles.length);
+    for (const t of ts.tiles) {
+      expect(tileInfo(t.gid)?.name).toBe(t.material_id);
+      expect(tileInfo(t.gid)?.walkable).toBe(t.walkable);
+    }
+    expect(ts.tiles.find((t) => t.material_id === "door_wood")?.role).toBe("door");
+    expect(ts.tiles.find((t) => t.material_id === "water")?.role).toBe("liquid");
+    expect(ts.tiles.find((t) => t.material_id === "wall_stone")).toMatchObject({ role: "wall", blocks_sight: true });
+  });
+  it("generated maps are v2 with meta.setting copied from the brief", () => {
+    const { map } = generateMap({ ...STARTER_BRIEFS.town, setting: { name: "Gull Harbor", layout: "settlement", environment: "outdoor", mood: "bright" } }, { seed: 5, id: "m_x" });
+    expect(map.v).toBe(2);
+    expect(map.meta.setting).toEqual({ name: "Gull Harbor", layout: "settlement", environment: "outdoor", mood: "bright" });
+    expect(MapSchema.safeParse(map).success).toBe(true);
   });
 });

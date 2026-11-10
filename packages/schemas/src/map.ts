@@ -1,9 +1,10 @@
 import { z } from "zod";
 import {
-  BiomeSchema, EntitySlotRoleSchema, ExitSideSchema, InteractableKindSchema, InteractableStateSchema,
-  RoomTypeSchema, SizeClassSchema, SizeSchema,
+  EntitySlotRoleSchema, EnvironmentSchema, ExitSideSchema, InteractableKindSchema, InteractableStateSchema,
+  LayoutSchema, MoodSchema, RoomTypeSchema, SettingPresetSchema, SizeClassSchema, SizeSchema,
 } from "./enums";
-import { EntityIdSchema, MapIdSchema, TileCoord, shortWord, text } from "./common";
+import { EntityIdSchema, HexColorSchema, MapIdSchema, TileCoord, shortWord, text } from "./common";
+import { MaterialIdSchema, MaterialRefSchema, MaterialRoleSchema, PatternSchema } from "./material";
 
 const localId = z.string().trim().min(1).max(32).regex(/^[A-Za-z0-9_-]+$/, "invalid id");
 
@@ -15,6 +16,7 @@ export const RoomSchema = z.strictObject({
 });
 export type Room = z.infer<typeof RoomSchema>;
 
+/** `kind` is free text; the engine maps it to a decor material or an interactable. */
 export const PointOfInterestSchema = z.strictObject({ kind: text(24), room_id: localId });
 export const BriefEntitySlotSchema = z.strictObject({
   role: EntitySlotRoleSchema,
@@ -23,9 +25,51 @@ export const BriefEntitySlotSchema = z.strictObject({
 });
 export const BriefExitSchema = z.strictObject({ side: ExitSideSchema, label: text(40) });
 
+const refs = (max: number) => z.array(MaterialRefSchema).max(max).optional();
+
+/** Materials per role: a library id or an inline draft, in order of preference. A preset fills what is missing. */
+export const BriefMaterialsSchema = z.strictObject({
+  floor: refs(3),
+  path: refs(3),
+  wall: refs(3),
+  obstacle: refs(3),
+  liquid: refs(3),
+  hazard: refs(3),
+  decor: refs(6),
+});
+export type BriefMaterials = z.infer<typeof BriefMaterialsSchema>;
+
+export const DensitySchema = z.strictObject({
+  obstacles: z.number().int().min(0).max(3),
+  liquid: z.number().int().min(0).max(3),
+  hazards: z.number().int().min(0).max(3),
+});
+
+/** The open-ended description of a place. `layout` and `environment` are required; `preset` is only a shortcut. */
+export const SettingSchema = z.strictObject({
+  name: text(40),
+  preset: SettingPresetSchema.optional(),
+  layout: LayoutSchema,
+  environment: EnvironmentSchema,
+  mood: MoodSchema,
+  materials: BriefMaterialsSchema.optional(),
+  density: DensitySchema.optional(),
+});
+export type Setting = z.infer<typeof SettingSchema>;
+
+/** A setting reduced to what is stored on a map and in the asset store (no materials, no density). */
+export const SettingSpecSchema = z.strictObject({
+  name: text(40),
+  preset: SettingPresetSchema.optional(),
+  layout: LayoutSchema,
+  environment: EnvironmentSchema,
+  mood: MoodSchema,
+});
+export type SettingSpec = z.infer<typeof SettingSpecSchema>;
+
 export const MapBriefSchema = z
   .strictObject({
-    biome: BiomeSchema,
+    setting: SettingSchema,
     theme_tags: z.array(shortWord).max(4),
     size_class: SizeClassSchema,
     rooms: z.array(RoomSchema).min(1).max(12),
@@ -110,13 +154,35 @@ export type ObjectLayer = z.infer<typeof ObjectLayerSchema>;
 
 export const MapLayerSchema = z.discriminatedUnion("type", [TileLayerSchema, ObjectLayerSchema]);
 
-export const TilesetRefSchema = z.strictObject({
-  asset_id: EntityIdSchema,
-  first_gid: z.number().int().min(1),
+/** One resolved tile of the map's inline tileset. Colors are master palette colors. */
+export const TileDefSchema = z.strictObject({
+  gid: z.number().int().min(1),
+  material_id: MaterialIdSchema,
+  role: MaterialRoleSchema,
+  color: HexColorSchema,
+  accent: HexColorSchema,
+  pattern: PatternSchema,
+  walkable: z.boolean(),
+  blocks_sight: z.boolean(),
+  /** Visual variant of the same material (0 to 3), to break up repetition. */
+  variant: z.number().int().min(0).max(3),
+  layer: TileLayerNameSchema,
+  /** Where generated art plugs in later (M3). */
+  image_asset_id: z.string().trim().min(1).max(64).optional(),
 });
+export type TileDef = z.infer<typeof TileDefSchema>;
+
+export const MAX_TILEDEFS = 256;
+
+/** The tileset travels inside the map, so the client can draw any map with no fixed catalog. */
+export const InlineTilesetSchema = z.strictObject({
+  first_gid: z.literal(1),
+  tiles: z.array(TileDefSchema).min(1).max(MAX_TILEDEFS),
+});
+export type InlineTileset = z.infer<typeof InlineTilesetSchema>;
 
 export const MapMetaSchema = z.strictObject({
-  biome: BiomeSchema,
+  setting: SettingSpecSchema,
   theme_tags: z.array(shortWord).max(4),
   seed: z.number().int(),
   template_id: z.string().trim().min(1).max(64).optional(),
@@ -125,16 +191,21 @@ export const MapMetaSchema = z.strictObject({
 
 export const MapSchema = z
   .strictObject({
-    v: z.literal(1),
+    v: z.literal(2),
     id: MapIdSchema,
     width: z.number().int().min(20).max(60),
     height: z.number().int().min(20).max(60),
     tile_size: z.literal(48),
-    tilesets: z.array(TilesetRefSchema).min(1).max(4),
+    tileset: InlineTilesetSchema,
     layers: z.array(MapLayerSchema).length(5),
     meta: MapMetaSchema,
   })
   .superRefine((m, ctx) => {
+    const gids = new Set<number>();
+    m.tileset.tiles.forEach((t, i) => {
+      if (gids.has(t.gid)) ctx.addIssue({ code: "custom", message: `duplicate tile gid ${t.gid}`, path: ["tileset", "tiles", i, "gid"] });
+      gids.add(t.gid);
+    });
     const seen = new Set<string>();
     let objects: MapObject[] = [];
     m.layers.forEach((l, i) => {
@@ -143,6 +214,11 @@ export const MapSchema = z
       if (l.type === "tilelayer") {
         if (l.data.length !== m.width * m.height) {
           ctx.addIssue({ code: "custom", message: `layer ${l.name} data length ${l.data.length} != width*height ${m.width * m.height}`, path: ["layers", i, "data"] });
+        }
+        const missing = new Set<number>();
+        for (const g of l.data) if (g !== 0 && !gids.has(g)) missing.add(g);
+        if (missing.size > 0) {
+          ctx.addIssue({ code: "custom", message: `layer ${l.name} uses gid(s) without a TileDef: ${[...missing].slice(0, 5).join(", ")}`, path: ["layers", i, "data"] });
         }
       } else {
         objects = l.objects;

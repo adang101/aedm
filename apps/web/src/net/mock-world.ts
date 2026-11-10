@@ -1,4 +1,4 @@
-import type { EntityView, GameMap, MapObject } from "@aedm/schemas";
+import type { EntityView, GameMap, MapObject, TileDef } from "@aedm/schemas";
 import type { TilesetDesc } from "../render/tileset";
 
 export const MOCK_W = 30;
@@ -22,6 +22,23 @@ export const MOCK_TILESET: TilesetDesc = {
     { id: 11, name: "planks", color: "#c99a63", pattern: "stripes" },
   ],
 };
+
+/** Roles for the mock tiles, in MOCK_TILESET order. */
+const MOCK_ROLES: [TileDef["role"], TileDef["layer"], boolean][] = [
+  ["floor", "ground", true], ["floor", "ground", true], ["wall", "walls", false], ["liquid", "walls", false],
+  ["path", "ground", true], ["decor", "decor", true], ["door", "ground", true], ["decor", "decor", true],
+  ["decor", "decor", true], ["decor", "decor", true], ["floor", "ground", true],
+];
+
+/** The mock tileset as a v2 inline tileset. */
+const MOCK_TILEDEFS: TileDef[] = MOCK_TILESET.tiles.map((t, i): TileDef => {
+  const [role, layer, walkable] = MOCK_ROLES[i]!;
+  return {
+    gid: i + 1, material_id: (t.name ?? `tile_${i + 1}`).replace(/[^a-z0-9_]/g, "_"), role, color: t.color, accent: t.color,
+    pattern: t.pattern === "dots" || t.pattern === "stripes" || t.pattern === "cross" ? t.pattern : "none",
+    walkable, blocks_sight: role === "wall", variant: 0, layer,
+  };
+});
 
 const G = { grass: 1, flag: 2, wall: 3, water: 4, path: 5, barrel: 6, door: 7, torch: 8, bush: 9, crate: 10, plank: 11 };
 
@@ -74,8 +91,8 @@ export function buildMockMap(): GameMap {
   ];
 
   return {
-    v: 1, id: "m_hollowmere", width: MOCK_W, height: MOCK_H, tile_size: 48,
-    tilesets: [{ asset_id: "ts_blocks", first_gid: 1 }],
+    v: 2, id: "m_hollowmere", width: MOCK_W, height: MOCK_H, tile_size: 48,
+    tileset: { first_gid: 1, tiles: MOCK_TILEDEFS },
     layers: [
       { type: "tilelayer", name: "ground", data: ground },
       { type: "tilelayer", name: "walls", data: walls },
@@ -83,7 +100,7 @@ export function buildMockMap(): GameMap {
       { type: "tilelayer", name: "above", data: new Array<number>(n).fill(0) },
       { type: "objectgroup", name: "objects", objects },
     ],
-    meta: { biome: "town", theme_tags: ["marsh", "dusk"], seed: 1337, generated_at: "2026-01-01T00:00:00Z" },
+    meta: { setting: { name: "Hollowmere", preset: "town", layout: "settlement", environment: "outdoor", mood: "dim" }, theme_tags: ["marsh", "dusk"], seed: 1337, generated_at: "2026-01-01T00:00:00Z" },
   };
 }
 

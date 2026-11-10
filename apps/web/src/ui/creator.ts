@@ -1,4 +1,4 @@
-import { ABILITIES, CHECK_TAGS, SPRITE_SHAPES, type CheckTag, type SpriteShape } from "@aedm/schemas";
+import { ABILITIES, CHECK_TAGS, SPRITE_SHAPES, type CheckTag, type SpriteRecipe, type SpriteShape } from "@aedm/schemas";
 import { ACCENT_SWATCHES, BODY_SWATCHES } from "../render/palette";
 import { drawShapeBody } from "../render/sprites";
 import {
@@ -11,6 +11,7 @@ import {
 import type { AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
 import type { Ctx } from "./types";
+import { asShape } from "../render/shape-fallback";
 
 const ABILITY_NAMES: Record<string, string> = {
   str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma",
@@ -24,6 +25,11 @@ export function shapeIcon(shape: SpriteShape, color: string, accent: string, gly
     drawShapeBody(ctx, { kind: "shape", shape, color, accent, glyph }, 24, 24, 17);
   }
   return c;
+}
+
+export function recipeIcon(recipe: SpriteRecipe, name: string, size = 40): HTMLCanvasElement {
+  const s = asShape(recipe, name);
+  return shapeIcon(s.shape, s.color, s.accent, s.glyph, size);
 }
 
 export interface Creator {
@@ -181,7 +187,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
             onClaimed?.();
           }
         },
-      }, shapeIcon(c.sprite_recipe.shape, c.sprite_recipe.color, c.sprite_recipe.accent, c.sprite_recipe.glyph, 24), h("span", null, c.name)))),
+      }, recipeIcon(c.sprite_recipe, c.name, 24), h("span", null, c.name)))),
       h("p", { class: "muted" }, "Pick one to claim it, or build a new character below."));
   }
 

@@ -1134,7 +1134,7 @@ export class GameSession {
       const added = addMap(s, map);
       this.commit(added.state);
       this.publish(added.events);
-      this.room.broadcast("log", { kind: "system", text: `The way ahead takes shape: a ${map.meta.biome} area.` });
+      this.room.broadcast("log", { kind: "system", text: `The way ahead takes shape: ${map.meta.setting.name}.` });
       return id;
     } catch (err) {
       this.deps.logger.warn("[dm] map generation failed:", err instanceof Error ? err.message : String(err));
@@ -1154,14 +1154,14 @@ export class GameSession {
   /** A scene change is a safe break: the engine's rest restores HP and abilities. Also refreshes the scene note. */
   private afterSceneChange(): void {
     const map = currentMap(this.state);
-    if (map) this.sceneNote = `A ${map.meta.biome} location${map.meta.theme_tags.length ? ` (${map.meta.theme_tags.join(", ")})` : ""}, just reached by the party.`;
+    if (map) this.sceneNote = `The party has just reached ${map.meta.setting.name}${map.meta.theme_tags.length ? ` (${map.meta.theme_tags.join(", ")})` : ""}.`;
     if (this.state.combat) return;
     const r = rest(this.state, this.rng());
     if (r.ok) {
       this.commit(r.state);
       this.publish(r.events);
     }
-    this.pendingLines.push(`[engine: the party arrives at a new ${map?.meta.biome ?? ""} area (map ${map?.id ?? "?"})]`);
+    this.pendingLines.push(`[engine: the party arrives at a new area, ${map?.meta.setting.name ?? "unknown"} (map ${map?.id ?? "?"})]`);
   }
 
   /** Spawn positions are a placement detail, not a rules number: snap a blocked tile to the nearest free one. */

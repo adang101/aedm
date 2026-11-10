@@ -85,6 +85,7 @@ The DM can ask for any place or creature the story needs. It never draws tiles o
 ## Roadmap
 
 - **M0 (this slice):** schemas, engine core (rules, cost, threat, mapgen), LLM layer with fake provider, server with lobbies and the exploration loop, web client with lobby, map, chat and shapes.
+- **Content model contracts (done):** schemas, contracts and prompts for `SpriteSpec`, materials, palette, map brief v2 (`setting`), map v2 (inline tileset) and asset records are defined. Pending, in parallel: engine map generator and materials library (replacing the compatibility generator in `packages/engine/src/map/compat.ts`), sprite designer pipeline (`prompts/sprite-designer.md`, `buildSpriteDesignerPrompt`), and the web renderer for `spec` sprites and inline tilesets (replacing `apps/web/src/render/shape-fallback.ts`).
 - **M0 level-up (done):** engine `levelUpView`, `spendScorePoint`, `addAbilityToCharacter`, `replaceAbility`, `skipAbilityPick`, `addGrowth`; server `level_up_choice`; web modal, character sheet and mock scenario. Known gaps: no undo or respec; the power budget is not re-validated when an ability's level caps change; abilities can only be reforged one at a time (one pick each); `/dev grow` is the only way to level without the DM awarding growth; enemies do not scale to the extra abilities.
 - **M1:** full combat loop in the client, ability forge UI, enemy builder, saves and reload.
 - **M2:** memory (summaries, retrieval), evals in CI, content safety pass, mobile polish.

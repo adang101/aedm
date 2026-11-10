@@ -32,7 +32,7 @@ export type EngineEvent =
   | { type: "effect_failed"; entityId: string; abilityName: string; reason: string }
   | { type: "map_added"; mapId: string }
   | { type: "scene_changed"; mapId: string; entry: string }
-  | { type: "map_requested"; biome: string }
+  | { type: "map_requested"; setting: string }
   | { type: "entity_spawned"; entityId: string; name: string; archetypeId: string; x: number; y: number; mapId: string }
   | { type: "npc_created"; entityId: string; name: string; role: string; x: number; y: number }
   | { type: "npc_said"; entityId: string; name: string; text: string }
@@ -92,7 +92,7 @@ export function describeEvent(e: EngineEvent): string {
     case "effect_failed": return wrap(`${e.abilityName}: part of the effect failed (${e.reason})`);
     case "map_added": return wrap(`map ${e.mapId} is ready`);
     case "scene_changed": return wrap(`the party arrives at ${e.mapId} (${e.entry})`);
-    case "map_requested": return wrap(`a ${e.biome} map is being prepared`);
+    case "map_requested": return wrap(`a map of ${e.setting} is being prepared`);
     case "entity_spawned": return wrap(`${e.name} appears at (${e.x},${e.y})`);
     case "npc_created": return wrap(`${e.name} (${e.role}) is here at (${e.x},${e.y})`);
     case "npc_said": return wrap(`${e.name} says: ${e.text}`);

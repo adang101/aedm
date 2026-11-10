@@ -3,7 +3,7 @@ import type { Biome, MapBrief } from "@aedm/schemas";
 /** Ready-made briefs, used when a campaign starts before the DM has generated any map. */
 export const STARTER_BRIEFS: Record<Biome, MapBrief> = {
   town: {
-    biome: "town",
+    setting: { name: "Harbor town", preset: "town", layout: "settlement", environment: "outdoor", mood: "neutral" },
     theme_tags: ["coastal", "fog"],
     size_class: "medium",
     rooms: [
@@ -28,7 +28,7 @@ export const STARTER_BRIEFS: Record<Biome, MapBrief> = {
     ],
   },
   forest: {
-    biome: "forest",
+    setting: { name: "Marsh forest", preset: "forest", layout: "open_field", environment: "outdoor", mood: "dim" },
     theme_tags: ["marsh", "fog"],
     size_class: "medium",
     rooms: [
@@ -51,7 +51,7 @@ export const STARTER_BRIEFS: Record<Biome, MapBrief> = {
     ],
   },
   dungeon: {
-    biome: "dungeon",
+    setting: { name: "Old crypt", preset: "dungeon", layout: "rooms_and_corridors", environment: "underground", mood: "dark" },
     theme_tags: ["crypt"],
     size_class: "medium",
     rooms: [
@@ -75,7 +75,7 @@ export const STARTER_BRIEFS: Record<Biome, MapBrief> = {
     exits: [{ side: "north", label: "Stairs Up" }],
   },
   desert: {
-    biome: "desert",
+    setting: { name: "Dune oasis", preset: "desert", layout: "open_field", environment: "outdoor", mood: "bright" },
     theme_tags: ["dunes"],
     size_class: "medium",
     rooms: [
@@ -98,7 +98,7 @@ export const STARTER_BRIEFS: Record<Biome, MapBrief> = {
     ],
   },
   interior: {
-    biome: "interior",
+    setting: { name: "Lighthouse interior", preset: "interior", layout: "rooms_and_corridors", environment: "indoor", mood: "dim" },
     theme_tags: ["lighthouse"],
     size_class: "small",
     rooms: [

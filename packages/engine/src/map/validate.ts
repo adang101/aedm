@@ -1,10 +1,7 @@
 import type { GameMap } from "@aedm/schemas";
 import { getObjects, groundOf, key, serializeSize, wallsOf } from "./nav";
-import { TILESET_BLOCKS, TILESET_BLOCKS_COUNT, tileInfo } from "./tileset";
 
 export const MAX_MAP_BYTES = 250 * 1024;
-
-const FALLBACK_TILESET_SIZE = 1024;
 
 /** The 7 rules from docs/contracts.md "Map JSON". Returns every failure found. */
 export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
@@ -21,17 +18,12 @@ export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
     }
   }
 
-  // 2. tile ids inside a tileset range
-  const sets = [...map.tilesets].sort((a, b) => a.first_gid - b.first_gid);
-  const ranges = sets.map((t, i) => {
-    const size = t.asset_id === TILESET_BLOCKS.asset_id ? TILESET_BLOCKS_COUNT : FALLBACK_TILESET_SIZE;
-    const next = sets[i + 1]?.first_gid ?? Infinity;
-    return [t.first_gid, Math.min(t.first_gid + size - 1, next - 1)] as const;
-  });
+  // 2. every non-zero tile id has a TileDef in the inline tileset
+  const defs = new Map(map.tileset.tiles.map((t) => [t.gid, t]));
   for (const l of layers) {
     let bad = 0;
-    for (const v of l.data) if (v !== 0 && !ranges.some(([lo, hi]) => v >= lo && v <= hi)) bad++;
-    if (bad > 0) errors.push(`rule 2: layer ${l.name} has ${bad} tile id(s) outside every tileset range`);
+    for (const v of l.data) if (v !== 0 && !defs.has(v)) bad++;
+    if (bad > 0) errors.push(`rule 2: layer ${l.name} has ${bad} tile id(s) without a TileDef`);
   }
 
   const objects = getObjects(map);
@@ -99,7 +91,7 @@ export function validateMap(map: GameMap): { ok: boolean; errors: string[] } {
       continue;
     }
     const onBoundary = o.x === 0 || o.y === 0 || o.x === w - 1 || o.y === h - 1;
-    const isDoor = (tileInfo(ground[o.y * w + o.x] ?? 0)?.name ?? "").startsWith("door");
+    const isDoor = defs.get(ground[o.y * w + o.x] ?? 0)?.role === "door";
     if (!onBoundary && !isDoor) errors.push(`rule 6: exit ${o.name} at ${o.x},${o.y} is neither on the boundary nor a door tile`);
   }
 
