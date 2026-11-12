@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createProviderFromEnv } from "./from-env";
 
 describe("createProviderFromEnv", () => {
@@ -16,5 +16,29 @@ describe("createProviderFromEnv", () => {
   });
   it("rejects an unknown provider", () => {
     expect(() => createProviderFromEnv({ AEDM_LLM_PROVIDER: "nope", GEMINI_API_KEY: "SECRET" })).toThrow(/Unknown AEDM_LLM_PROVIDER "nope"/);
+  });
+  describe("AEDM_GEMINI_THINKING", () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const base = { AEDM_LLM_PROVIDER: "gemini", GEMINI_API_KEY: "k" };
+    it("accepts a level or off, and unset", () => {
+      for (const v of [undefined, "", "minimal", "low", "medium", "high", "off"]) {
+        expect(createProviderFromEnv({ ...base, AEDM_GEMINI_THINKING: v }).name).toBe("gemini");
+      }
+    });
+    it("rejects anything else", () => {
+      expect(() => createProviderFromEnv({ ...base, AEDM_GEMINI_THINKING: "max" })).toThrow(/AEDM_GEMINI_THINKING/);
+    });
+    it("reaches the request body", async () => {
+      const seen: string[] = [];
+      vi.stubGlobal("fetch", async (_u: string, init: RequestInit) => { seen.push(init.body as string); return new Response("", { status: 500 }); });
+      const run = async (v: string) => {
+        const provider = createProviderFromEnv({ ...base, AEDM_GEMINI_THINKING: v });
+        await provider.complete({ tier: "standard", purpose: "dm", system: "s", messages: [{ role: "user", content: "h" }] }).catch(() => undefined);
+      };
+      await run("high");
+      await run("off");
+      expect(seen[0]).toContain('"thinkingLevel":"high"');
+      expect(seen[1]).not.toContain("thinkingConfig");
+    });
   });
 });

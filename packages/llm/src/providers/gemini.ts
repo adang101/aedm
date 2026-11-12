@@ -17,22 +17,31 @@ export interface GeminiProviderOptions {
   /** Injected for tests. Defaults to the global fetch. */
   fetch?: typeof fetch;
   baseUrl?: string;
+  /**
+   * Thinking effort for gemini-3 models (their default is "high", and thinking tokens count against maxOutputTokens).
+   * Defaults to "low". null leaves the model default.
+   */
+  thinkingLevel?: GeminiThinkingLevel | null;
 }
+
+export type GeminiThinkingLevel = "minimal" | "low" | "medium" | "high";
+export const GEMINI_THINKING_LEVELS: readonly GeminiThinkingLevel[] = ["minimal", "low", "medium", "high"];
 
 interface GeminiChunk {
   candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; finishReason?: string }[];
-  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; cachedContentTokenCount?: number };
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; cachedContentTokenCount?: number };
   promptFeedback?: { blockReason?: string };
   modelVersion?: string;
 }
 
 const REFUSAL_REASONS = new Set(["SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "IMAGE_SAFETY", "RECITATION"]);
 
-export function buildGeminiBody(req: ModelRequest): Record<string, unknown> {
+export function buildGeminiBody(req: ModelRequest, model: string, thinkingLevel: GeminiThinkingLevel | null): Record<string, unknown> {
+  const thinking = thinkingLevel && model.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel } } : {};
   return {
     systemInstruction: { parts: [{ text: req.system }] },
     contents: req.messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
-    generationConfig: { maxOutputTokens: req.maxTokens ?? 4000 },
+    generationConfig: { maxOutputTokens: req.maxTokens ?? 4000, ...thinking },
   };
 }
 
@@ -86,6 +95,7 @@ export function createGeminiProvider(options: GeminiProviderOptions): ModelProvi
   const models = { ...DEFAULT_GEMINI_MODELS, ...options.models };
   const doFetch = options.fetch ?? fetch;
   const baseUrl = options.baseUrl ?? BASE_URL;
+  const thinkingLevel = options.thinkingLevel === undefined ? "low" : options.thinkingLevel;
   if (!options.apiKey) throw new Error("createGeminiProvider needs an apiKey");
 
   return {
@@ -97,7 +107,7 @@ export function createGeminiProvider(options: GeminiProviderOptions): ModelProvi
         res = await doFetch(`${baseUrl}/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
           method: "POST",
           headers: { "content-type": "application/json", "x-goog-api-key": options.apiKey },
-          body: JSON.stringify(buildGeminiBody(req)),
+          body: JSON.stringify(buildGeminiBody(req, model, thinkingLevel)),
           ...(opts.signal ? { signal: opts.signal } : {}),
         });
       } catch (err) {
@@ -129,6 +139,7 @@ export function createGeminiProvider(options: GeminiProviderOptions): ModelProvi
         if (err instanceof Error && err.name === "AbortError") throw new LlmError("Request aborted", "aborted", false, { cause: err });
         throw new LlmError("The model provider connection dropped", "network", true, { cause: err });
       }
+      if (finish === "MAX_TOKENS" && text === "") throw new LlmError("The model used its whole output budget before answering", "api", false);
       if (finish && REFUSAL_REASONS.has(finish) && text === "") throw new RefusalError();
       return {
         text,
@@ -137,7 +148,7 @@ export function createGeminiProvider(options: GeminiProviderOptions): ModelProvi
           ? {
               usage: {
                 inputTokens: usage.promptTokenCount ?? 0,
-                outputTokens: usage.candidatesTokenCount ?? 0,
+                outputTokens: (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
                 ...(usage.cachedContentTokenCount ? { cacheReadTokens: usage.cachedContentTokenCount } : {}),
               },
             }

@@ -8,6 +8,14 @@ Hosts the whole game: static client, WebSocket endpoint and storage. The Node se
 pnpm dev:edge        # http://localhost:8787 (wrangler picks a port; the client uses same-origin /ws)
 ```
 
+Wrangler reads `apps/edge/.dev.vars` and it overrides `vars` in `wrangler.jsonc`. `wrangler.jsonc` sets the provider to `gemini`, so copy the example first or every connection fails:
+
+```
+cp apps/edge/.dev.vars.example apps/edge/.dev.vars
+```
+
+The example uses the scripted offline DM (`AEDM_LLM_PROVIDER=fake`). To try a real model locally, set `AEDM_LLM_PROVIDER=gemini` and `GEMINI_API_KEY` in `.dev.vars`.
+
 Local state lives in `apps/edge/.wrangler/state`. Delete that folder to reset accounts and saves.
 
 ## Deploy (free plan, `*.workers.dev` URL)
@@ -15,12 +23,26 @@ Local state lives in `apps/edge/.wrangler/state`. Delete that folder to reset ac
 1. Create a free Cloudflare account.
 2. `pnpm --filter @aedm/edge exec wrangler login`
 3. `pnpm deploy:edge`. The first deploy prints your `https://aedm.<subdomain>.workers.dev` URL.
-4. For a real model, store its key as a secret and pick the provider:
-   - Gemini: `pnpm --filter @aedm/edge exec wrangler secret put GEMINI_API_KEY`, then set `AEDM_LLM_PROVIDER` to `gemini` in `wrangler.jsonc` and deploy again.
-   - Anthropic: same with `ANTHROPIC_API_KEY` and `anthropic`.
-   - Gemini model names change often. Override a tier with the plain variables `AEDM_GEMINI_MODEL_FAST`, `AEDM_GEMINI_MODEL_STANDARD` and `AEDM_GEMINI_MODEL_STRONG` in `wrangler.jsonc` `vars`.
+4. Store the Gemini key as a secret: `pnpm --filter @aedm/edge exec wrangler secret put GEMINI_API_KEY`. `wrangler.jsonc` already sets `AEDM_LLM_PROVIDER` to `gemini`.
 
-Without step 4 the game uses the scripted offline DM. Never put a key in `wrangler.jsonc` or the repo.
+Without the secret, connections fail with "The game server is misconfigured." Set `AEDM_LLM_PROVIDER` to `fake` for the scripted offline DM. Never put a key in `wrangler.jsonc` or the repo.
+
+Optional plain variables in `wrangler.jsonc` `vars`:
+
+- Gemini model names change often. Override a tier with `AEDM_GEMINI_MODEL_FAST`, `AEDM_GEMINI_MODEL_STANDARD` and `AEDM_GEMINI_MODEL_STRONG`.
+- `AEDM_GEMINI_THINKING` sets the thinking level of Gemini 3 models: `minimal`, `low` (default), `medium`, `high`, or `off` for the model default. Thinking tokens count against the output limit, so higher levels can leave too little room for the answer.
+- For Anthropic instead, set the `ANTHROPIC_API_KEY` secret and `AEDM_LLM_PROVIDER` to `anthropic`.
+
+## Git-connected builds (Workers Builds)
+
+If the Worker is connected to this GitHub repo in the Cloudflare dashboard (Settings, Build), use:
+
+- Root directory: `/`
+- Build command: `pnpm build:web`
+- Deploy command: `pnpm --filter @aedm/edge exec wrangler deploy`
+- Non-production branch deploy command: `pnpm --filter @aedm/edge exec wrangler deploy --dry-run`
+
+The dry run bundles the Worker on every pull request without deploying it. A real preview would need a separate Durable Object setup, so PR builds only check that the Worker bundles. Plain `npx wrangler ...` from the repo root downloads a separate wrangler and runs outside `apps/edge`, so it does not use this folder's `wrangler.jsonc` the way `pnpm --filter @aedm/edge exec` does.
 
 ## Custom domain later
 
