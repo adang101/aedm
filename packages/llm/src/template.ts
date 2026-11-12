@@ -2,6 +2,14 @@ import { readFileSync } from "node:fs";
 
 const cache = new Map<string, string>();
 
+/**
+ * Supplies prompt texts directly, for hosts with no readable file system (Cloudflare Workers bundle the .md files as text).
+ * Anything registered wins over the file read.
+ */
+export function registerPrompts(prompts: Record<string, string>): void {
+  for (const [name, text] of Object.entries(prompts)) cache.set(name, text);
+}
+
 /** Reads packages/llm/prompts/<name>.md (relative to this module, never __dirname). */
 export function loadPrompt(name: string): string {
   const hit = cache.get(name);

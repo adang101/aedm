@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { FsKv, type KvBackend } from "../kv";
 import {
   CharacterCreateSchema, MAX_SAVED_CHARACTERS, PASSWORD_MAX, PASSWORD_MIN, USERNAME_PATTERN,
   type Ability, type AuthUser, type CharacterCreate, type CharacterSummary,
@@ -89,8 +88,10 @@ interface UsersFile { v: 1; users: UserRecord[] }
 interface SessionsFile { v: 1; sessions: SessionRecord[] }
 
 export interface JsonAccountStoreOptions {
-  /** Folder for users.json and sessions.json (created on first write, mode 0700). */
-  dir: string;
+  /** Folder for users.json and sessions.json (created on first write, mode 0700). Ignored when `kv` is given. */
+  dir?: string;
+  /** Where users.json and sessions.json live. Defaults to files in `dir`. */
+  kv?: KvBackend;
   clock?: () => number;
 }
 
@@ -102,19 +103,19 @@ export class JsonAccountStore implements AccountStore {
   private readonly byName = new Map<string, UserRecord>();
   private sessions: SessionRecord[] = [];
   private queue: Promise<void> = Promise.resolve();
+  private readonly kv: KvBackend;
 
-  constructor(private readonly opts: JsonAccountStoreOptions) {
+  constructor(opts: JsonAccountStoreOptions) {
     this.clock = opts.clock ?? Date.now;
+    if (!opts.kv && !opts.dir) throw new Error("JsonAccountStore needs a dir or a kv");
+    this.kv = opts.kv ?? new FsKv(opts.dir as string);
   }
-
-  private get usersFile(): string { return join(this.opts.dir, "users.json"); }
-  private get sessionsFile(): string { return join(this.opts.dir, "sessions.json"); }
 
   private load(): Promise<void> {
     this.loaded ??= (async () => {
-      const users = await readJson<UsersFile>(this.usersFile);
+      const users = await readJson<UsersFile>(this.kv, "users.json");
       for (const u of users?.users ?? []) this.index(u);
-      const sess = await readJson<SessionsFile>(this.sessionsFile);
+      const sess = await readJson<SessionsFile>(this.kv, "sessions.json");
       const now = this.clock();
       this.sessions = (sess?.sessions ?? []).filter((s) => s.expires_at > now && this.byId.has(s.user_id));
     })();
@@ -129,14 +130,11 @@ export class JsonAccountStore implements AccountStore {
   /** Atomic write (temp file, then rename). Writes run one at a time and serialize the state as of their turn. */
   private persist(which: "users" | "sessions"): Promise<void> {
     const job = this.queue.then(async () => {
-      await mkdir(this.opts.dir, { recursive: true, mode: 0o700 });
-      const file = which === "users" ? this.usersFile : this.sessionsFile;
+      const key = which === "users" ? "users.json" : "sessions.json";
       const data = which === "users"
         ? ({ v: 1, users: [...this.byId.values()] } satisfies UsersFile)
         : ({ v: 1, sessions: this.sessions } satisfies SessionsFile);
-      const tmp = `${file}.tmp`;
-      await writeFile(tmp, JSON.stringify(data), { encoding: "utf8", mode: 0o600 });
-      await rename(tmp, file);
+      await this.kv.put(key, JSON.stringify(data));
     });
     this.queue = job.catch(() => undefined);
     return job;
@@ -261,11 +259,7 @@ export class JsonAccountStore implements AccountStore {
   }
 }
 
-async function readJson<T>(file: string): Promise<T | null> {
-  try {
-    return JSON.parse(await readFile(file, "utf8")) as T;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
+async function readJson<T>(kv: KvBackend, key: string): Promise<T | null> {
+  const raw = await kv.get(key);
+  return raw === null ? null : (JSON.parse(raw) as T);
 }

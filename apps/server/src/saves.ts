@@ -1,5 +1,4 @@
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { FsKv, type KvBackend } from "./kv";
 import type { GameState } from "@aedm/engine";
 import type { CampaignInfo, RoomSettings } from "@aedm/schemas";
 import type { RecentTurn } from "./context";
@@ -32,71 +31,68 @@ export interface SaveFile {
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 export const isSafeId = (s: string): boolean => SAFE_ID.test(s);
 
-/** Writes atomically (temp file, then rename). */
-export async function writeSave(dir: string, roomId: string, saveId: string, data: SaveFile): Promise<string> {
-  if (!isSafeId(roomId) || !isSafeId(saveId)) throw new Error("unsafe save id");
-  const roomDir = join(dir, roomId);
-  await mkdir(roomDir, { recursive: true });
-  const file = join(roomDir, `${saveId}.json`);
-  const tmp = `${file}.tmp`;
-  await writeFile(tmp, JSON.stringify(data), "utf8");
-  await rename(tmp, file);
-  return file;
-}
+const SAVE_KEY = /^([A-Za-z0-9_-]{1,64})\/([A-Za-z0-9_-]{1,64})\.json$/;
+const saveKey = (roomId: string, saveId: string): string => `${roomId}/${saveId}.json`;
 
-/** Finds `<saveId>.json` in the room's folder first, then in any room folder. */
-export async function readSave(dir: string, roomId: string, saveId: string): Promise<SaveFile | null> {
-  if (!isSafeId(saveId)) return null;
-  const candidates: string[] = [];
-  if (isSafeId(roomId)) candidates.push(join(dir, roomId, `${saveId}.json`));
+function parseSave(text: string | null): SaveFile | null {
+  if (text === null) return null;
   try {
-    for (const d of await readdir(dir, { withFileTypes: true })) {
-      if (d.isDirectory() && isSafeId(d.name)) candidates.push(join(dir, d.name, `${saveId}.json`));
-    }
-  } catch {
-    /* no save directory yet */
-  }
-  for (const file of candidates) {
-    try {
-      const parsed = JSON.parse(await readFile(file, "utf8")) as SaveFile;
-      if (parsed.v === SAVE_VERSION && parsed.state) return parsed;
-    } catch {
-      /* try the next candidate */
-    }
-  }
-  return null;
-}
-
-/** Reads exactly `<dir>/<roomId>/<saveId>.json`. */
-export async function readSaveExact(dir: string, roomId: string, saveId: string): Promise<SaveFile | null> {
-  if (!isSafeId(roomId) || !isSafeId(saveId)) return null;
-  try {
-    const parsed = JSON.parse(await readFile(join(dir, roomId, `${saveId}.json`), "utf8")) as SaveFile;
+    const parsed = JSON.parse(text) as SaveFile;
     return parsed.v === SAVE_VERSION && parsed.state ? parsed : null;
   } catch {
     return null;
   }
 }
 
-/**
- * Saves owned by `userId`, newest first: per campaign the latest autosave plus every named save.
- * Scans the save folders (fine at this size; a database would index it).
- */
-export async function listOwnedSaves(dir: string, userId: string): Promise<CampaignInfo[]> {
-  const found: { info: CampaignInfo; campaign: string; saved: number }[] = [];
-  let rooms: string[];
-  try {
-    rooms = (await readdir(dir, { withFileTypes: true })).filter((d) => d.isDirectory() && isSafeId(d.name)).map((d) => d.name);
-  } catch {
-    return [];
+/** Everything the server needs from save storage. */
+export interface SaveStore {
+  /** Replaces `<roomId>/<saveId>` atomically. */
+  write(roomId: string, saveId: string, data: SaveFile): Promise<void>;
+  /** Finds the save in the room's folder first, then in any room's. */
+  read(roomId: string, saveId: string): Promise<SaveFile | null>;
+  /** Exactly `<roomId>/<saveId>`. */
+  readExact(roomId: string, saveId: string): Promise<SaveFile | null>;
+  /** Saves owned by `userId`, newest first: per campaign the latest autosave plus every named save. */
+  listOwned(userId: string): Promise<CampaignInfo[]>;
+}
+
+/** Saves as `<roomId>/<saveId>.json` values in any KvBackend (files on Node, Durable Object storage on Cloudflare). */
+export class KvSaveStore implements SaveStore {
+  constructor(private readonly kv: KvBackend) {}
+
+  async write(roomId: string, saveId: string, data: SaveFile): Promise<void> {
+    if (!isSafeId(roomId) || !isSafeId(saveId)) throw new Error("unsafe save id");
+    await this.kv.put(saveKey(roomId, saveId), JSON.stringify(data));
   }
-  for (const roomId of rooms) {
-    let files: string[];
-    try { files = (await readdir(join(dir, roomId))).filter((f) => f.endsWith(".json")); } catch { continue; }
-    for (const f of files) {
-      const saveId = f.slice(0, -".json".length);
-      if (!isSafeId(saveId)) continue;
-      const save = await readSaveExact(dir, roomId, saveId);
+
+  async read(roomId: string, saveId: string): Promise<SaveFile | null> {
+    if (!isSafeId(saveId)) return null;
+    if (isSafeId(roomId)) {
+      const own = parseSave(await this.kv.get(saveKey(roomId, saveId)));
+      if (own) return own;
+    }
+    for (const key of await this.kv.list()) {
+      const m = SAVE_KEY.exec(key);
+      if (!m || m[2] !== saveId || m[1] === roomId) continue;
+      const found = parseSave(await this.kv.get(key));
+      if (found) return found;
+    }
+    return null;
+  }
+
+  async readExact(roomId: string, saveId: string): Promise<SaveFile | null> {
+    if (!isSafeId(roomId) || !isSafeId(saveId)) return null;
+    return parseSave(await this.kv.get(saveKey(roomId, saveId)));
+  }
+
+  /** Scans every save (fine at this size; a database would index it). */
+  async listOwned(userId: string): Promise<CampaignInfo[]> {
+    const found: { info: CampaignInfo; campaign: string; saved: number }[] = [];
+    for (const key of await this.kv.list()) {
+      const m = SAVE_KEY.exec(key);
+      if (!m) continue;
+      const [, roomId, saveId] = m as unknown as [string, string, string];
+      const save = parseSave(await this.kv.get(key));
       if (!save || save.owner_user_id !== userId) continue;
       const savedMs = Date.parse(save.saved_at) || 0;
       const title = (save.campaign_title ?? save.state.bible?.title ?? "").slice(0, 80);
@@ -110,12 +106,15 @@ export async function listOwnedSaves(dir: string, userId: string): Promise<Campa
         },
       });
     }
+    const newestAuto = new Map<string, number>();
+    for (const f of found) if (f.info.kind === "autosave") newestAuto.set(f.campaign, Math.max(newestAuto.get(f.campaign) ?? 0, f.saved));
+    return found
+      .filter((f) => f.info.kind === "named" || newestAuto.get(f.campaign) === f.saved)
+      .sort((a, b) => b.saved - a.saved)
+      .slice(0, 100)
+      .map((f) => f.info);
   }
-  const newestAuto = new Map<string, number>();
-  for (const f of found) if (f.info.kind === "autosave") newestAuto.set(f.campaign, Math.max(newestAuto.get(f.campaign) ?? 0, f.saved));
-  return found
-    .filter((f) => f.info.kind === "named" || newestAuto.get(f.campaign) === f.saved)
-    .sort((a, b) => b.saved - a.saved)
-    .slice(0, 100)
-    .map((f) => f.info);
 }
+
+/** Saves as plain JSON files under `dir`. */
+export const fsSaveStore = (dir: string): SaveStore => new KvSaveStore(new FsKv(dir, { fileMode: 0o644, dirMode: 0o755 }));

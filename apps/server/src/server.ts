@@ -1,41 +1,28 @@
-import {
-  ClientMessageSchema, WS_VERSION, exceedsMaxBytes, type ClientMessage,
-} from "@aedm/schemas";
-import type { ModelProvider } from "@aedm/llm";
 import { join } from "node:path";
-import { WebSocketServer, type RawData } from "ws";
+import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { JsonAccountStore, type AccountStore } from "./accounts/store";
 import { JsonWorkshopStore, type WorkshopStore } from "./accounts/workshop";
-import { createSpriteAssets } from "./assets/sprites";
 import { JsonAssetStore, type AssetStore } from "./assets/store";
-import { Handlers } from "./handlers";
-import { Conn } from "./net";
+import { MAX_FRAME_BYTES, createGameCore, type GameCoreOptions } from "./core";
+import type { Socket } from "./net";
 import type { RoomRegistry } from "./rooms";
-import {
-  DEFAULT_CONFIG, consoleLogger, realTimers, type Deps, type Logger, type ServerConfig, type Timers,
-} from "./types";
+import { fsSaveStore, type SaveStore } from "./saves";
 
-export interface GameServerOptions {
+export interface GameServerOptions extends Pick<GameCoreOptions, "provider" | "spriteTimeoutMs" | "clock" | "random" | "timers" | "config" | "logger"> {
   /** 0 picks a free port (tests). Default 8787. */
   port?: number;
   host?: string;
-  provider: ModelProvider;
   saveDir: string;
   /** Folder for account files (default: a hidden folder inside saveDir). */
   dataDir?: string;
+  /** Replace the JSON-file save storage (<saveDir>/<room>/<save>.json). */
+  saves?: SaveStore;
   /** Replace the JSON-file account storage (a database, or a fake in tests). */
   accounts?: AccountStore;
   /** Replace the JSON-file Workshop storage (<dataDir>/accounts/workshop/<user>.json). */
   workshop?: WorkshopStore;
   /** Replace the JSON-file asset storage (<dataDir>/assets/assets.json). */
   assets?: AssetStore;
-  /** How long the sprite designer model gets before the offline designer answers (default 4000). */
-  spriteTimeoutMs?: number;
-  clock?: () => number;
-  random?: () => number;
-  timers?: Timers;
-  config?: Partial<Omit<ServerConfig, "limits">> & { limits?: Partial<ServerConfig["limits"]> };
-  logger?: Logger;
 }
 
 export interface GameServer {
@@ -46,38 +33,30 @@ export interface GameServer {
   readonly rooms: RoomRegistry;
 }
 
-const MAX_FRAME_BYTES = 256 * 1024;
-
-function guessAckId(json: unknown): string | undefined {
-  if (typeof json !== "object" || json === null) return undefined;
-  const id = (json as { id?: unknown }).id;
-  return typeof id === "string" && id.length > 0 && id.length <= 64 ? id : undefined;
+function wsSocket(ws: WebSocket): Socket {
+  return {
+    get open() { return ws.readyState === WebSocket.OPEN; },
+    send: (data) => ws.send(data),
+    close: () => ws.close(),
+  };
 }
 
+/** The Node host: a `ws` server over the game core, with JSON files for storage. */
 export async function createGameServer(opts: GameServerOptions): Promise<GameServer> {
-  const config: ServerConfig = {
-    ...DEFAULT_CONFIG,
-    ...opts.config,
-    limits: { ...DEFAULT_CONFIG.limits, ...opts.config?.limits },
-  };
-  const clock = opts.clock ?? Date.now;
-  const timers = opts.timers ?? realTimers;
-  const logger = opts.logger ?? consoleLogger;
-  const assets = opts.assets ?? new JsonAssetStore({ dir: join(opts.dataDir ?? join(opts.saveDir, ".data"), "assets") });
-  const deps: Deps = {
+  const dataDir = opts.dataDir ?? join(opts.saveDir, ".data");
+  const core = createGameCore({
     provider: opts.provider,
-    sprites: createSpriteAssets({ store: assets, provider: opts.provider, timers, clock, logger, ...(opts.spriteTimeoutMs ? { timeoutMs: opts.spriteTimeoutMs } : {}) }),
-    saveDir: opts.saveDir,
-    accounts: opts.accounts ?? new JsonAccountStore({ dir: join(opts.dataDir ?? join(opts.saveDir, ".data"), "accounts"), clock: opts.clock }),
-    workshop: opts.workshop ?? new JsonWorkshopStore({ dir: join(opts.dataDir ?? join(opts.saveDir, ".data"), "accounts", "workshop"), ...(opts.clock ? { clock: opts.clock } : {}) }),
-    clock: opts.clock ?? Date.now,
-    random: opts.random ?? Math.random,
-    timers: opts.timers ?? realTimers,
-    config,
-    logger: opts.logger ?? consoleLogger,
-  };
-  const handlers = new Handlers(deps);
-  const conns = new Set<Conn>();
+    saves: opts.saves ?? fsSaveStore(opts.saveDir),
+    accounts: opts.accounts ?? new JsonAccountStore({ dir: join(dataDir, "accounts"), clock: opts.clock }),
+    workshop: opts.workshop ?? new JsonWorkshopStore({ dir: join(dataDir, "accounts", "workshop"), ...(opts.clock ? { clock: opts.clock } : {}) }),
+    assets: opts.assets ?? new JsonAssetStore({ dir: join(dataDir, "assets") }),
+    ...(opts.spriteTimeoutMs ? { spriteTimeoutMs: opts.spriteTimeoutMs } : {}),
+    ...(opts.clock ? { clock: opts.clock } : {}),
+    ...(opts.random ? { random: opts.random } : {}),
+    ...(opts.timers ? { timers: opts.timers } : {}),
+    ...(opts.config ? { config: opts.config } : {}),
+    ...(opts.logger ? { logger: opts.logger } : {}),
+  });
 
   const wss = new WebSocketServer({ port: opts.port ?? 8787, host: opts.host, maxPayload: MAX_FRAME_BYTES });
   await new Promise<void>((resolve, reject) => {
@@ -85,69 +64,13 @@ export async function createGameServer(opts: GameServerOptions): Promise<GameSer
     wss.once("error", reject);
   });
 
-  function handleRaw(conn: Conn, raw: string): void {
-    if (exceedsMaxBytes(raw)) {
-      let ack: string | undefined;
-      try { ack = guessAckId(JSON.parse(raw)); } catch { /* not JSON */ }
-      conn.error("bad_message", "That message is too large (8 KB maximum).", ack);
-      return;
-    }
-    let json: unknown;
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      conn.error("bad_message", "That message was not valid JSON.");
-      return;
-    }
-    const ack = guessAckId(json);
-    if (typeof json === "object" && json !== null && (json as { v?: unknown }).v !== WS_VERSION) {
-      conn.error("version_mismatch", "Your game is out of date. Please reload the page.", ack);
-      return;
-    }
-    const parsed = ClientMessageSchema.safeParse(json);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      conn.error("bad_message", `Invalid message${issue ? `: ${issue.path.join(".") || "(root)"} ${issue.message}` : ""}`.slice(0, 400), ack);
-      return;
-    }
-    const msg: ClientMessage = parsed.data;
-    if (conn.recent.seen(msg.id)) return; // idempotent: a duplicate id is ignored
-
-    const now = deps.clock();
-    const lim = config.limits;
-    const allowed =
-      msg.type === "move_intent" ? conn.limiter.allow("move", now, lim.movePerSec, 1000)
-      : msg.type === "say" ? conn.limiter.allow("say", now, 1, lim.sayIntervalMs)
-      : conn.limiter.allow("other", now, lim.otherPerSec, 1000);
-    if (!allowed) {
-      conn.error("rate_limited", "You are doing that too quickly.", msg.id);
-      return;
-    }
-    handlers.dispatch(conn, msg).catch((err: unknown) => {
-      deps.logger.error(`[server] handler ${msg.type} failed:`, err instanceof Error ? err.message : String(err));
-      conn.error("internal_error", "Something went wrong on the server.", msg.id);
-    });
-  }
-
   wss.on("connection", (ws) => {
-    const conn = new Conn(ws, deps.clock);
-    conns.add(conn);
+    const conn = core.accept(wsSocket(ws));
     ws.on("message", (data: RawData, isBinary: boolean) => {
-      if (isBinary) {
-        conn.error("bad_message", "Binary messages are not supported.");
-        return;
-      }
-      try {
-        handleRaw(conn, data.toString("utf8"));
-      } catch (err) {
-        deps.logger.error("[server] message failed:", err instanceof Error ? err.message : String(err));
-        conn.error("internal_error", "Something went wrong on the server.");
-      }
+      if (isBinary) conn.binary();
+      else conn.message(data.toString("utf8"));
     });
-    ws.on("close", () => {
-      conns.delete(conn);
-      try { handlers.onClose(conn); } catch (err) { deps.logger.error("[server] close failed:", err instanceof Error ? err.message : String(err)); }
-    });
+    ws.on("close", () => conn.closed());
     ws.on("error", () => { /* the close event follows */ });
   });
 
@@ -156,10 +79,9 @@ export async function createGameServer(opts: GameServerOptions): Promise<GameSer
 
   return {
     port,
-    rooms: handlers.registry,
+    rooms: core.rooms,
     async close() {
-      for (const c of conns) c.close();
-      await handlers.shutdown();
+      await core.shutdown();
       await new Promise<void>((resolve) => {
         for (const client of wss.clients) client.terminate();
         wss.close(() => resolve());

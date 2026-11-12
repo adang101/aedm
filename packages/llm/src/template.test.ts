@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { buildDmSystem } from "./context";
 import { buildSpriteDesignerPrompt } from "./sprite-designer";
 import { extractJson } from "./json";
-import { loadPrompt, renderTemplate, templateKeys } from "./template";
+import { loadPrompt, registerPrompts, renderTemplate, templateKeys } from "./template";
 
 describe("renderTemplate", () => {
   it("fills placeholders and does not re-expand inserted values", () => {
@@ -61,5 +61,12 @@ describe("prompt files", () => {
     const parsed = DmResponseSchema.safeParse(extractJson(block ?? ""));
     expect(parsed.error?.issues).toBeUndefined();
     expect(parsed.success).toBe(true);
+  });
+});
+
+describe("registerPrompts", () => {
+  it("serves a registered text without touching the file system", () => {
+    registerPrompts({ "not-a-real-file": "hello {{name}}" });
+    expect(renderTemplate(loadPrompt("not-a-real-file"), { name: "world" })).toBe("hello world");
   });
 });

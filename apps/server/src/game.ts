@@ -15,7 +15,7 @@ import type { Ability, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice,
 import { ForgeError, forgeOneAbility } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import type { Player, Room } from "./rooms";
-import { isSafeId, writeSave, type SaveFile, SAVE_VERSION } from "./saves";
+import { isSafeId, type SaveFile, SAVE_VERSION } from "./saves";
 import type { Deps } from "./types";
 
 interface Intent { characterId: string; characterName: string; text: string }
@@ -1284,7 +1284,7 @@ export class GameSession {
   private autosave(): void {
     const data = this.toSaveFile("autosave");
     this.saveChain = this.saveChain
-      .then(() => writeSave(this.deps.saveDir, this.room.id, "autosave", data).then(() => undefined))
+      .then(() => this.deps.saves.write(this.room.id, "autosave", data))
       .catch((err) => this.deps.logger.warn("[save] autosave failed:", err instanceof Error ? err.message : String(err)));
   }
 
@@ -1293,7 +1293,7 @@ export class GameSession {
     const id = `sv_${++this.saveN}_${Math.floor(this.deps.random() * 36 ** 5).toString(36)}`;
     if (!isSafeId(id)) throw new Error("unsafe save id");
     const data = this.toSaveFile(name);
-    const job = this.saveChain.then(() => writeSave(this.deps.saveDir, this.room.id, id, data).then(() => undefined));
+    const job = this.saveChain.then(() => this.deps.saves.write(this.room.id, id, data));
     this.saveChain = job.catch((err) => this.deps.logger.warn("[save] failed:", err instanceof Error ? err.message : String(err)));
     await job;
     return id;

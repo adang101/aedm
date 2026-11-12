@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aedm",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The whole game runs in one Durable Object (see src/hub.ts). SQLite-backed, which the free plan requires.
+  "durable_objects": { "bindings": [{ "name": "GAME_HUB", "class_name": "GameHub" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameHub"] }],
+
+  // The prompt files in packages/llm/prompts are bundled as text (the Worker has no file system to read them from).
+  "rules": [{ "type": "Text", "globs": ["**/*.md"], "fallthrough": true }],
+
+  // The Vite client build. Run `pnpm build:web` first. Only /ws and /healthz reach the Worker code.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/ws", "/healthz"]
+  },
+
+  // Plain settings. The API key is a secret: `pnpm wrangler secret put ANTHROPIC_API_KEY`. Never put it here.
+  "vars": { "AEDM_LLM_PROVIDER": "fake" },
+
+  "observability": { "enabled": true }
+}

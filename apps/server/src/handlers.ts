@@ -6,7 +6,6 @@ import { forgeCharacterAbilities, ForgeError } from "./forge";
 import { GameSession, type Reply } from "./game";
 import { RateLimiter, type Conn } from "./net";
 import { newToken, Room, RoomRegistry, type Player } from "./rooms";
-import { readSave, readSaveExact } from "./saves";
 import type { Deps } from "./types";
 
 type Msg<T extends ClientMessage["type"]> = Extract<ClientMessage, { type: T }>;
@@ -431,8 +430,8 @@ export class Handlers {
     if (player.id !== room.hostId) return reply("error", "not_host", "Only the host can load a save.");
     const from = room.resume && room.resume.saveId === msg.payload.save_id ? room.resume : null;
     const save = from
-      ? await readSaveExact(this.deps.saveDir, from.roomId, from.saveId)
-      : await readSave(this.deps.saveDir, room.id, msg.payload.save_id);
+      ? await this.deps.saves.readExact(from.roomId, from.saveId)
+      : await this.deps.saves.read(room.id, msg.payload.save_id);
     if (!save) return reply("error", "not_found", "No such save.");
     // a campaign saved by an account can only be loaded by that account
     if (save.owner_user_id && save.owner_user_id !== player.userId) return reply("error", "not_found", "No such save.");

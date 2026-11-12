@@ -2,6 +2,7 @@ import type { ModelProvider } from "@aedm/llm";
 import type { AccountStore } from "./accounts/store";
 import type { WorkshopStore } from "./accounts/workshop";
 import type { SpriteAssets } from "./assets/sprites";
+import type { SaveStore } from "./saves";
 
 /** Timer functions, injectable so tests can run fast or fully fake. */
 export interface Timers {
@@ -81,7 +82,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
 /** Everything injected into rooms and games. */
 export interface Deps {
   provider: ModelProvider;
-  saveDir: string;
+  saves: SaveStore;
   accounts: AccountStore;
   /** Per-account sprite libraries (Workshop). */
   workshop: WorkshopStore;
