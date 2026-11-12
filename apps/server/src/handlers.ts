@@ -347,6 +347,7 @@ export class Handlers {
       const forged = await forgeCharacterAbilities(this.deps.provider, create, {
         sleep: (ms) => new Promise((r) => { this.deps.timers.setTimeout(() => r(), ms); }),
         retryBackoffMs: this.cfg.retryBackoffMs,
+        onModelError: (err) => this.deps.logger.warn("[forge] model call failed:", err instanceof Error ? err.message : String(err)),
       });
       const { ability_texts: _t, abilities: _a, ...rest0 } = create;
       // A character without a usable look gets one designed from its title and description (shape recipes are kept as they are).
