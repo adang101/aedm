@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAnthropicProvider, createFakeProvider, type ModelProvider } from "@aedm/llm";
+import { createProviderFromEnv, type ModelProvider } from "@aedm/llm";
 import { parseEnv } from "./env";
 import { createGameServer } from "./server";
 
@@ -18,21 +18,14 @@ function loadDotEnv(): void {
 async function main(): Promise<void> {
   loadDotEnv();
   const port = Number(process.env.AEDM_PORT ?? 8787);
-  const kind = (process.env.AEDM_LLM_PROVIDER ?? "fake").toLowerCase();
   const dataDir = process.env.AEDM_DATA_DIR ? resolve(process.env.AEDM_DATA_DIR) : join(REPO_ROOT, "data");
   const saveDir = process.env.AEDM_SAVE_DIR ?? join(dataDir, "saves");
 
   let provider: ModelProvider;
-  if (kind === "anthropic") {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.error("AEDM_LLM_PROVIDER=anthropic needs ANTHROPIC_API_KEY (set it in .env).");
-      process.exit(1);
-    }
-    provider = createAnthropicProvider(); // the SDK reads the key from the environment; it is never logged
-  } else if (kind === "fake") {
-    provider = createFakeProvider();
-  } else {
-    console.error(`Unknown AEDM_LLM_PROVIDER "${kind}". Use fake or anthropic.`);
+  try {
+    provider = createProviderFromEnv(process.env); // keys are read from the environment and never logged
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err), "Set it in .env.");
     process.exit(1);
   }
 

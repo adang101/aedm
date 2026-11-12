@@ -15,11 +15,12 @@ Local state lives in `apps/edge/.wrangler/state`. Delete that folder to reset ac
 1. Create a free Cloudflare account.
 2. `pnpm --filter @aedm/edge exec wrangler login`
 3. `pnpm deploy:edge`. The first deploy prints your `https://aedm.<subdomain>.workers.dev` URL.
-4. For a real model, set the secret and switch the provider:
-   - `pnpm --filter @aedm/edge exec wrangler secret put ANTHROPIC_API_KEY`
-   - change `AEDM_LLM_PROVIDER` to `anthropic` in `wrangler.jsonc` and deploy again.
+4. For a real model, store its key as a secret and pick the provider:
+   - Gemini: `pnpm --filter @aedm/edge exec wrangler secret put GEMINI_API_KEY`, then set `AEDM_LLM_PROVIDER` to `gemini` in `wrangler.jsonc` and deploy again.
+   - Anthropic: same with `ANTHROPIC_API_KEY` and `anthropic`.
+   - Gemini model names change often. Override a tier with the plain variables `AEDM_GEMINI_MODEL_FAST`, `AEDM_GEMINI_MODEL_STANDARD` and `AEDM_GEMINI_MODEL_STRONG` in `wrangler.jsonc` `vars`.
 
-Without step 4 the game uses the scripted offline DM.
+Without step 4 the game uses the scripted offline DM. Never put a key in `wrangler.jsonc` or the repo.
 
 ## Custom domain later
 
