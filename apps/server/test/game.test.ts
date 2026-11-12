@@ -10,6 +10,8 @@ import {
 let h: Harness | undefined;
 afterEach(async () => { await h?.stop(); h = undefined; });
 
+const constantRandom = (v: number) => () => v;
+
 const gameOf = (harness: Harness) => harness.server.rooms.all()[0]!.game!;
 const stateOf = (harness: Harness): GameState => gameOf(harness).state;
 
@@ -74,7 +76,9 @@ describe("combat", () => {
 
   it("create_enemy(ref)+spawn+start_combat opens combat; only the active owner may act; end_turn runs enemy AI", async () => {
     const provider = scriptedProvider();
-    h = await startHarness({ provider });
+    // Seeded: the game seed (dice, enemy stats) comes from `random`. Unseeded, a lucky one-hit kill of the
+    // lone enemy ends the combat after the attack, so end_turn legitimately replies "You are not in combat."
+    h = await startHarness({ provider, random: constantRandom(0.5) });
     const t = await startedTable(h);
     const { p1, p2, enemy, mark } = await startFight(t, provider);
 
