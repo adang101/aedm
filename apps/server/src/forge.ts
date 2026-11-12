@@ -32,7 +32,7 @@ export function finalizeAbility(draft: AbilityDraft, level = 1, maxCost?: number
 export async function forgeCharacterAbilities(
   provider: ModelProvider,
   create: CharacterCreate,
-  opts: { level?: number; sleep: (ms: number) => Promise<void>; retryBackoffMs: number },
+  opts: { level?: number; sleep: (ms: number) => Promise<void>; retryBackoffMs: number; onModelError?: (err: unknown) => void },
 ): Promise<ForgeOutcome> {
   const level = opts.level ?? 1;
   const caps = levelCaps(level);
@@ -67,13 +67,14 @@ export async function forgeCharacterAbilities(
           done = true;
         } catch (err) {
           lastErr = err;
+          opts.onModelError?.(err);
           if (!(err instanceof LlmError) || !err.retryable) break;
           await opts.sleep(opts.retryBackoffMs);
         }
       }
       if (!done) {
-        const why = lastErr instanceof LlmError ? "the forge is unavailable right now" : "it could not be shaped into rules";
-        throw new ForgeError(`The forge failed on "${text.slice(0, 40)}": ${why}. Try rewording it.`);
+        const why = lastErr instanceof LlmError ? "the forge is unavailable right now. Try again in a moment" : "it could not be shaped into rules. Try rewording it";
+        throw new ForgeError(`The forge failed on "${text.slice(0, 40)}": ${why}.`);
       }
     }
   }
@@ -94,7 +95,7 @@ export async function forgeCharacterAbilities(
 export async function forgeOneAbility(
   provider: ModelProvider,
   input: { concept: string; text: string; level: number; maxCost: number },
-  opts: { sleep: (ms: number) => Promise<void>; retryBackoffMs: number },
+  opts: { sleep: (ms: number) => Promise<void>; retryBackoffMs: number; onModelError?: (err: unknown) => void },
 ): Promise<{ ability: Ability; notes: string[] }> {
   const caps = levelCaps(input.level);
   let lastErr: unknown;
@@ -112,6 +113,7 @@ export async function forgeOneAbility(
       return { ability: r.ability, notes };
     } catch (err) {
       lastErr = err;
+      opts.onModelError?.(err);
       if (!(err instanceof LlmError) || !err.retryable) break;
       await opts.sleep(opts.retryBackoffMs);
     }

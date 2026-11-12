@@ -713,6 +713,7 @@ export class GameSession {
       try {
         forged = await forgeOneAbility(this.deps.provider, { concept, text: choice.text, level, maxCost }, {
           sleep: (ms) => this.sleep(ms), retryBackoffMs: this.cfg.retryBackoffMs,
+          onModelError: (err) => this.deps.logger.warn("[level-up] model call failed:", err instanceof Error ? err.message : String(err)),
         });
       } catch (err) {
         if (!(err instanceof ForgeError)) this.deps.logger.error("[level-up] forge failed:", err instanceof Error ? err.message : String(err));
