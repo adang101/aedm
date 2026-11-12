@@ -1,7 +1,7 @@
 import type { ModelProvider, Tier } from "../provider";
 import { createAnthropicProvider } from "./anthropic";
 import { createFakeProvider } from "./fake";
-import { createGeminiProvider } from "./gemini";
+import { GEMINI_THINKING_LEVELS, createGeminiProvider, type GeminiThinkingLevel } from "./gemini";
 
 export const PROVIDER_KINDS = ["fake", "anthropic", "gemini"] as const;
 
@@ -10,6 +10,7 @@ export const PROVIDER_KINDS = ["fake", "anthropic", "gemini"] as const;
  * the choice is unknown or its key is missing. Keys are read here and never logged.
  *   AEDM_LLM_PROVIDER: fake (default) | anthropic | gemini
  *   ANTHROPIC_API_KEY, GEMINI_API_KEY
+ *   AEDM_GEMINI_THINKING: minimal | low (default) | medium | high | off (gemini-3 models only)
  *   AEDM_GEMINI_MODEL_FAST / _STANDARD / _STRONG: override the Gemini model for a tier
  */
 export function createProviderFromEnv(env: Record<string, string | undefined>): ModelProvider {
@@ -25,7 +26,12 @@ export function createProviderFromEnv(env: Record<string, string | undefined>): 
     if (env.AEDM_GEMINI_MODEL_FAST) models.fast = env.AEDM_GEMINI_MODEL_FAST;
     if (env.AEDM_GEMINI_MODEL_STANDARD) models.standard = env.AEDM_GEMINI_MODEL_STANDARD;
     if (env.AEDM_GEMINI_MODEL_STRONG) models.strong = env.AEDM_GEMINI_MODEL_STRONG;
-    return createGeminiProvider({ apiKey: env.GEMINI_API_KEY, models });
+    const raw = (env.AEDM_GEMINI_THINKING ?? "").trim().toLowerCase();
+    let thinkingLevel: GeminiThinkingLevel | null | undefined;
+    if (raw === "off") thinkingLevel = null;
+    else if (GEMINI_THINKING_LEVELS.includes(raw as GeminiThinkingLevel)) thinkingLevel = raw as GeminiThinkingLevel;
+    else if (raw !== "") throw new Error(`Unknown AEDM_GEMINI_THINKING "${raw}". Use ${GEMINI_THINKING_LEVELS.join(", ")} or off.`);
+    return createGeminiProvider({ apiKey: env.GEMINI_API_KEY, models, ...(thinkingLevel !== undefined ? { thinkingLevel } : {}) });
   }
   throw new Error(`Unknown AEDM_LLM_PROVIDER "${kind}". Use ${PROVIDER_KINDS.join(", ")}.`);
 }

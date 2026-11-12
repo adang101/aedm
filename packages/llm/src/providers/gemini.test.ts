@@ -33,8 +33,37 @@ describe("gemini provider", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       systemInstruction: { parts: [{ text: "SYS" }] },
       contents: [{ role: "user", parts: [{ text: "hi" }] }, { role: "model", parts: [{ text: "yo" }] }],
-      generationConfig: { maxOutputTokens: 4000 },
+      generationConfig: { maxOutputTokens: 4000, thinkingConfig: { thinkingLevel: "low" } },
     });
+  });
+
+  it("sets the thinking level only for gemini-3 models", async () => {
+    const cfg = async (opts: Record<string, unknown>, r = req()) => {
+      const { f, calls } = fakeFetch(() => sse([{ candidates: [{ content: { parts: [{ text: "ok" }] } }] }]));
+      await createGeminiProvider({ apiKey: "k", fetch: f, ...opts }).complete(r);
+      return (JSON.parse(calls[0]!.init.body as string) as { generationConfig: Record<string, unknown> }).generationConfig;
+    };
+    expect((await cfg({ thinkingLevel: "high" })).thinkingConfig).toEqual({ thinkingLevel: "high" });
+    expect(await cfg({ thinkingLevel: null })).not.toHaveProperty("thinkingConfig");
+    expect(await cfg({ models: { standard: "gemini-2.5-flash" } })).not.toHaveProperty("thinkingConfig");
+    expect((await cfg({}, req({ tier: "fast" }))).thinkingConfig).toEqual({ thinkingLevel: "low" });
+  });
+
+  it("counts thought tokens as output tokens", async () => {
+    const { f } = fakeFetch(() => sse([{ candidates: [{ content: { parts: [{ text: "x" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, thoughtsTokenCount: 7 } }]));
+    const res = await createGeminiProvider({ apiKey: "k", fetch: f }).complete(req());
+    expect(res.usage).toEqual({ inputTokens: 10, outputTokens: 12 });
+  });
+
+  it("fails clearly when thinking used the whole budget and no text came back", async () => {
+    const { f } = fakeFetch(() => sse([{ candidates: [{ content: { parts: [{ text: "hmm", thought: true }] }, finishReason: "MAX_TOKENS" }] }]));
+    await expect(createGeminiProvider({ apiKey: "k", fetch: f }).complete(req())).rejects.toMatchObject({
+      message: "The model used its whole output budget before answering",
+      kind: "api",
+      retryable: false,
+    });
+    const partial = fakeFetch(() => sse([{ candidates: [{ content: { parts: [{ text: "cut" }] }, finishReason: "MAX_TOKENS" }] }]));
+    await expect(createGeminiProvider({ apiKey: "k", fetch: partial.f }).complete(req())).resolves.toMatchObject({ text: "cut", stopReason: "MAX_TOKENS" });
   });
 
   it("streams text deltas across chunk boundaries, skips thought parts, and reports usage", async () => {
@@ -80,6 +109,6 @@ describe("gemini provider", () => {
 
   it("requires a key and builds a bounded body", () => {
     expect(() => createGeminiProvider({ apiKey: "" })).toThrow(/apiKey/);
-    expect((buildGeminiBody(req({ maxTokens: 99 })).generationConfig as { maxOutputTokens: number }).maxOutputTokens).toBe(99);
+    expect((buildGeminiBody(req({ maxTokens: 99 }), "gemini-3-flash-preview", "low").generationConfig as { maxOutputTokens: number }).maxOutputTokens).toBe(99);
   });
 });
