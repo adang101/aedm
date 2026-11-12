@@ -1,6 +1,8 @@
 export * from "./provider";
 export * from "./errors";
 export { createAnthropicProvider, DEFAULT_MODELS, effortFor, type AnthropicLike, type AnthropicProviderOptions } from "./providers/anthropic";
+export { createGeminiProvider, DEFAULT_GEMINI_MODELS, buildGeminiBody, toGeminiError, type GeminiProviderOptions } from "./providers/gemini";
+export { createProviderFromEnv, PROVIDER_KINDS } from "./providers/from-env";
 export { createFakeProvider, type FakeProvider, type FakeScript, type FakeReply, type FakeOptions } from "./providers/fake";
 export { improvDm, improvAbility, improvEnemy, improvSprite, parseDmUser } from "./providers/fake-improv";
 export { extractJson, formatZodError, type ZodIssueLike } from "./json";
