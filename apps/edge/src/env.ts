@@ -13,5 +13,7 @@ export interface Env {
   AEDM_GEMINI_MODEL_FAST?: string;
   AEDM_GEMINI_MODEL_STANDARD?: string;
   AEDM_GEMINI_MODEL_STRONG?: string;
+  /** Gemini 3 thinking level: minimal, low (default), medium, high, or off. */
+  AEDM_GEMINI_THINKING?: string;
   AEDM_DEV_LOG?: string;
 }

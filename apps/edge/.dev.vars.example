@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `pnpm dev:edge`. It overrides wrangler.jsonc vars and is gitignored.
+# "fake" is the scripted offline DM. Use gemini with a key to try a real model.
+AEDM_LLM_PROVIDER=fake
+# GEMINI_API_KEY=
