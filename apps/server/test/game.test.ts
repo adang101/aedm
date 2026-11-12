@@ -113,14 +113,14 @@ describe("combat", () => {
       expect(mv.type).not.toBe("error");
       attack = await owner.request("basic_attack", { target_id: enemy.id });
     }
-    expect(attack.type).toBe("presence");
+    expect(attack.type, JSON.stringify(attack.payload)).toBe("presence");
     const roll = await owner.wait("roll_result", (r) => r.who === activeId && r.label.length > 0, { from: mark });
     expect(roll.payload.dice.length).toBeGreaterThanOrEqual(1);
 
     // end the turn: the engine runs the AI, and play returns to a player
     const m2 = owner.mark();
     const end = await owner.request("end_turn", {});
-    expect(end.type).toBe("presence");
+    expect(end.type, JSON.stringify(end.payload)).toBe("presence");
     await owner.wait("combat_state", (c) => c.active_id !== activeId || c.round > combat.round, { from: m2 });
     await owner.wait("turn_timer", (tt) => tt.entity_id !== undefined, { from: m2 });
     expect(t.a.invalid).toEqual([]);
