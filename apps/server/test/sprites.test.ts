@@ -113,7 +113,7 @@ describe("sprites in the game", () => {
     await until(() => Object.values(stateOf(h!).entities).filter((e) => e.kind === "enemy").length === 1);
     const arch = stateOf(h).archetypes["en_sailor"]!;
     expect(arch.sprite?.kind).toBe("spec");
-    expect(arch.sprite?.parts.map((p) => p.part)).toEqual(expect.arrayContaining(["drips", "glowing_eyes"]));
+    expect(arch.sprite?.kind === "spec" && arch.sprite.parts.map((p) => p.part)).toEqual(expect.arrayContaining(["drips", "glowing_eyes"]));
     expect(provider.spriteCalls()).toBeGreaterThan(0);
     expect(await assets.list("sprite")).toHaveLength(0);
   });

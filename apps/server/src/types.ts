@@ -1,5 +1,6 @@
 import type { ModelProvider } from "@aedm/llm";
 import type { AccountStore } from "./accounts/store";
+import type { WorkshopStore } from "./accounts/workshop";
 import type { SpriteAssets } from "./assets/sprites";
 
 /** Timer functions, injectable so tests can run fast or fully fake. */
@@ -50,7 +51,11 @@ export interface ServerConfig {
   /** A room with nobody connected for this long is deleted. */
   roomIdleMs: number;
   maxPlayers: number;
-  limits: { movePerSec: number; sayIntervalMs: number; otherPerSec: number };
+  limits: {
+    movePerSec: number; sayIntervalMs: number; otherPerSec: number;
+    /** design_sprite calls per account (per connection for guests) in each window; they cost money with a real model. */
+    spriteDesign: { max: number; windowMs: number };
+  };
   /** Log rejected DM actions and other dev details to the logger. */
   devLog: boolean;
   /** Characters of the recent-turn window handed to the DM. */
@@ -68,7 +73,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   retryBackoffMs: 1500,
   roomIdleMs: 10 * 60_000,
   maxPlayers: 6,
-  limits: { movePerSec: 10, sayIntervalMs: 2000, otherPerSec: 5 },
+  limits: { movePerSec: 10, sayIntervalMs: 2000, otherPerSec: 5, spriteDesign: { max: 6, windowMs: 60_000 } },
   devLog: false,
   recentTurnLimit: 12,
 };
@@ -78,6 +83,8 @@ export interface Deps {
   provider: ModelProvider;
   saveDir: string;
   accounts: AccountStore;
+  /** Per-account sprite libraries (Workshop). */
+  workshop: WorkshopStore;
   /** Designed sprites, cached per concept so the same NPC or enemy looks the same across sessions. */
   sprites: SpriteAssets;
   clock: () => number;

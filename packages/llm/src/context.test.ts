@@ -8,6 +8,26 @@ describe("buildDmContext", () => {
     { characterId: "ch_tamsin", characterName: "Tamsin Quickfoot", text: "I look around." },
   ];
 
+  it("adds a pacing block with stage, next stage, tension, fortune and difficulty, and omits it without a plot", () => {
+    const pack = makeLanternPack();
+    expect(buildDmContext(pack).user).not.toContain("<pacing>");
+    pack.pacing = {
+      patternName: "Tragedy", arcName: "Soaring, then falling", stageIndex: 1, stageCount: 5, finished: false,
+      stage: { id: "dream", name: "Dream", title: "The offer", goal: "Accept the patron's help <b>", purpose: "Things go well." },
+      next: { id: "frustration", name: "Frustration", title: "Cracks", goal: "Cope." },
+      tension: 4, difficulty: "standard", trendText: "this stretch should leave the party better off", openMilestones: 2,
+    };
+    const { user, system } = buildDmContext(pack);
+    expect(user).toContain("<pacing>");
+    expect(user).toContain("Current stage 2 of 5: Dream");
+    expect(user).toContain("Next stage: Frustration");
+    expect(user).toContain("Tension target: 4 of 10.");
+    expect(user).toContain("better off");
+    expect(user).toContain("Suggested encounter difficulty: standard");
+    expect(user).toContain("&lt;b&gt;");
+    expect(system).toContain("adjust_plot");
+  });
+
   it("fences player text and neutralises tag injection", () => {
     const { user } = buildDmContext(makeLanternPack(intents));
     expect(user).toContain('<player_input character_id="ch_brindle" character="Brindle Ash">');

@@ -26,6 +26,7 @@ const actions = [
   { type: "change_scene", map_id: "m_marsh", entry: "party_start" },
   { type: "award_growth", character_id: "ch_tamsin", amount: 20, reason: "Showed mercy" },
   { type: "complete_milestone", milestone_id: "m1" },
+  { type: "adjust_plot", stages: [{ stage_id: "nightmare", goal: "The marsh turns on the party.", milestones: [{ id: "m9", description: "The party flees the drowned chapel." }] }] },
   { type: "suggest_actions", chips: ["Search the desk", "Talk to Odalys"] },
 ];
 

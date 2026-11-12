@@ -1,6 +1,8 @@
-import { CONTENT_RATINGS, type LobbyPlayer } from "@aedm/schemas";
+import { PLOTS } from "@aedm/engine";
+import { CONTENT_RATINGS, PLOT_ARCS, PLOT_PATTERNS, type LobbyPlayer } from "@aedm/schemas";
 import { isHost, type AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
+import { createCastPanel } from "./cast";
 import { createCreator } from "./creator";
 import type { Ctx, Screen } from "./types";
 
@@ -53,6 +55,10 @@ export function mountLobby(ctx: Ctx): Screen {
   // settings
   const pitch = h("textarea", { rows: 3, maxlength: 300, id: "pitch", placeholder: "A pitch for the campaign, e.g. a drowned lighthouse and a sleepwalking village." });
   const rating = h("select", { id: "rating" }, ...CONTENT_RATINGS.map((r) => h("option", { value: r }, r)));
+  const plotPattern = h("select", { id: "plot-pattern" },
+    h("option", { value: "auto" }, "Auto"), ...PLOT_PATTERNS.map((p) => h("option", { value: p }, PLOTS.patterns[p].name)));
+  const plotArc = h("select", { id: "plot-arc" },
+    h("option", { value: "auto" }, "Auto"), ...PLOT_ARCS.map((a) => h("option", { value: a }, PLOTS.arcs[a].name)));
   const solo = h("input", { type: "checkbox", id: "dev-solo" });
   const hostNote = h("p", { class: "muted" });
   let pitchTimer: ReturnType<typeof setTimeout> | undefined;
@@ -65,6 +71,8 @@ export function mountLobby(ctx: Ctx): Screen {
     if (!pitch.disabled && pitch.value.trim() !== (ctx.store.state.lobby?.settings.campaign_pitch ?? "")) ctx.client.send("update_settings", { campaign_pitch: pitch.value.trim() });
   });
   rating.addEventListener("change", () => ctx.client.send("update_settings", { content_rating: rating.value as "family" }));
+  plotPattern.addEventListener("change", () => ctx.client.send("update_settings", { plot_pattern: plotPattern.value as "auto" }));
+  plotArc.addEventListener("change", () => ctx.client.send("update_settings", { plot_arc: plotArc.value as "auto" }));
   solo.addEventListener("change", () => ctx.client.send("update_settings", { dev_solo: solo.checked }));
 
   const readyBtn = h("button", { type: "button", class: "btn big" }, "Ready");
@@ -80,6 +88,7 @@ export function mountLobby(ctx: Ctx): Screen {
   // a room opened with "Resume" on a saved campaign: the host loads the save instead of starting fresh
   const resumeCard = h("section", { class: "card stack resume" });
 
+  const cast = createCastPanel(ctx);
   const claimedBox = h("section", { class: "card stack claimed" });
   const creator = createCreator(ctx, () => { editing = false; });
   const creatorCard = h("section", { class: "card" }, creator.el);
@@ -99,9 +108,13 @@ export function mountLobby(ctx: Ctx): Screen {
           h("h2", null, "Campaign"),
           h("label", { for: "pitch" }, "Pitch"), pitch,
           h("div", { class: "row wrap" },
+            h("label", { class: "inline", for: "plot-pattern" }, "Plot", plotPattern),
+            h("label", { class: "inline", for: "plot-arc" }, "Arc", plotArc)),
+          h("div", { class: "row wrap" },
             h("label", { class: "inline", for: "rating" }, "Content rating", rating),
             h("label", { class: "inline check", for: "dev-solo" }, solo, "Dev solo mode")),
           hostNote),
+        cast.el,
         h("div", { class: "stack" }, readyBtn, startBtn, startHint),
       ),
       h("div", { class: "stack" }, claimedBox, creatorCard),
@@ -133,9 +146,11 @@ export function mountLobby(ctx: Ctx): Screen {
     const me = lobby.players.find((p) => p.player_id === s.playerId);
 
     // settings are editable by the host only; avoid clobbering text being typed
-    pitch.disabled = !host; rating.disabled = !host; solo.disabled = !host;
+    pitch.disabled = !host; rating.disabled = !host; solo.disabled = !host; plotPattern.disabled = !host; plotArc.disabled = !host;
     if (document.activeElement !== pitch) pitch.value = lobby.settings.campaign_pitch;
     rating.value = lobby.settings.content_rating;
+    plotPattern.value = lobby.settings.plot_pattern ?? "auto";
+    plotArc.value = lobby.settings.plot_arc ?? "auto";
     solo.checked = lobby.settings.dev_solo;
     hostNote.textContent = host ? "You are the host. Only you can change these." : "Only the host can change these settings.";
 
@@ -151,6 +166,7 @@ export function mountLobby(ctx: Ctx): Screen {
         host ? h("button", { type: "button", class: "btn primary big", onClick: () => ctx.client.send("load_save", { save_id: resume.save_id }) }, "Load campaign") : null);
     }
     creator.update(s);
+    cast.update(s);
 
     // character area
     const hasChar = !!me?.character_id;

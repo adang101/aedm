@@ -3,7 +3,7 @@ import { MapSchema, SpriteSpecSchema, inPalette } from "@aedm/schemas";
 import { buildScenes } from "../net/mock-world";
 import { buildCreate, emptyForm, premadeForms } from "./creator";
 import {
-  MAX_BUILDER_PARTS, PREMADE_SPECS, buildSpriteSpec, defaultSpriteForm, randomLook, togglePart,
+  MAX_BUILDER_PARTS, PREMADE_SPECS, buildSpriteSpec, defaultSpriteForm, designedForm, randomLook, togglePart,
 } from "./sprite-builder";
 
 describe("sprite builder", () => {
@@ -55,5 +55,48 @@ describe("mock maps", () => {
   it("cover every body plan across the cast", () => {
     const bodies = new Set<string>(Object.values(buildScenes()).flatMap((s) => s.entities.map((e) => (e.sprite.kind === "spec" ? e.sprite.body : ""))));
     for (const b of ["humanoid", "beast", "avian", "serpent", "insectoid", "amorphous", "construct", "spirit", "plant", "object"]) expect(bodies.has(b), b).toBe(true);
+  });
+});
+
+describe("designed looks (Describe your look)", () => {
+  const designed = SpriteSpecSchema.parse({
+    kind: "spec", v: 1, body: "avian", size: "large", glyph: "H", pose: "floating", traits: "tall, patched blue coat",
+    palette: { primary: PREMADE_SPECS.ch_tamsin!.palette.primary, secondary: "#2a4a7a", accent: PREMADE_SPECS.ch_tamsin!.palette.accent, detail: PREMADE_SPECS.ch_tamsin!.palette.detail },
+    parts: ["robe", "lantern", "hood", "cloak", "wings", "aura"].map((part) => ({ part })),
+  });
+
+  it("an untouched design round-trips exactly (size, traits, pose and all six parts survive)", () => {
+    const form = designedForm(designed);
+    expect(form.body).toBe("avian");
+    expect(buildSpriteSpec(form, "Ana")).toEqual(designed);
+  });
+
+  it("an untouched design without a glyph takes one from the name", () => {
+    const { glyph: _g, ...noGlyph } = designed;
+    expect(buildSpriteSpec(designedForm(noGlyph), "Ana").glyph).toBe("A");
+  });
+
+  it("a tweak with the builder controls applies on top and keeps traits and pose", () => {
+    const form = designedForm(designed);
+    form.palette = { ...form.palette, primary: PREMADE_SPECS.ch_brindle!.palette.primary };
+    const out = buildSpriteSpec(form, "Ana");
+    expect(SpriteSpecSchema.safeParse(out).success).toBe(true);
+    expect(out.palette.primary).toBe(PREMADE_SPECS.ch_brindle!.palette.primary);
+    expect(out.traits).toBe("tall, patched blue coat");
+    expect(out.pose).toBe("floating");
+    expect(out.body).toBe("avian");
+    expect(out.parts.length).toBeLessThanOrEqual(MAX_BUILDER_PARTS);
+  });
+
+  it("changing the body plan applies it", () => {
+    const form = designedForm(designed);
+    form.body = "beast";
+    expect(buildSpriteSpec(form, "Ana").body).toBe("beast");
+  });
+
+  it("buildCreate sends the designed spec as the sprite_recipe", () => {
+    const r = buildCreate({ ...premadeForms()[0]!.form, name: "Ana", sprite: designedForm(designed) });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.sprite_recipe).toEqual(designed);
   });
 });

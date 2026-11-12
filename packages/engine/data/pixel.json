@@ -1,0 +1,8 @@
+{
+  "maxColors": 32,
+  "minOpaque": 60,
+  "margin": 2,
+  "feetY": 60,
+  "feetTolerance": 4,
+  "maxRecipeBytes": 6144
+}

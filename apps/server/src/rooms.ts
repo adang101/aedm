@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createGameState, type GameState } from "@aedm/engine";
 import { LANTERN_MARSH_BIBLE } from "@aedm/llm";
-import type { PlayerStatus, RoomSettings, ServerMessageType } from "@aedm/schemas";
+import type { CastEntry, PlayerStatus, RoomSettings, ServerMessageType, SpriteRecipe, SpriteRoleHint } from "@aedm/schemas";
 import type { GameSession } from "./game";
 import type { Conn } from "./net";
 import type { Deps } from "./types";
@@ -26,7 +26,21 @@ export interface Player {
   graceTimer: unknown;
 }
 
-export const DEFAULT_SETTINGS: RoomSettings = { content_rating: "teen", campaign_pitch: "", dev_solo: false };
+export const DEFAULT_SETTINGS: RoomSettings = {
+  content_rating: "teen", campaign_pitch: "", dev_solo: false, plot_pattern: "auto", plot_arc: "auto",
+  custom_cast: "host_approval", custom_paintings: true,
+};
+
+/** A Workshop sprite offered to this campaign. The recipe is a snapshot taken at the offer, so later Workshop edits or deletes do not change the table. */
+export interface CastItem {
+  assetId: string;
+  ownerPlayerId: string;
+  name: string;
+  roleHint: SpriteRoleHint;
+  concept: string;
+  recipe: SpriteRecipe;
+  status: "pending" | "approved";
+}
 
 export class Room {
   hostId: string | null = null;
@@ -40,6 +54,8 @@ export class Room {
   idleTimer: unknown = null;
   /** Account that owns the campaign (set when a room is opened with resume_campaign). */
   ownerUserId: string | null = null;
+  /** Sprites players offered to the campaign (see CastItem). Not part of saves: it belongs to the table. */
+  cast: CastItem[] = [];
   /** Set by resume_campaign: where the save to load lives. */
   resume: { roomId: string; saveId: string; name: string } | null = null;
 
@@ -92,6 +108,26 @@ export class Room {
         character_id: p.characterId,
       })),
     };
+  }
+
+  castPayload(): { entries: CastEntry[] } {
+    return {
+      entries: this.cast.map((c) => ({
+        asset_id: c.assetId, owner_player_id: c.ownerPlayerId, owner_name: this.player(c.ownerPlayerId)?.name ?? "A player",
+        name: c.name, role_hint: c.roleHint, concept: c.concept, recipe: c.recipe, status: c.status,
+      })),
+    };
+  }
+
+  broadcastCast(): void {
+    this.broadcast("cast_state", this.castPayload());
+  }
+
+  /** What the DM may use right now: approved, npc or enemy, with the room's cast and painting settings applied. */
+  usableCast(kind?: "npc" | "enemy"): CastItem[] {
+    if ((this.settings.custom_cast ?? "host_approval") === "off") return [];
+    const paintings = this.settings.custom_paintings !== false;
+    return this.cast.filter((c) => c.status === "approved" && (c.roleHint === "npc" || c.roleHint === "enemy") && (!kind || c.roleHint === kind) && (paintings || c.recipe.kind !== "pixel"));
   }
 
   broadcastLobby(): void {

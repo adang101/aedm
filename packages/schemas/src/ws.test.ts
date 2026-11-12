@@ -9,7 +9,7 @@ const view = { id: "ch_a", kind: "pc", name: "A", x: 1, y: 2, hp: 5, hp_max: 10,
 
 describe("ws constants", () => {
   it("exports", () => {
-    expect(WS_VERSION).toBe(2);
+    expect(WS_VERSION).toBe(6);
     expect(MAX_MESSAGE_BYTES).toBe(8192);
     expect(exceedsMaxBytes("x".repeat(8193))).toBe(true);
     expect(exceedsMaxBytes("x".repeat(8192))).toBe(false);
@@ -188,5 +188,39 @@ describe("account messages", () => {
       env("campaigns_list", { campaigns: [{ save_id: "autosave", room_id: "room_1", kind: "autosave", name: "autosave", campaign_title: "T", updated_at: "2026-01-01T00:00:00Z", players: ["Ana"], can_resume: true }] }),
     ]) expect(ServerMessageSchema.safeParse(m).success, JSON.stringify(m)).toBe(true);
     expect(ServerMessageSchema.safeParse(env("auth_error", { code: "nope", message: "x" })).success).toBe(false);
+  });
+});
+
+describe("sprite designer messages", () => {
+  const spec = {
+    kind: "spec", v: 1, body: "avian", size: "medium", glyph: "H", traits: "lantern, patched blue coat",
+    palette: { primary: "#112233", secondary: "#445566", accent: "#778899", detail: "#001122" },
+    parts: [{ part: "lantern" }],
+  };
+  const mk = (payload: unknown) => ClientMessageSchema.safeParse(env("design_sprite", payload));
+
+  it("accepts a design request", () => {
+    expect(mk({ prompt: "a lanky heron-folk ferryman", role_hint: "npc" }).success).toBe(true);
+    expect(mk({ prompt: "x", role_hint: "pc", seed: 7, name: "Ana" }).success).toBe(true);
+  });
+
+  it("rejects empty, over-long and unknown input", () => {
+    expect(mk({ prompt: "   ", role_hint: "npc" }).success).toBe(false);
+    expect(mk({ prompt: "x".repeat(300), role_hint: "npc" }).success).toBe(true);
+    expect(mk({ prompt: "x".repeat(301), role_hint: "npc" }).success).toBe(false);
+    expect(mk({ prompt: "x", role_hint: "dragon" }).success).toBe(false);
+    expect(mk({ prompt: "x" }).success).toBe(false);
+    expect(mk({ prompt: "x", role_hint: "npc", seed: -1 }).success).toBe(false);
+    expect(mk({ prompt: "x", role_hint: "npc", seed: 1.5 }).success).toBe(false);
+    expect(mk({ prompt: "x", role_hint: "npc", extra: 1 }).success).toBe(false);
+  });
+
+  it("parses the reply and rejects a bad spec or source", () => {
+    const ok = (payload: unknown) => ServerMessageSchema.safeParse(env("sprite_designed", payload, { ack_id: "c1" })).success;
+    expect(ok({ spec, notes: [], source: "model" })).toBe(true);
+    expect(ok({ spec, notes: ["note"], source: "offline" })).toBe(true);
+    expect(ok({ spec, notes: [], source: "cache" })).toBe(false);
+    expect(ok({ spec: { ...spec, body: "dragon" }, notes: [], source: "model" })).toBe(false);
+    expect(ok({ spec, source: "model" })).toBe(false);
   });
 });

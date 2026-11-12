@@ -1,6 +1,6 @@
 import type { DmContextPack, SceneEntity } from "@aedm/llm";
 import {
-  MATERIAL_IDS, RULES, computePartyLevel, currentMap, entitiesOnMap, getObjects, lootCap, type GameState,
+  MATERIAL_IDS, RULES, computePartyLevel, currentMap, entitiesOnMap, getObjects, lootCap, pacingBlock, type GameState,
 } from "@aedm/engine";
 
 export interface RecentTurn {
@@ -22,7 +22,11 @@ export interface ContextInput {
   sceneNote?: string;
   /** Max recent turns handed to the DM (default 12). */
   recentLimit?: number;
+  /** Usable cast entries (approved, npc or enemy). Listed to the DM by id, name, kind and a short concept. */
+  cast?: { assetId: string; name: string; roleHint: string; concept: string }[];
 }
+
+const MAX_CAST_LISTED = 20;
 
 const MAX_SCENE_ENTITIES = 40;
 
@@ -115,12 +119,18 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     },
     party,
     quests: state.bible.quests.map((q) => ({ id: q.id, title: q.title, status: q.status, notes: [...q.notes] })),
-    milestones: state.bible.milestones.map((m) => ({ id: m.id, description: m.description, completed: m.completed })),
+    milestones: state.bible.milestones.map((m) => ({ id: m.id, description: m.description, completed: m.completed, ...(m.stage ? { stage: m.stage } : {}) })),
+    pacing: pacingBlock(state.bible) ?? undefined,
     recentTurns: recent.map((t) => ({ speaker: t.speaker, text: t.text, kind: t.kind, channel: t.channel ?? "ic" })),
     engineLines: [...(input.engineLines ?? [])],
     intents: input.intents.map((i) => ({ ...i })),
     partyLevel,
     lootRemaining: Math.max(0, lootCap(partyLevel) - state.session.lootValueThisEncounter),
     growthRemaining,
+    ...(input.cast?.length ? {
+      cast: input.cast.filter((c) => c.roleHint === "npc" || c.roleHint === "enemy").slice(0, MAX_CAST_LISTED).map((c) => ({
+        assetId: c.assetId, name: c.name, kind: c.roleHint as "npc" | "enemy", concept: c.concept.slice(0, 120),
+      })),
+    } : {}),
   };
 }

@@ -3,6 +3,7 @@ import { loadDisplayName, saveDisplayName } from "../state/storage";
 import type { AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
 import { recipeIcon } from "./creator";
+import { openWorkshop } from "./workshop";
 import type { Ctx, Screen } from "./types";
 
 type Tab = "guest" | "login" | "register";
@@ -106,8 +107,9 @@ export function mountHome(ctx: Ctx, prefillCode: string): Screen {
   // ---------- signed-in panels ----------
   const whoLine = h("span", null);
   const logoutBtn = h("button", { type: "button", class: "btn small ghost", onClick: () => ctx.client.logout() }, "Log out");
+  const workshopBtn = h("button", { type: "button", class: "btn small", onClick: () => openWorkshop(ctx) }, "My Workshop");
   const accountBar = h("section", { class: "card account-bar row between wrap" },
-    h("span", { class: "who" }, "Signed in as ", whoLine), logoutBtn);
+    h("span", { class: "who" }, "Signed in as ", whoLine), h("span", { class: "row" }, workshopBtn, logoutBtn));
 
   const charList = h("ul", { class: "saved-list" });
   const charCard = h("section", { class: "card stack" }, h("h2", null, "My characters"), charList,

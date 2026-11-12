@@ -109,3 +109,30 @@ describe("level-up state", () => {
     expect(s.levelUpResult).toBeNull();
   });
 });
+
+describe("Workshop and cast state", () => {
+  const env = (type: string, payload: unknown) => msg(type as "pong", payload as never);
+  const spec = {
+    kind: "spec", v: 1, body: "avian", size: "medium", glyph: "H", traits: "",
+    palette: { primary: "#112233", secondary: "#445566", accent: "#778899", detail: "#001122" }, parts: [],
+  };
+  it("sprite_assets_list fills the account's Workshop and logout clears it", () => {
+    const s = createInitialState();
+    const asset = { id: "as_1", name: "Heron", role_hint: "npc", concept: "", tags: [], recipe: spec, source: "designed", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" };
+    applyServerMessage(s, env("sprite_assets_list", { assets: [asset], used_bytes: 321, max_assets: 200, max_bytes: 5242880 }), 0);
+    expect(s.auth.workshop).toMatchObject({ usedBytes: 321, maxAssets: 200, maxBytes: 5242880 });
+    expect(s.auth.workshop?.assets.map((a) => a.id)).toEqual(["as_1"]);
+    applyServerMessage(s, env("logged_out", {}), 0);
+    expect(s.auth.workshop).toBeNull();
+  });
+  it("cast_state replaces the cast and leaving the room clears it", () => {
+    const s = createInitialState();
+    const entry = { asset_id: "as_1", owner_player_id: "p1", owner_name: "Ana", name: "Heron", role_hint: "npc", concept: "", recipe: spec, status: "pending" };
+    applyServerMessage(s, env("cast_state", { entries: [entry] }), 0);
+    expect(s.cast).toHaveLength(1);
+    applyServerMessage(s, env("cast_state", { entries: [{ ...entry, status: "approved" }, { ...entry, asset_id: "as_2" }] }), 0);
+    expect(s.cast.map((c) => c.status)).toEqual(["approved", "pending"]);
+    resetRoom(s);
+    expect(s.cast).toEqual([]);
+  });
+});

@@ -42,7 +42,9 @@ describe("buildContextPack", () => {
     expect(pack.party[0]).toMatchObject({ id: "ch_brindle", level: 1, present: true });
     expect(pack.party[0]!.abilities).toEqual(["Shaped Charge", "Tripwire Cache", "Smoke Pop"]);
     expect(pack.quests.map((q) => q.id)).toEqual(["q_edda", "q_sleepers"]);
-    expect(pack.milestones).toHaveLength(3);
+    expect(pack.milestones).toHaveLength(5);
+    expect(pack.pacing).toMatchObject({ patternName: "Overcoming the Monster", stageIndex: 0, finished: false });
+    expect(pack.pacing!.stage.id).toBe("call");
     expect(pack.facts.length).toBe(LANTERN_MARSH_FACTS.length);
     expect(pack.partyLevel).toBe(1);
     expect(pack.lootRemaining).toBe(30);
@@ -100,4 +102,27 @@ describe("buildContextPack", () => {
     const pack = buildContextPack({ state: s, players: away, intents: [] });
     expect(pack.party.find((p) => p.id === "ch_tamsin")!.present).toBe(false);
   });
+
+  it("lists the usable cast (npc and enemy only, at most 20, concepts trimmed) and omits the block when empty", () => {
+    const s = world();
+    const long = "x".repeat(300);
+    const cast = [
+      { assetId: "as_a", name: "Wren", roleHint: "npc", concept: "a heron" },
+      { assetId: "as_b", name: "Hag", roleHint: "enemy", concept: long },
+      { assetId: "as_c", name: "Barrel", roleHint: "prop", concept: "a barrel" },
+      ...Array.from({ length: 30 }, (_, i) => ({ assetId: `as_n${i}`, name: `N${i}`, roleHint: "npc", concept: "" })),
+    ];
+    const pack = buildContextPack({ state: s, players, intents: [], cast });
+    expect(pack.cast).toHaveLength(20);
+    expect(pack.cast![0]).toEqual({ assetId: "as_a", name: "Wren", kind: "npc", concept: "a heron" });
+    expect(pack.cast![1]!.concept).toHaveLength(120);
+    expect(pack.cast!.some((c) => c.assetId === "as_c")).toBe(false);
+    expect(buildContextPack({ state: s, players, intents: [] }).cast).toBeUndefined();
+    expect(buildContextPack({ state: s, players, intents: [], cast: [] }).cast).toBeUndefined();
+    const text = buildDmContext(pack).user;
+    expect(text).toContain('<cast>');
+    expect(text).toContain('asset_ref=as_a kind=npc name="Wren" concept="a heron"');
+    expect(buildDmContext(buildContextPack({ state: s, players, intents: [] })).user).not.toContain("<cast>");
+  });
 });
+

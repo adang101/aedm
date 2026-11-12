@@ -3,13 +3,26 @@ import { AbilitySchema } from "./ability";
 import { AbilityScoresSchema, CharacterCreateSchema, CharacterViewSchema, SpriteRecipeSchema } from "./character";
 import {
   AbilityScoreKeySchema, ConditionSchema, ContentRatingSchema, DirectionSchema, DispositionSchema, PlayerStatusSchema,
+  PlotArcSettingSchema, PlotPatternSettingSchema,
 } from "./enums";
 import { EntityIdSchema, MapIdSchema, text } from "./common";
 import { MapSchema } from "./map";
+import { SpriteSpecSchema } from "./sprite";
+import {
+  CastDecisionPayload, CastStatePayload, CustomCastSchema, DeleteSpriteAssetPayload, ListSpriteAssetsPayload, OfferToCastPayload,
+  SaveSpriteAssetPayload, SpriteAssetsListPayload, SpriteRoleHintSchema,
+} from "./workshop";
 import { QuestSchema } from "./world";
 
-/** 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged. */
-export const WS_VERSION = 2;
+/**
+ * 6: Workshop and campaign cast: save_sprite_asset, delete_sprite_asset, list_sprite_assets, offer_to_cast, cast_decision (client),
+ *    sprite_assets_list, cast_state (server); room settings gained custom_cast and custom_paintings.
+ * 5: sprite recipes gained the `pixel` kind (CharacterCreate); new error code invalid_sprite.
+ * 4: added design_sprite (client) and sprite_designed (server).
+ * 3: room settings gained plot_pattern and plot_arc.
+ * 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged.
+ */
+export const WS_VERSION = 6;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
@@ -17,7 +30,7 @@ const id = z.string().trim().min(1).max(64);
 const displayName = text(24);
 const tile = z.number().int().min(0).max(255);
 
-export const WS_ERROR_CODES = ["version_mismatch", "bad_message", "rate_limited", "not_host", "not_found", "forbidden", "invalid_state"] as const;
+export const WS_ERROR_CODES = ["version_mismatch", "bad_message", "rate_limited", "not_host", "not_found", "forbidden", "invalid_state", "invalid_sprite"] as const;
 
 // ---------- shared payload pieces ----------
 
@@ -25,6 +38,14 @@ export const RoomSettingsSchema = z.strictObject({
   content_rating: ContentRatingSchema,
   campaign_pitch: text(300, 0),
   dev_solo: z.boolean(),
+  /** Plot pattern id or "auto". Missing means auto. */
+  plot_pattern: PlotPatternSettingSchema.optional(),
+  /** Emotional arc id or "auto". Missing means auto. */
+  plot_arc: PlotArcSettingSchema.optional(),
+  /** Whether Workshop sprites may be offered to the campaign cast. Missing means host_approval. */
+  custom_cast: CustomCastSchema.optional(),
+  /** Whether painted (pixel) sprites are allowed in the room. Missing means true. */
+  custom_paintings: z.boolean().optional(),
 });
 export type RoomSettings = z.infer<typeof RoomSettingsSchema>;
 export const RoomSettingsPatchSchema = RoomSettingsSchema.partial();
@@ -208,6 +229,27 @@ export const LevelUpResultPayload = z.strictObject({
 });
 export type LevelUpResult = z.infer<typeof LevelUpResultPayload>;
 
+// ---------- sprite designer (describe your look) ----------
+
+export const SPRITE_PROMPT_MAX = 300;
+
+/** Correlated by the envelope id: the reply carries it as `ack_id`. A refusal (rate_limited, bad_message) is an `error` with the same ack_id. */
+export const DesignSpritePayload = z.strictObject({
+  prompt: text(SPRITE_PROMPT_MAX),
+  role_hint: SpriteRoleHintSchema,
+  /** Picks a different offline look; send a new one to regenerate. */
+  seed: z.number().int().min(0).max(0x7fffffff).optional(),
+  /** Only used for the sprite's glyph. */
+  name: text(30).optional(),
+});
+export const SpriteDesignedPayload = z.strictObject({
+  spec: SpriteSpecSchema,
+  notes: z.array(text(200, 0)).max(20),
+  source: z.enum(["model", "offline"]),
+});
+export type DesignSpritePayloadType = z.infer<typeof DesignSpritePayload>;
+export type SpriteDesignedPayloadType = z.infer<typeof SpriteDesignedPayload>;
+
 // ---------- envelopes ----------
 
 const envelope = {
@@ -342,6 +384,12 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   client("load_save", LoadSavePayload),
   client("ping", PingPayload),
   client("level_up_choice", LevelUpChoicePayload),
+  client("design_sprite", DesignSpritePayload),
+  client("save_sprite_asset", SaveSpriteAssetPayload),
+  client("delete_sprite_asset", DeleteSpriteAssetPayload),
+  client("list_sprite_assets", ListSpriteAssetsPayload),
+  client("offer_to_cast", OfferToCastPayload),
+  client("cast_decision", CastDecisionPayload),
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 export type ClientMessageType = ClientMessage["type"];
@@ -369,6 +417,9 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   server("pong", PongPayload),
   server("level_up_state", LevelUpStatePayload),
   server("level_up_result", LevelUpResultPayload),
+  server("sprite_designed", SpriteDesignedPayload),
+  server("sprite_assets_list", SpriteAssetsListPayload),
+  server("cast_state", CastStatePayload),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export type ServerMessageType = ServerMessage["type"];

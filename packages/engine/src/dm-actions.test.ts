@@ -3,9 +3,10 @@ import { fixtures, type DmAction, type MapBrief } from "@aedm/schemas";
 import { applyDmActions, computePartyLevel, type DmContext } from "./dm-actions.ts";
 import { describeEvent } from "./events.ts";
 import { createRng } from "./rng.ts";
+import { validateBiblePlot } from "./plot.ts";
 import { designSpriteOffline } from "./sprites.ts";
 import { addMap, type GameState } from "./state.ts";
-import { PARTY_IDS, chorister, makeTestMap, makeWorld, withArchetype } from "./testkit.ts";
+import { PARTY_IDS, PLOT_BIBLE, chorister, makeTestMap, makeWorld, withArchetype } from "./testkit.ts";
 
 const CTX: DmContext = { presentCharacterIds: PARTY_IDS, partyLevel: 1 };
 const apply = (state: GameState, actions: DmAction[], ctx: DmContext = CTX, seed = 3) => applyDmActions(state, createRng(seed), actions, ctx);
@@ -377,5 +378,80 @@ describe("designed sprites", () => {
     const enemies = Object.values(r.state.entities).filter((e) => e.kind === "enemy");
     expect(enemies).toHaveLength(2);
     for (const e of enemies) expect(e.sprite).toEqual(designed);
+  });
+});
+
+describe("story structure", () => {
+  const plotWorld = () => makeWorld(7, { bible: PLOT_BIBLE }).state;
+  const done = (state: GameState, ids: string[]) => apply(state, ids.map((id) => ({ type: "complete_milestone", milestone_id: id }) as DmAction));
+  const adjust = (stages: Extract<DmAction, { type: "adjust_plot" }>["stages"]): DmAction => ({ type: "adjust_plot", stages });
+  const ms = (...ids: string[]) => ids.map((id) => ({ id, description: `New beat ${id}.` }));
+
+  it("rejects a milestone from a later stage and emits stage_advanced when a stage finishes", () => {
+    const state = plotWorld();
+    const early = done(state, ["m3"]);
+    expect(early.rejected).toHaveLength(1);
+    expect(early.rejected[0]!.reason).toMatch(/earlier stage/);
+    const a = done(state, ["m1"]);
+    expect(a.events.some((e) => e.type === "stage_advanced")).toBe(false);
+    const b = done(a.state, ["m2"]);
+    const adv = b.events.find((e) => e.type === "stage_advanced");
+    expect(adv).toMatchObject({ type: "stage_advanced", stageId: "dream" });
+    expect(describeEvent(adv!)).toMatch(/^\[engine: .+\]$/);
+    expect(done(b.state, ["m3"]).rejected).toHaveLength(0);
+  });
+  it("leaves bibles without a plot unconstrained", () => {
+    expect(done(makeWorld().state, ["m2"]).rejected).toHaveLength(0);
+  });
+
+  it("adjust_plot replaces goals and milestones of stages not yet started, keeping order", () => {
+    const state = done(plotWorld(), ["m1"]).state;
+    const r = apply(state, [adjust([
+      { stage_id: "nightmare", goal: "A new nightmare.", milestones: ms("m20", "m21", "m22") },
+      { stage_id: "dream", goal: "A new dream.", milestones: ms("m3") },
+    ])]);
+    expect(r.rejected).toHaveLength(0);
+    const b = r.state.bible;
+    expect(b.plot!.stages.find((s) => s.id === "nightmare")!.goal).toBe("A new nightmare.");
+    expect(b.plot!.stages.find((s) => s.id === "dream")!.goal).toBe("A new dream.");
+    expect(b.milestones.map((m) => m.id)).toEqual(["m1", "m2", "m3", "m5", "m6", "m20", "m21", "m22", "m9", "m10"]);
+    expect(b.milestones.map((m) => m.stage)).toEqual(["anticipation", "anticipation", "dream", "frustration", "frustration", "nightmare", "nightmare", "nightmare", "downfall", "downfall"]);
+    expect(b.milestones[0]!.completed).toBe(true);
+    expect(r.events.some((e) => e.type === "plot_adjusted")).toBe(true);
+    expect(validateBiblePlot(b)).toEqual([]);
+  });
+  it("adjust_plot rejects the current or finished stages and never touches completed milestones", () => {
+    const state = done(plotWorld(), ["m1"]).state;
+    const cur = apply(state, [adjust([{ stage_id: "anticipation", goal: "x", milestones: ms("m1") }])]);
+    expect(cur.rejected[0]!.reason).toMatch(/already started/);
+    const further = done(state, ["m2", "m3"]).state;
+    const past = apply(further, [adjust([{ stage_id: "dream", goal: "x", milestones: ms("m3") }])]);
+    expect(past.rejected).toHaveLength(1);
+    expect(past.state.bible).toEqual(further.bible);
+  });
+  it("adjust_plot rejects unknown stages, clashing milestone ids, duplicates and a missing plot, applying nothing", () => {
+    const state = plotWorld();
+    const bad = [
+      adjust([{ stage_id: "nope", goal: "x", milestones: ms("m30") }]),
+      adjust([{ stage_id: "nightmare", goal: "x", milestones: ms("m1") }]),
+      adjust([{ stage_id: "nightmare", goal: "x", milestones: ms("m30", "m30") }]),
+      adjust([{ stage_id: "nightmare", goal: "x", milestones: ms("m30") }, { stage_id: "nightmare", goal: "y", milestones: ms("m31") }]),
+      adjust([{ stage_id: "nightmare", goal: "x", milestones: ms("m30") }, { stage_id: "dream", goal: "y", milestones: ms("m30") }]),
+      adjust([{ stage_id: "nightmare", goal: "ok", milestones: ms("m30") }, { stage_id: "nope", goal: "y", milestones: ms("m31") }]),
+    ];
+    const r = apply(state, bad);
+    expect(r.rejected).toHaveLength(bad.length);
+    expect(r.state.bible).toEqual(state.bible);
+    expect(apply(makeWorld().state, [adjust([{ stage_id: "nightmare", goal: "x", milestones: ms("m30") }])]).rejected[0]!.reason).toMatch(/no plot/);
+  });
+  it("adjust_plot respects the milestone cap of 30", () => {
+    const state = plotWorld();
+    const big = Array.from({ length: 4 }, (_, i) => ms(`n${i}a`, `n${i}b`, `n${i}c`, `n${i}d`));
+    const r = apply(state, [adjust([
+      { stage_id: "dream", goal: "x", milestones: big[0]! }, { stage_id: "frustration", goal: "x", milestones: big[1]! },
+      { stage_id: "nightmare", goal: "x", milestones: big[2]! }, { stage_id: "downfall", goal: "x", milestones: big[3]! },
+    ])]);
+    expect(r.rejected).toHaveLength(0);
+    expect(r.state.bible.milestones.length).toBeLessThanOrEqual(30);
   });
 });

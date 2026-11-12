@@ -1,0 +1,513 @@
+{
+  "version": 1,
+  "fortune": {
+    "start": 5,
+    "min": 0,
+    "max": 10
+  },
+  "limits": {
+    "maxMilestones": 30
+  },
+  "patterns": {
+    "overcoming_the_monster": {
+      "name": "Overcoming the Monster",
+      "shape": "A threat grows until the heroes confront and destroy it",
+      "keywords": [
+        "monster",
+        "beast",
+        "dragon",
+        "creature",
+        "curse",
+        "terror",
+        "menace",
+        "hunt",
+        "ghost",
+        "horde",
+        "lair",
+        "plague",
+        "cult"
+      ],
+      "recommendedArcs": [
+        "rise",
+        "fall_rise",
+        "rise_fall_rise"
+      ],
+      "stages": [
+        {
+          "id": "call",
+          "name": "Call",
+          "purpose": "The threat shows itself and the party is drawn in.",
+          "tension": 3,
+          "difficulty": "easy"
+        },
+        {
+          "id": "early_success",
+          "name": "Early success",
+          "purpose": "The party wins small victories and thinks it has the measure of the threat.",
+          "tension": 4,
+          "difficulty": "standard"
+        },
+        {
+          "id": "frustration",
+          "name": "Frustration",
+          "purpose": "The threat proves stronger and smarter; allies are lost or plans fail.",
+          "tension": 6,
+          "difficulty": "standard"
+        },
+        {
+          "id": "nightmare",
+          "name": "Nightmare",
+          "purpose": "The threat strikes back at its worst and the party is at its lowest.",
+          "tension": 8,
+          "difficulty": "hard"
+        },
+        {
+          "id": "final_confrontation",
+          "name": "Final confrontation",
+          "purpose": "The party confronts the source of the threat and ends it.",
+          "tension": 10,
+          "difficulty": "deadly"
+        }
+      ]
+    },
+    "rags_to_riches": {
+      "name": "Rags to Riches",
+      "shape": "The humble rise, lose everything, and earn it back for real",
+      "keywords": [
+        "poor",
+        "orphan",
+        "humble",
+        "fortune",
+        "inherit",
+        "apprentice",
+        "street",
+        "thief",
+        "rise",
+        "treasure",
+        "noble",
+        "guild",
+        "ambition"
+      ],
+      "recommendedArcs": [
+        "rise_fall_rise",
+        "rise",
+        "fall_rise"
+      ],
+      "stages": [
+        {
+          "id": "humble_start",
+          "name": "Humble start",
+          "purpose": "Show the party's small lives and the thing they lack.",
+          "tension": 2,
+          "difficulty": "easy"
+        },
+        {
+          "id": "early_rise",
+          "name": "Early rise",
+          "purpose": "A first stroke of luck or skill lifts them toward a new station.",
+          "tension": 4,
+          "difficulty": "standard"
+        },
+        {
+          "id": "central_crisis",
+          "name": "Central crisis",
+          "purpose": "They lose what they gained and see what it cost them.",
+          "tension": 7,
+          "difficulty": "hard"
+        },
+        {
+          "id": "independence",
+          "name": "Independence",
+          "purpose": "They rebuild by their own hands and grow past their old needs.",
+          "tension": 6,
+          "difficulty": "standard"
+        },
+        {
+          "id": "final_union",
+          "name": "Final union",
+          "purpose": "They claim a lasting place, having become worthy of it.",
+          "tension": 8,
+          "difficulty": "hard"
+        }
+      ]
+    },
+    "the_quest": {
+      "name": "The Quest",
+      "shape": "A long journey toward a goal through trials and temptations",
+      "keywords": [
+        "quest",
+        "journey",
+        "relic",
+        "artifact",
+        "seek",
+        "search",
+        "map",
+        "pilgrimage",
+        "lost",
+        "legend",
+        "treasure",
+        "expedition",
+        "travel"
+      ],
+      "recommendedArcs": [
+        "rise",
+        "rise_fall_rise",
+        "fall_rise"
+      ],
+      "stages": [
+        {
+          "id": "call",
+          "name": "Call",
+          "purpose": "A goal worth a journey is set and the party commits to it.",
+          "tension": 3,
+          "difficulty": "easy"
+        },
+        {
+          "id": "journey",
+          "name": "Journey",
+          "purpose": "The road brings allies, wonders, rivals and small trials.",
+          "tension": 4,
+          "difficulty": "standard"
+        },
+        {
+          "id": "arrival_and_frustration",
+          "name": "Arrival and frustration",
+          "purpose": "The goal seems within reach, then slips away behind a new obstacle.",
+          "tension": 6,
+          "difficulty": "standard"
+        },
+        {
+          "id": "final_ordeals",
+          "name": "Final ordeals",
+          "purpose": "The hardest trials, with temptations to turn back or cheat.",
+          "tension": 8,
+          "difficulty": "hard"
+        },
+        {
+          "id": "goal",
+          "name": "Goal",
+          "purpose": "The party reaches the goal and learns what it is really worth.",
+          "tension": 9,
+          "difficulty": "deadly"
+        }
+      ]
+    },
+    "voyage_and_return": {
+      "name": "Voyage and Return",
+      "shape": "Into a strange world, then a hard escape home, changed",
+      "keywords": [
+        "portal",
+        "island",
+        "underworld",
+        "feywild",
+        "strange",
+        "foreign",
+        "lost",
+        "stranded",
+        "realm",
+        "shipwreck",
+        "dream",
+        "other world",
+        "return",
+        "home"
+      ],
+      "recommendedArcs": [
+        "fall_rise",
+        "rise_fall_rise",
+        "rise_fall"
+      ],
+      "stages": [
+        {
+          "id": "fall_into_the_strange",
+          "name": "Fall into the strange",
+          "purpose": "The party crosses into an unfamiliar world with its own rules.",
+          "tension": 3,
+          "difficulty": "easy"
+        },
+        {
+          "id": "fascination",
+          "name": "Fascination",
+          "purpose": "The strange world is wondrous and welcoming, and hides its cost.",
+          "tension": 3,
+          "difficulty": "standard"
+        },
+        {
+          "id": "frustration",
+          "name": "Frustration",
+          "purpose": "The rules turn against the party and the way home is not clear.",
+          "tension": 6,
+          "difficulty": "standard"
+        },
+        {
+          "id": "nightmare",
+          "name": "Nightmare",
+          "purpose": "The strange world closes in and the party is hunted.",
+          "tension": 8,
+          "difficulty": "hard"
+        },
+        {
+          "id": "escape_and_return",
+          "name": "Escape and return",
+          "purpose": "A narrow escape home, and a home that looks different now.",
+          "tension": 9,
+          "difficulty": "hard"
+        }
+      ]
+    },
+    "comedy": {
+      "name": "Comedy",
+      "shape": "Confusion and misunderstandings pile up, then untangle",
+      "keywords": [
+        "mistaken",
+        "identity",
+        "festival",
+        "wedding",
+        "feast",
+        "prank",
+        "trickster",
+        "rival",
+        "misunderstanding",
+        "mix-up",
+        "fool",
+        "carnival",
+        "party",
+        "gossip"
+      ],
+      "recommendedArcs": [
+        "fall_rise",
+        "rise",
+        "rise_fall_rise"
+      ],
+      "stages": [
+        {
+          "id": "order_disturbed",
+          "name": "Order disturbed",
+          "purpose": "A small upset breaks the settled order of the place.",
+          "tension": 2,
+          "difficulty": "easy"
+        },
+        {
+          "id": "confusion",
+          "name": "Confusion",
+          "purpose": "Mistakes, disguises and crossed purposes multiply.",
+          "tension": 3,
+          "difficulty": "easy"
+        },
+        {
+          "id": "peak_of_muddle",
+          "name": "Peak of muddle",
+          "purpose": "Everything goes wrong at once and everyone suspects the wrong person.",
+          "tension": 6,
+          "difficulty": "standard"
+        },
+        {
+          "id": "revelation",
+          "name": "Revelation",
+          "purpose": "The truth comes out, and it is not what anyone assumed.",
+          "tension": 5,
+          "difficulty": "standard"
+        },
+        {
+          "id": "reconciliation",
+          "name": "Reconciliation",
+          "purpose": "Order returns, better than before, with the foolish forgiven.",
+          "tension": 4,
+          "difficulty": "standard"
+        }
+      ]
+    },
+    "tragedy": {
+      "name": "Tragedy",
+      "shape": "Ambition or a flaw leads to ruin (softened to loss at \"family\")",
+      "keywords": [
+        "ambition",
+        "betray",
+        "betrayal",
+        "revenge",
+        "doom",
+        "fall",
+        "tyrant",
+        "pride",
+        "greed",
+        "oath",
+        "downfall",
+        "war",
+        "crown",
+        "vengeance",
+        "ruin"
+      ],
+      "recommendedArcs": [
+        "rise_fall",
+        "fall",
+        "fall_rise_fall"
+      ],
+      "stages": [
+        {
+          "id": "anticipation",
+          "name": "Anticipation",
+          "purpose": "The party is drawn toward a desire, a duty or a bargain.",
+          "tension": 3,
+          "difficulty": "easy"
+        },
+        {
+          "id": "dream",
+          "name": "Dream",
+          "purpose": "Things go well; the desire seems within reach and costs are ignored.",
+          "tension": 4,
+          "difficulty": "standard"
+        },
+        {
+          "id": "frustration",
+          "name": "Frustration",
+          "purpose": "Small cracks widen and choices narrow.",
+          "tension": 6,
+          "difficulty": "standard"
+        },
+        {
+          "id": "nightmare",
+          "name": "Nightmare",
+          "purpose": "The party's own choices turn on it and allies are lost.",
+          "tension": 8,
+          "difficulty": "hard"
+        },
+        {
+          "id": "downfall",
+          "name": "Downfall",
+          "purpose": "The cost comes due. Loss and consequence, never cruelty for its own sake.",
+          "tension": 9,
+          "difficulty": "deadly"
+        }
+      ]
+    },
+    "rebirth": {
+      "name": "Rebirth",
+      "shape": "A dark spell or flaw holds sway until redemption breaks it",
+      "keywords": [
+        "curse",
+        "redemption",
+        "spell",
+        "sleep",
+        "shadow",
+        "haunted",
+        "forgive",
+        "guilt",
+        "corruption",
+        "possessed",
+        "awaken",
+        "atone",
+        "silence",
+        "hollow"
+      ],
+      "recommendedArcs": [
+        "fall_rise",
+        "fall_rise_fall",
+        "rise_fall_rise"
+      ],
+      "stages": [
+        {
+          "id": "shadow_falls",
+          "name": "Shadow falls",
+          "purpose": "A dark influence settles over a person, a place or the party.",
+          "tension": 3,
+          "difficulty": "easy"
+        },
+        {
+          "id": "apparent_calm",
+          "name": "Apparent calm",
+          "purpose": "Life seems to go on while the shadow quietly deepens.",
+          "tension": 3,
+          "difficulty": "standard"
+        },
+        {
+          "id": "tightening_grip",
+          "name": "Tightening grip",
+          "purpose": "The shadow tightens and escape looks unlikely.",
+          "tension": 6,
+          "difficulty": "standard"
+        },
+        {
+          "id": "darkest_hour",
+          "name": "Darkest hour",
+          "purpose": "All seems lost and the party must face the heart of it.",
+          "tension": 9,
+          "difficulty": "hard"
+        },
+        {
+          "id": "awakening",
+          "name": "Awakening",
+          "purpose": "An act of courage, love or honesty breaks the hold.",
+          "tension": 7,
+          "difficulty": "hard"
+        }
+      ]
+    }
+  },
+  "arcs": {
+    "rise": {
+      "name": "Steady climb",
+      "curve": "up",
+      "fortune": [
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    "fall": {
+      "name": "Long descent",
+      "curve": "down",
+      "fortune": [
+        4,
+        3,
+        2,
+        1,
+        0
+      ]
+    },
+    "fall_rise": {
+      "name": "Into the pit and out",
+      "curve": "down then up",
+      "fortune": [
+        3,
+        1,
+        0,
+        5,
+        9
+      ]
+    },
+    "rise_fall": {
+      "name": "Soaring, then falling",
+      "curve": "up then down",
+      "fortune": [
+        6,
+        8,
+        10,
+        5,
+        1
+      ]
+    },
+    "rise_fall_rise": {
+      "name": "Rise, fall, rise again",
+      "curve": "up, down, up",
+      "fortune": [
+        7,
+        9,
+        4,
+        2,
+        9
+      ]
+    },
+    "fall_rise_fall": {
+      "name": "Hope between two falls",
+      "curve": "down, up, down",
+      "fortune": [
+        3,
+        1,
+        6,
+        9,
+        2
+      ]
+    }
+  }
+}

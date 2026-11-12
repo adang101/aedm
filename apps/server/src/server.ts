@@ -5,6 +5,7 @@ import type { ModelProvider } from "@aedm/llm";
 import { join } from "node:path";
 import { WebSocketServer, type RawData } from "ws";
 import { JsonAccountStore, type AccountStore } from "./accounts/store";
+import { JsonWorkshopStore, type WorkshopStore } from "./accounts/workshop";
 import { createSpriteAssets } from "./assets/sprites";
 import { JsonAssetStore, type AssetStore } from "./assets/store";
 import { Handlers } from "./handlers";
@@ -24,6 +25,8 @@ export interface GameServerOptions {
   dataDir?: string;
   /** Replace the JSON-file account storage (a database, or a fake in tests). */
   accounts?: AccountStore;
+  /** Replace the JSON-file Workshop storage (<dataDir>/accounts/workshop/<user>.json). */
+  workshop?: WorkshopStore;
   /** Replace the JSON-file asset storage (<dataDir>/assets/assets.json). */
   assets?: AssetStore;
   /** How long the sprite designer model gets before the offline designer answers (default 4000). */
@@ -66,6 +69,7 @@ export async function createGameServer(opts: GameServerOptions): Promise<GameSer
     sprites: createSpriteAssets({ store: assets, provider: opts.provider, timers, clock, logger, ...(opts.spriteTimeoutMs ? { timeoutMs: opts.spriteTimeoutMs } : {}) }),
     saveDir: opts.saveDir,
     accounts: opts.accounts ?? new JsonAccountStore({ dir: join(opts.dataDir ?? join(opts.saveDir, ".data"), "accounts"), clock: opts.clock }),
+    workshop: opts.workshop ?? new JsonWorkshopStore({ dir: join(opts.dataDir ?? join(opts.saveDir, ".data"), "accounts", "workshop"), ...(opts.clock ? { clock: opts.clock } : {}) }),
     clock: opts.clock ?? Date.now,
     random: opts.random ?? Math.random,
     timers: opts.timers ?? realTimers,

@@ -1,20 +1,24 @@
-import { ABILITIES, BODY_PLANS, CHECK_TAGS, PART_GROUPS, type CheckTag, type PartGroup, type SpriteRecipe, type SpriteShape, type SpriteSpec } from "@aedm/schemas";
+import { ABILITIES, BODY_PLANS, CHECK_TAGS, PART_GROUPS, SPRITE_PROMPT_MAX, spriteSwatch, type CheckTag, type PartGroup, type PixelSprite, type SpriteRecipe, type SpriteShape, type SpriteSpec } from "@aedm/schemas";
 import { drawShapeBody } from "../render/shape-recipe";
-import { composeSprite } from "../render/sprite-composer";
+import { composePixelSprite, composeRecipe } from "../render/pixel-sprite";
+import { MARGIN, composeSprite } from "../render/sprite-composer";
 import {
   MAX_ABILITIES, MAX_TRAITS, buildCreate, emptyForm, premadeForms, toggleTrait,
   type CreatorForm, type FormErrors,
 } from "../state/creator";
 import {
   BODY_LABEL, BUILDER_SIZES, GROUP_LABEL, MAX_BUILDER_PARTS, PALETTE_SLOTS, SLOT_LABEL, SWATCHES,
-  buildSpriteSpec, randomLook, togglePart, type PaletteSlot,
+  buildSpriteSpec, designedForm, randomLook, togglePart, type PaletteSlot,
 } from "../state/sprite-builder";
 import {
   POINT_BUY_BUDGET, adjust, canDecrease, canIncrease, nextCost, pointsLeft, scoreCost,
 } from "../state/pointbuy";
 import type { AppState } from "../state/store";
 import { h, replaceChildren } from "../util/dom";
+import { fromRecipe, blank } from "../state/pixel-editor";
 import type { Ctx } from "./types";
+import { openPixelEditor, rasterizeSpec } from "./pixel-editor";
+import { openWorkshop, saveToWorkshop } from "./workshop";
 
 const ABILITY_NAMES: Record<string, string> = {
   str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma",
@@ -45,9 +49,28 @@ export function specIcon(spec: SpriteSpec, size = 40): HTMLCanvasElement {
   return c;
 }
 
+/** A painted sprite at a small size; falls back to its base spec, then to a shape, if it cannot be drawn. */
+export function pixelIcon(recipe: PixelSprite, name: string, size = 40): HTMLCanvasElement {
+  const comp = composePixelSprite(recipe, "right", 0);
+  if (!comp) return recipe.base ? specIcon(recipe.base, size) : shapeIcon("circle", ...swatchArgs(recipe, name), size);
+  const c = h("canvas", { width: size * 2, height: size * 2, style: `width:${size}px;height:${size}px` });
+  const g = c.getContext("2d");
+  if (g) {
+    const k = (size * 2) / 64;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(comp.canvas, MARGIN, MARGIN, 48, 64, (size * 2 - 48 * k) / 2, 0, 48 * k, 64 * k);
+  }
+  return c;
+}
+
+function swatchArgs(r: SpriteRecipe, name: string): [string, string, string] {
+  const w = spriteSwatch(r, name);
+  return [w.color, w.accent, w.glyph];
+}
+
 export function recipeIcon(recipe: SpriteRecipe, name: string, size = 40): HTMLCanvasElement {
   if (recipe.kind === "spec") return specIcon(recipe, size);
-  void name;
+  if (recipe.kind === "pixel") return pixelIcon(recipe, name, size);
   return shapeIcon(recipe.shape, recipe.color, recipe.accent, recipe.glyph, size);
 }
 
@@ -150,8 +173,9 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
   function drawPreview(): void {
     const g = preview.getContext("2d");
     if (!g) return;
-    const spec = currentSpec();
-    const s = composeSprite(spec, "right", previewFrame);
+    const s = form.painted
+      ? composeRecipe(form.painted, "right", previewFrame) ?? composeSprite(currentSpec(), "right", previewFrame)
+      : composeSprite(currentSpec(), "right", previewFrame);
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, preview.width, preview.height);
     const k = 3; // 48 x 64 canvas drawn at 3x
@@ -162,8 +186,40 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
     const fit = Math.min(1, 1 / s.scale * 1.1);
     g.drawImage(s.canvas, fx - s.footX * k * fit, fy - s.footY * k * fit, s.canvas.width * k * fit, s.canvas.height * k * fit);
   }
+  // ----- paint over / paint from scratch -----
+  const paintNote = h("p", { class: "muted", role: "status" });
+  const paintOver = h("button", { type: "button", class: "btn small", onClick: () => startEditor("over") }, "Paint over");
+  const paintScratch = h("button", { type: "button", class: "btn small", onClick: () => startEditor("scratch") }, "Paint from scratch");
+  const editPaint = h("button", { type: "button", class: "btn small", onClick: () => startEditor("edit") }, "Edit painting");
+  const removePaint = h("button", { type: "button", class: "btn small ghost", onClick: () => { clearPainting(); refreshPreview(); } }, "Remove painting");
+  const paintRow = h("div", { class: "paint-row" }, paintOver, editPaint, paintScratch, removePaint);
+  function clearPainting(): void { form.painted = undefined; }
+  function startEditor(mode: "over" | "scratch" | "edit"): void {
+    const size = form.painted?.size ?? form.sprite.size;
+    let px = blank();
+    let base: SpriteSpec | undefined;
+    if (mode === "edit" && form.painted) {
+      px = fromRecipe(form.painted) ?? px;
+      base = form.painted.base;
+    } else if (mode === "over") {
+      base = currentSpec();
+      try { px = rasterizeSpec(base).px; } catch { base = undefined; }
+    }
+    openPixelEditor({
+      px, size, base, traits: base?.traits,
+      onSave: (sprite) => { form.painted = sprite; refreshPreview(); },
+    });
+  }
+  function refreshPaintControls(): void {
+    const has = !!form.painted;
+    paintOver.hidden = has; editPaint.hidden = !has; removePaint.hidden = !has;
+    paintNote.textContent = has
+      ? "Using your painting. Changing the look below replaces it."
+      : "Or make your own pixel sprite: start from this look or from a blank canvas.";
+  }
   function refreshPreview(): void {
     drawPreview();
+    refreshPaintControls();
     for (const b of bodyBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.body === form.sprite.body);
     for (const b of sizeBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.size === form.sprite.size);
     for (const b of slotBox.querySelectorAll("button")) b.classList.toggle("on", b.dataset.slot === slot);
@@ -179,32 +235,77 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
   }
   function buildSpriteControls(): void {
     replaceChildren(bodyBox, ...BODY_PLANS.map((b) => h("button", {
-      type: "button", class: "chip", "data-body": b, onClick: () => { form.sprite.body = b; refreshPreview(); },
+      type: "button", class: "chip", "data-body": b, onClick: () => { clearPainting(); form.sprite.body = b; refreshPreview(); },
     }, BODY_LABEL[b])));
     replaceChildren(sizeBox, ...BUILDER_SIZES.map((z) => h("button", {
-      type: "button", class: "chip", "data-size": z, onClick: () => { form.sprite.size = z; refreshPreview(); },
+      type: "button", class: "chip", "data-size": z, onClick: () => { clearPainting(); form.sprite.size = z; refreshPreview(); },
     }, z)));
     replaceChildren(slotBox, ...PALETTE_SLOTS.map((k) => h("button", {
       type: "button", class: "chip slot", "data-slot": k, onClick: () => { slot = k; buildSpriteControls(); refreshPreview(); },
     }, h("span", { class: "dot", style: `background:${form.sprite.palette[k]}` }), SLOT_LABEL[k])));
     replaceChildren(swatchBox, ...SWATCHES.map((c) => h("button", {
       type: "button", class: "swatch", "data-color": c, style: `background:${c}`, "aria-label": `${SLOT_LABEL[slot]} color ${c}`,
-      onClick: () => { form.sprite.palette[slot] = c; buildSpriteControls(); refreshPreview(); },
+      onClick: () => { clearPainting(); form.sprite.palette[slot] = c; buildSpriteControls(); refreshPreview(); },
     })));
     replaceChildren(partsBox, ...(Object.keys(PART_GROUPS) as PartGroup[]).map((g) => h("div", { class: "part-group" },
       h("b", null, GROUP_LABEL[g]),
       h("div", { class: "chip-row wrap" }, ...PART_GROUPS[g].map((part) => h("button", {
         type: "button", class: "chip toggle small", "data-part": part,
-        onClick: () => { form.sprite.parts = togglePart(form.sprite.parts, part); refreshPreview(); },
+        onClick: () => { clearPainting(); form.sprite.parts = togglePart(form.sprite.parts, part); refreshPreview(); },
       }, part.replace(/_/g, " ")))))));
   }
   const randomBtn = h("button", {
     type: "button", class: "btn small",
     onClick: () => {
+      clearPainting();
       form.sprite = randomLook(form.name, form.sprite.rolls + 1);
       buildSpriteControls(); refreshPreview();
     },
   }, "Randomize look");
+
+  // ----- describe your look -----
+  const lookIn = h("textarea", {
+    rows: 2, maxlength: SPRITE_PROMPT_MAX, "aria-label": "Describe your look",
+    placeholder: "e.g. a lanky heron-folk ferryman with a lantern and a patched blue coat",
+  });
+  const lookCount = h("small", { class: "muted" }, `0/${SPRITE_PROMPT_MAX}`);
+  const lookNote = h("p", { class: "muted", role: "status" });
+  const designBtn = h("button", { type: "button", class: "btn small" }, "Design");
+  lookIn.addEventListener("input", () => { lookCount.textContent = `${lookIn.value.length}/${SPRITE_PROMPT_MAX}`; });
+  let designing = false;
+  let designed = false;
+  designBtn.addEventListener("click", () => {
+    const prompt = lookIn.value.trim();
+    if (designing) return;
+    if (!prompt) { lookNote.textContent = "Describe your character's look first."; return; }
+    const name = form.name.trim().slice(0, 30);
+    const id = ctx.client.send("design_sprite", {
+      prompt, role_hint: "pc", seed: Math.floor(Math.random() * 0x7fffffff), ...(name ? { name } : {}),
+    });
+    if (!id) return;
+    designing = true;
+    designBtn.disabled = true;
+    lookNote.textContent = "Designing...";
+    ctx.client.afterReply(id, (type, msg) => {
+      designing = false;
+      designBtn.disabled = false;
+      if (type === "sprite_designed" && msg.type === "sprite_designed") {
+        clearPainting();
+        form.sprite = { ...designedForm(msg.payload.spec), rolls: form.sprite.rolls };
+        designed = true;
+        designBtn.textContent = "Design again";
+        lookNote.textContent = msg.payload.source === "offline"
+          ? "Designed offline from keywords. Press Design again for another take, or tweak below."
+          : "Press Design again for another take, or tweak it below.";
+        buildSpriteControls(); refreshPreview();
+      } else {
+        lookNote.textContent = "That did not work. Try again in a moment.";
+      }
+    });
+  });
+  const describeBox = h("section", { class: "stack tight describe-look" },
+    h("div", { class: "row between" }, h("b", null, "Describe your look"), lookCount),
+    lookIn, h("div", { class: "row" }, designBtn), lookNote);
   let seen = false;
   const bob = setInterval(() => {
     if (preview.isConnected) seen = true;
@@ -212,6 +313,20 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
     previewFrame = 1 - previewFrame;
     drawPreview();
   }, 450);
+
+  // ----- Workshop (accounts) -----
+  const wsSave = h("button", { type: "button", class: "btn small", title: "Keep this look in your Workshop library" }, "Save look to Workshop");
+  const wsOpen = h("button", { type: "button", class: "btn small ghost" }, "Open Workshop");
+  const workshopRow = h("div", { class: "paint-row workshop-row", hidden: true }, wsSave, wsOpen);
+  wsSave.addEventListener("click", () => {
+    const recipe: SpriteRecipe = form.painted ?? currentSpec();
+    wsSave.disabled = true;
+    const ok = saveToWorkshop(ctx, {
+      name: form.name.trim() || "My look", role_hint: "pc", concept: lookIn.value.trim() || form.description, recipe,
+    }, () => { wsSave.disabled = false; });
+    if (!ok) wsSave.disabled = false;
+  });
+  wsOpen.addEventListener("click", () => openWorkshop(ctx));
 
   // ----- premades -----
   const premades = premadeForms();
@@ -229,6 +344,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
   function updateAccount(s: AppState): void {
     const signedIn = !!s.auth.user;
     saveRow.hidden = !signedIn;
+    workshopRow.hidden = !signedIn;
     const list = signedIn ? s.auth.characters : [];
     savedBox.hidden = list.length === 0;
     const key = JSON.stringify(list.map((c) => [c.id, c.name]));
@@ -263,8 +379,10 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
         h("label", null, "Key ability", keySel, errEls.key_ability!),
       ),
       h("div", { class: "stack" },
+        describeBox,
         h("div", { class: "sprite-col" }, preview,
           h("div", { class: "stack tight" }, h("b", null, "Body plan"), bodyBox, h("b", null, "Size"), sizeBox, randomBtn)),
+        h("section", { class: "stack tight paint-section" }, h("b", null, "Paint your own"), paintNote, paintRow, workshopRow),
       ),
     ),
     h("section", { class: "stack tight sprite-builder" },
@@ -290,6 +408,7 @@ export function createCreator(ctx: Ctx, onClaimed?: () => void): Creator {
 
   function syncAll(): void {
     nameIn.value = form.name; titleIn.value = form.title; descIn.value = form.description;
+    if (designed) { designed = false; designBtn.textContent = "Design"; lookNote.textContent = ""; }
     keySel.value = form.key_ability;
     refreshScores(); refreshTraits(); refreshAbilities(); buildSpriteControls(); refreshPreview(); showErrors();
   }

@@ -5,6 +5,8 @@ import {
 } from "./enums";
 import { EnemyIdSchema, EntityIdSchema, MapIdSchema, countWords, maxWords, shortWord, text, wordRange } from "./common";
 import { MapBriefSchema } from "./map";
+import { StageIdSchema } from "./world";
+import { AssetIdSchema } from "./asset";
 import { AppearanceSchema } from "./sprite";
 
 const coord = z.number().int().min(0).max(255);
@@ -30,6 +32,8 @@ export const CreateNpcActionSchema = z.strictObject({
   sprite_tags: z.array(shortWord).max(5),
   /** Optional look hint for the sprite designer (at most 160 chars). */
   appearance: AppearanceSchema.optional(),
+  /** Optional approved cast asset id from the context pack. The look comes from the cast; stats and everything else stay with the engine. */
+  asset_ref: AssetIdSchema.optional(),
 });
 
 export const NpcSayActionSchema = z.strictObject({
@@ -47,6 +51,8 @@ export const CreateEnemyActionSchema = z.strictObject({
   appearance: AppearanceSchema.optional(),
   /** Optional handle (en_ + snake_case, at most 40 chars). The server registers the built archetype under it so spawn_entity can use it as archetype_id. */
   ref: z.string().trim().max(40).regex(/^en_[a-z0-9_]+$/, "ref must be en_ plus snake_case").optional(),
+  /** Optional approved cast asset id from the context pack. The look comes from the cast; stats still come from the enemy builder and engine. */
+  asset_ref: AssetIdSchema.optional(),
 });
 
 export const SpawnEntityActionSchema = z
@@ -143,6 +149,16 @@ export const CompleteMilestoneActionSchema = z.strictObject({
   milestone_id: EntityIdSchema,
 });
 
+/** Re-plans stages that have not started: new goals and a fresh milestone list for each. */
+export const AdjustPlotActionSchema = z.strictObject({
+  type: z.literal("adjust_plot"),
+  stages: z.array(z.strictObject({
+    stage_id: StageIdSchema,
+    goal: text(300),
+    milestones: z.array(z.strictObject({ id: EntityIdSchema, description: text(300) })).min(1).max(4),
+  })).min(1).max(7),
+});
+
 export const SuggestActionsActionSchema = z.strictObject({
   type: z.literal("suggest_actions"),
   chips: z.array(text(60).refine((s) => countWords(s) <= 4, { message: "at most 4 words" })).min(2).max(4),
@@ -152,7 +168,7 @@ export const DmActionSchema = z.discriminatedUnion("type", [
   RequestCheckActionSchema, CreateNpcActionSchema, NpcSayActionSchema, CreateEnemyActionSchema,
   SpawnEntityActionSchema, StartCombatActionSchema, EndCombatActionSchema, ApplyConditionActionSchema,
   GrantItemActionSchema, UpdateQuestActionSchema, SetFactActionSchema, GenerateMapActionSchema,
-  ChangeSceneActionSchema, AwardGrowthActionSchema, CompleteMilestoneActionSchema, SuggestActionsActionSchema,
+  ChangeSceneActionSchema, AwardGrowthActionSchema, CompleteMilestoneActionSchema, AdjustPlotActionSchema, SuggestActionsActionSchema,
 ]);
 export type DmAction = z.infer<typeof DmActionSchema>;
 export type DmActionType = DmAction["type"];

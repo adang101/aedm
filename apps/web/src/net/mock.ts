@@ -1,16 +1,20 @@
 import {
   ClientMessageSchema, WS_VERSION, fixtures, parseDice, validateRegistration,
   type Ability, type CampaignInfo, type CharacterCreate, type CharacterSummary, type CharacterView, type EntityView, type GameMap,
-  type ServerMessageType,
+  type CastEntry, type ServerMessageType, type WorkshopAsset, WORKSHOP_MAX_ASSETS, WORKSHOP_MAX_BYTES,
 } from "@aedm/schemas";
 import type { Transport, TransportFactory, TransportHandlers } from "./transport";
 import { FIRST_SCENE, NARRATION_OPENING, blockedAt, buildScenes, sceneFromText, type MockScene } from "./mock-world";
+import { designSpriteOffline } from "@aedm/engine";
 import { PREMADE_SPECS } from "../state/sprite-builder";
 
 type Payload = Record<string, unknown>;
 type PlayerStatus = "online" | "away" | "offline" | "autopilot";
 interface MockPlayer { player_id: string; display_name: string; status: PlayerStatus; ready: boolean; character_id: string | null }
-interface Settings { content_rating: "family" | "teen" | "mature"; campaign_pitch: string; dev_solo: boolean }
+interface Settings {
+  content_rating: "family" | "teen" | "mature"; campaign_pitch: string; dev_solo: boolean; plot_pattern?: string; plot_arc?: string;
+  custom_cast?: "off" | "host_approval" | "open"; custom_paintings?: boolean;
+}
 
 const ME = "p_me";
 const ME_CHAR = "ch_me";
@@ -61,7 +65,7 @@ export function mockCharacterFrom(c: CharacterCreate): CharacterView {
 }
 
 interface MockTemplate { id: string; character: CharacterCreate; forged: boolean; saved_at: string }
-interface MockAccount { id: string; username: string; password: string; display_name: string; templates: MockTemplate[]; campaigns: CampaignInfo[] }
+interface MockAccount { id: string; username: string; password: string; display_name: string; templates: MockTemplate[]; campaigns: CampaignInfo[]; assets: WorkshopAsset[] }
 
 function mockAbilityNames(c: CharacterCreate): string[] {
   const texts = c.ability_texts ?? (c.abilities ?? []).map((a) => `${a.name}: ${a.description}`);
@@ -94,7 +98,8 @@ export class MockServer {
   private hostId = ME;
   private hostIsFake = false;
   private phase: "lobby" | "playing" = "lobby";
-  private settings: Settings = { content_rating: "teen", campaign_pitch: "", dev_solo: false };
+  private settings: Settings = { content_rating: "teen", campaign_pitch: "", dev_solo: false, plot_pattern: "auto", plot_arc: "auto", custom_cast: "host_approval", custom_paintings: true };
+  private cast: CastEntry[] = [];
   private players: MockPlayer[] = [];
   private myName = "Player";
   private myChar: CharacterView | null = null;
@@ -191,6 +196,16 @@ export class MockServer {
       case "create_room": return this.onCreate(String(p.display_name), ack);
       case "join_room": return this.onJoin(String(p.invite_code), String(p.display_name), ack);
       case "ping": return this.emit("pong", {}, ack);
+      case "design_sprite": {
+        // Offline keyword designer, the same one the server falls back to.
+        const spec = designSpriteOffline(
+          { concept: String(p.prompt), name: String(p.name ?? ""), role: String(p.role_hint), kind: p.role_hint as "pc" | "npc" | "enemy" | "prop" },
+          typeof p.seed === "number" ? p.seed : rnd(0x7ffffffe),
+        );
+        return this.emit("sprite_designed", { spec, notes: [], source: "offline" }, ack);
+      }
+      case "list_sprite_assets": case "save_sprite_asset": case "delete_sprite_asset":
+        return this.onWorkshop(m.type, p, ack);
       case "register": case "login": case "resume_session": case "logout": case "list_characters":
       case "save_character_template": case "delete_character_template": case "list_campaigns": case "resume_campaign":
         return this.onAccount(m.type, p, ack);
@@ -200,6 +215,8 @@ export class MockServer {
     switch (m.type) {
       case "set_ready": return this.onReady(Boolean(p.ready), ack);
       case "update_settings": return this.onSettings(p, ack);
+      case "offer_to_cast": return this.onOffer(String(p.asset_id), ack);
+      case "cast_decision": return this.onCastDecision(String(p.asset_id), Boolean(p.approve), ack);
       case "start_game": return this.onStart(ack);
       case "claim_character": return this.onClaim(m.payload as { character_id: string; character?: CharacterCreate; template_id?: string }, ack);
       case "move_intent": return this.onMove(p, ack);
@@ -226,6 +243,7 @@ export class MockServer {
     this.hostIsFake = false;
     this.phase = "lobby";
     this.players = [];
+    this.cast = [];
     this.joined = false;
     this.emit("room_created", { room_id: "room_mock", invite_code: this.code }, ack);
   }
@@ -239,6 +257,7 @@ export class MockServer {
       if (!this.code || c !== this.code) {
         // joining somebody else's room: Mira hosts, Dov and Sable are in the lobby
         this.code = c;
+        this.cast = [];
         this.hostId = FAKES.mira.id;
         this.hostIsFake = true;
         this.players = [
@@ -314,7 +333,7 @@ export class MockServer {
         if (problem) return authErr("invalid", problem);
         const username = input.username.trim().toLowerCase();
         if (this.accounts.has(username)) return authErr("username_taken", "That username is taken.");
-        const a: MockAccount = { id: `u_mock_${username}`, username, password: input.password, display_name: input.display_name.trim(), templates: [], campaigns: [] };
+        const a: MockAccount = { id: `u_mock_${username}`, username, password: input.password, display_name: input.display_name.trim(), templates: [], campaigns: [], assets: [] };
         this.accounts.set(username, a);
         return this.authOk(a, ack, this.newSession(a));
       }
@@ -423,8 +442,91 @@ export class MockServer {
   private onSettings(p: Payload, ack: string): void {
     if (this.hostId !== ME) return this.fail("not_host", "Only the host can change settings.", ack);
     Object.assign(this.settings, p);
+    if (p.custom_cast === "open") for (const c of this.cast) c.status = "approved";
     this.emit("presence", { player_id: ME, status: "online" }, ack);
     this.lobbyState();
+    if (p.custom_cast !== undefined || p.custom_paintings !== undefined) this.castState();
+  }
+
+  // ---------- Workshop and campaign cast ----------
+
+  private workshopList(a: MockAccount, ack?: string): void {
+    const sorted = [...a.assets].sort((x, y) => (x.updated_at < y.updated_at ? 1 : -1));
+    const used = a.assets.reduce((n, x) => n + JSON.stringify(x).length, 0);
+    this.emit("sprite_assets_list", { assets: sorted, used_bytes: used, max_assets: WORKSHOP_MAX_ASSETS, max_bytes: WORKSHOP_MAX_BYTES }, ack);
+  }
+
+  private onWorkshop(type: string, p: Payload, ack: string): void {
+    const a = this.authUser;
+    if (!a) return this.fail("forbidden", "Log in to use your Workshop.", ack);
+    if (type === "save_sprite_asset") {
+      const now = new Date().toISOString();
+      const existing = typeof p.id === "string" ? a.assets.find((x) => x.id === p.id) : undefined;
+      if (typeof p.id === "string" && !existing) return this.fail("not_found", "No such Workshop sprite.", ack);
+      if (!existing && a.assets.length >= WORKSHOP_MAX_ASSETS) return this.fail("invalid_state", `Your Workshop holds ${WORKSHOP_MAX_ASSETS} sprites. Delete one first.`, ack);
+      const asset = {
+        id: existing?.id ?? `as_mock_${++this.n}`, name: p.name, role_hint: p.role_hint, concept: p.concept, tags: p.tags ?? [],
+        recipe: p.recipe, source: p.source, created_at: existing?.created_at ?? now, updated_at: now,
+      } as WorkshopAsset;
+      if (existing) a.assets[a.assets.indexOf(existing)] = asset;
+      else a.assets.push(asset);
+    } else if (type === "delete_sprite_asset") {
+      const i = a.assets.findIndex((x) => x.id === p.id);
+      if (i < 0) return this.fail("not_found", "No such Workshop sprite.", ack);
+      a.assets.splice(i, 1);
+    }
+    this.workshopList(a, ack);
+  }
+
+  private castState(): void { this.emit("cast_state", { entries: this.cast }); }
+
+  private onOffer(assetId: string, ack: string): void {
+    const a = this.authUser;
+    if (!a) return this.fail("forbidden", "Log in to offer a sprite from your Workshop.", ack);
+    const mode = this.settings.custom_cast ?? "host_approval";
+    if (mode === "off") return this.fail("forbidden", "The host has turned custom sprites off for this room.", ack);
+    if (this.cast.some((c) => c.asset_id === assetId)) return this.emit("presence", { player_id: ME, status: "online" }, ack);
+    const asset = a.assets.find((x) => x.id === assetId);
+    if (!asset) return this.fail("not_found", "No such sprite in your Workshop.", ack);
+    if (asset.role_hint !== "npc" && asset.role_hint !== "enemy") return this.fail("invalid_state", "Only NPC and enemy looks can join the cast.", ack);
+    if (asset.recipe.kind === "pixel" && this.settings.custom_paintings === false) return this.fail("forbidden", "The host has turned painted sprites off for this room.", ack);
+    this.cast.push({
+      asset_id: asset.id, owner_player_id: ME, owner_name: this.myName.slice(0, 24) || "You", name: asset.name, role_hint: asset.role_hint,
+      concept: asset.concept, recipe: asset.recipe, status: mode === "open" || this.hostId === ME ? "approved" : "pending",
+    });
+    this.emit("presence", { player_id: ME, status: "online" }, ack);
+    this.castState();
+  }
+
+  private onCastDecision(assetId: string, approve: boolean, ack: string): void {
+    const entry = this.cast.find((c) => c.asset_id === assetId);
+    if (!entry) return this.fail("not_found", "That sprite is not in the cast.", ack);
+    const isHost = this.hostId === ME;
+    if (!approve) {
+      if (!isHost && entry.owner_player_id !== ME) return this.fail("not_host", "Only the host can remove a sprite from the cast.", ack);
+      this.cast.splice(this.cast.indexOf(entry), 1);
+    } else {
+      if (!isHost) return this.fail("not_host", "Only the host can approve a sprite for the cast.", ack);
+      entry.status = "approved";
+    }
+    this.emit("presence", { player_id: ME, status: "online" }, ack);
+    this.castState();
+  }
+
+  /** Dev helper: a fake player offers a look to the cast (shows the host's approval flow). */
+  simulateOffer(): void {
+    const owner = this.players.find((p) => p.player_id !== ME) ?? { player_id: FAKES.mira.id, display_name: FAKES.mira.name };
+    if (!this.joined) return;
+    const mode = this.settings.custom_cast ?? "host_approval";
+    if (mode === "off") return;
+    const n = this.cast.length + 1;
+    this.cast.push({
+      asset_id: `as_mock_fake_${n}`, owner_player_id: owner.player_id, owner_name: owner.display_name.slice(0, 24), name: `Fogwalker ${n}`, role_hint: "enemy",
+      concept: "a gaunt figure in drowned-blue robes",
+      recipe: designSpriteOffline({ concept: "a gaunt figure in drowned-blue robes", name: "Fogwalker", role: "standard", kind: "enemy" }, n),
+      status: mode === "open" ? "approved" : "pending",
+    });
+    this.castState();
   }
 
   private onStart(ack: string): void {

@@ -1,6 +1,7 @@
 import type { EntityView, GameMap, MapObject } from "@aedm/schemas";
 import type { AppState, Store } from "../state/store";
 import { myEntity } from "../state/store";
+import { shownEntity } from "../state/workshop";
 import {
   TILE, clampCamera, clampZoom, follow, scaleOf, screenToTile, type Camera,
 } from "./camera";
@@ -329,7 +330,7 @@ export class MapRenderer {
     const ents = Object.values(s.entities)
       .map((e) => {
         const p = this.pos.get(e.id) ?? { x: e.x, y: e.y };
-        return { e, p, row: Math.max(y0, Math.min(y1, Math.round(p.y))) };
+        return { e: shownEntity(e, s.cast), p, row: Math.max(y0, Math.min(y1, Math.round(p.y))) };
       })
       .sort((a, b) => a.p.y - b.p.y || a.p.x - b.p.x);
     const huds: { e: EntityView; o: EntityDrawOpts }[] = [];

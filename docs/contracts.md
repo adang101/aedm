@@ -39,7 +39,8 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | `generate_map` | brief (see Map brief) | `setting.layout` and `setting.environment` from the allowed lists, at most 12 rooms, size class limits. Unknown material ids resolve by id, then tag, then role. **Shape change (v2): `biome` is replaced by `setting`; the DM response `v` stays 1.** |
 | `change_scene` | map_id, entry (spawn name) | Map exists; the party is at an exit, or the DM narrates the travel |
 | `award_growth` | character_id, amount (1 to 25), reason (at most 120) | Session caps from `rules-numbers.md` |
-| `complete_milestone` | milestone_id | Exists in the story bible and is not yet completed; the engine grants 100 growth to each present character |
+| `complete_milestone` | milestone_id | Exists in the story bible and is not yet completed; the engine grants 100 growth to each present character. With a plot, a milestone of a later stage than the current one is rejected (stages complete in order); finishing the last open milestone of a stage advances the stage. |
+| `adjust_plot` | stages (1 to 7): stage_id, goal (at most 300), milestones (1 to 4: id, description at most 300) | The campaign has a plot. Each stage id is in the plot, appears once, and comes after the current stage (the stage of the first incomplete milestone), so started stages and completed milestones never change. New milestone ids must not clash with kept milestones or each other, and the bible keeps at most 30. All or nothing: any bad entry rejects the action. The engine replaces the goals and milestones of those stages and keeps stage order. |
 | `suggest_actions` | chips (2 to 4 strings, at most 4 words each) | Shown as quick-reply chips, mainly for phones |
 
 The DM never changes HP, stats, dice results or inventory directly. Those change only as results of engine rules.
@@ -112,7 +113,7 @@ Part catalog, exported as `PART_GROUPS` and `PART_CATALOG`: **head** horns, antl
 
 A **Sprite spec draft** is the sprite designer model's output: `kind`, `v`, `size`, `traits` are optional (size defaults to medium), colors are any `#rrggbb` (snapped), and `parts` entries take any `part` string of at most 24 characters, up to 12 entries. The engine drops names outside the catalog, keeps the first 6 parts and snaps colors; `body` must be valid.
 
-`sprite_recipe` (characters) and an entity's `sprite` (views) are a union discriminated on `kind`: `spec` (above) or `shape` (circle, square, diamond, triangle or hex with color, accent, glyph). New content uses `spec`; `shape` stays valid for older saves and as a fallback drawing. Character create accepts either.
+`sprite_recipe` (characters) and an entity's `sprite` (views) are a union discriminated on `kind`: `spec` (above), `pixel` (below) or `shape` (circle, square, diamond, triangle or hex with color, accent, glyph). New content uses `spec` or `pixel`; `shape` stays valid for older saves and as a fallback drawing. Character create accepts any of them.
 
 **Asset record** (server-side asset store; sprites are stored in `<data>/assets/assets.json`, materials and settings are schema only)
 
@@ -195,7 +196,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `abilities` | array | 1 to 3 ability objects at creation, up to 6 after level-ups (`abilityLimits.maxAbilitiesPerCharacter`), total cost within the level's power budget |
 | `weapon_tier`, `armor_bonus` | integer | Within the level's allowance |
 | `level`, `growth`, `hp`, `hp_max` | integer | Engine-owned. Clients cannot set them. |
-| `sprite_recipe` | object | Discriminated on `kind`: `spec` (see Sprite spec; standard for new content) or `shape` (shape: circle, square, diamond, triangle, hex; color and accent `#rrggbb`; glyph 1 to 2 characters; kept for backward compatibility) |
+| `sprite_recipe` | object | Discriminated on `kind`: `spec` (see Sprite spec; standard for new content), `pixel` (see Pixel sprite) or `shape` (shape: circle, square, diamond, triangle, hex; color and accent `#rrggbb`; glyph 1 to 2 characters; kept for backward compatibility) |
 | `inventory` | array | Engine-owned |
 
 **Character create (client submits for a new character)**
@@ -204,7 +205,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 
 **WebSocket messages**
 
-Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 2: the envelopes are unchanged, but the Map payload changed shape (v2 map), so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second.
+Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 6 (Workshop and cast messages, `custom_cast` and `custom_paintings` settings); it was 5 for the following: the envelopes are unchanged, but the Map payload changed shape (v2 map), room settings gained `plot_pattern` and `plot_arc`, `design_sprite` and `sprite_designed` were added, and sprite recipes gained the `pixel` kind with the `invalid_sprite` error code, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second; `design_sprite` is also limited per account (see Sprite designer).
 
 | `type` | Direction | Payload |
 | --- | --- | --- |
@@ -212,7 +213,7 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `room_created` | Server to client | room_id, invite_code |
 | `join_room` | Client to server | invite_code, display_name (1 to 24), auth_token (optional; the reconnect token from `joined`) |
 | `joined` | Server to client | player_id, auth_token, room_id |
-| `lobby_state` | Server to client | room_id, invite_code, host_player_id, phase (lobby, playing), settings (content_rating family, teen or mature; campaign_pitch at most 300 characters; dev_solo boolean), players (player_id, display_name, status online, away, offline or autopilot, ready, character_id or null), resume_save (optional: save_id, name; set on a room opened by `resume_campaign`) |
+| `lobby_state` | Server to client | room_id, invite_code, host_player_id, phase (lobby, playing), settings (content_rating family, teen or mature; campaign_pitch at most 300 characters; dev_solo boolean; plot_pattern and plot_arc, optional, a pattern or arc id or `auto`, missing means auto), players (player_id, display_name, status online, away, offline or autopilot, ready, character_id or null), resume_save (optional: save_id, name; set on a room opened by `resume_campaign`) |
 | `set_ready` | Client to server | ready |
 | `update_settings` | Client to server | Host only. Any subset of the `settings` fields |
 | `start_game` | Client to server | Host only. None |
@@ -313,3 +314,64 @@ Optional; guests use none of this. The login belongs to the connection and works
 | `resume_campaign` | Client to server | save_id, room_id. Opens a new lobby for a save the account owns and answers `room_created`; the client joins it, then the host sends `load_save`. |
 
 Stored template (`data/accounts/users.json`, per user): id (`ch_...`), saved_at, character (the Character create object), forged_abilities (optional). Save files add `owner_user_id`, `campaign_title` and `room.player_user_ids` (player_id to account id); older saves without them are guest saves.
+
+**Story structure (built)**
+
+| Contract | Fields |
+| --- | --- |
+| Story bible `plot` | Optional (older saves parse without it): `{ pattern, arc, stages: [{ id, title (at most 60), goal (at most 300) }] }`. `pattern` is one of `overcoming_the_monster`, `rags_to_riches`, `the_quest`, `voyage_and_return`, `comedy`, `tragedy`, `rebirth`. `arc` is one of `rise`, `fall`, `fall_rise`, `rise_fall`, `rise_fall_rise`, `fall_rise_fall`. Stage ids are the pattern's five, in order (`packages/engine/data/plots.json`). |
+| Milestone `stage` | Optional stage id. With a plot every milestone must carry one, every stage needs at least one milestone, and milestones are listed in stage order (engine `validateBiblePlot`; a bible that fails gets one repair call, then the built-in fallback). |
+| Room settings | `plot_pattern` (a pattern id or `auto`) and `plot_arc` (an arc id or `auto`), both optional, missing means `auto`. `auto` is resolved by the engine (`pickPlot`) from the pitch keywords and the seed; an auto arc is one of the pattern's recommended arcs. Any explicit pairing is allowed. |
+| DM action `adjust_plot` | See the action table. The DM response `v` stays 1 (an added action type only). |
+| Engine events | `stage_advanced` (stageId, stageName, title) and `plot_adjusted` (stages), narrated to the DM as engine lines. |
+| DM context | A `<pacing>` block built by the engine from the bible: plot and arc names, current stage with purpose and goal, next stage, tension target (0 to 10), fortune trend, suggested encounter difficulty. Milestone lines carry `stage=`. |
+
+**Sprite designer (built, WS v4)**
+
+| WS `type` | Direction | Payload |
+| --- | --- | --- |
+| `design_sprite` | Client to server | prompt (1 to 300), role_hint (`pc`, `npc`, `enemy`, `prop`), seed? (integer 0 to 2147483647; a new seed re-rolls the offline look), name? (1 to 30, only used for the glyph). Allowed in or out of a room. |
+| `sprite_designed` | Server to client | spec (`SpriteSpec`, already finalized by the engine), notes (at most 20 short strings), source (`model` or `offline`). The envelope `ack_id` is the request's `id`; that is the request id. |
+
+A refusal is an `error` with the same `ack_id`: `rate_limited` (6 calls per minute per account, per connection for guests; `DEFAULT_CONFIG.limits.spriteDesign`) or `bad_message` (empty or over-long prompt, unknown role). The result is not stored in the asset store. Error text never includes provider messages.
+
+**Pixel sprite (built, WS v5)**
+
+A player-painted sprite, recipe kind `pixel` (`PixelSpriteSchema`, `packages/schemas/src/pixel.ts`).
+
+| Field | Rule |
+| --- | --- |
+| `kind`, `v` | `"pixel"`, `1` |
+| `width`, `height` | exactly 48 and 64 |
+| `palette` | 1 to 32 `#rrggbb` colors; the engine requires every one to be on the master palette (33 colors including the outline color) |
+| `pixels` | Run-length encoded palette indices, 3072 in all. 0 is transparent and index `i` is `palette[i - 1]`. Each run is a symbol followed by a decimal count (omitted when 1). Symbols: `.` is 0, `A` to `Z` are 1 to 26, `a` to `f` are 27 to 32. A blank canvas is `.3072`. Helpers: `encodePixels`, `decodePixels`. |
+| `size` | tiny to huge; scales the image with nearest-neighbor when drawn |
+| `base` | Optional `SpriteSpec` it was painted over: fallback drawing and traits |
+| `traits` | At most 160 characters |
+
+Engine rules (`validatePixelSprite`, numbers in `packages/engine/data/pixel.json`): canvas size, every index inside the palette, every color on the master palette, at most 32 colors, at least 60 opaque pixels, no opaque pixel within 2 pixels of the edge, lowest opaque row within 4 of y = 60, and the recipe JSON at most 6144 bytes (so the whole create message stays under 8 KB). `shiftToFeet` moves an image vertically to put the feet on y = 60 when they are off by more than the tolerance and the margins allow it; the editor applies it on save. The server runs `validatePixelSprite` on every `claim_character` recipe of kind `pixel` (including saved templates) and refuses a failing one with the error code `invalid_sprite` and the reasons in the message. The renderer decodes once per sprite and falls back to `base`, then to a shape, if drawing fails.
+
+**Workshop and campaign cast (built, WS v6)**
+
+Schemas: `packages/schemas/src/workshop.ts`. Server: `apps/server/src/accounts/workshop.ts` (store), `workshop-handlers.ts`, and the cast handlers in `handlers.ts`.
+
+| Contract | Fields |
+| --- | --- |
+| Workshop asset (wire) | `id` (`as_`), `name` (1 to 40), `role_hint` (`pc`, `npc`, `enemy`, `prop`), `concept` (0 to 200), `tags` (at most 5 short words), `recipe` (shape, spec or pixel), `source` (`designed` for shape and spec recipes, `painted_over` or `painted` for pixel recipes; the schema enforces the pairing), `created_at`, `updated_at`. The stored record adds `owner_user_id`, which never leaves the server. |
+| Cast entry | `asset_id`, `owner_player_id`, `owner_name`, `name`, `role_hint`, `concept`, `recipe` (a snapshot taken at the offer), `status` (`pending`, `approved`) |
+| `create_npc` / `create_enemy` | gain optional `asset_ref` (an `as_` id from the context pack's `<cast>` block). The DM response `v` stays 1 (an optional field). `Enemy.sprite` widened from a spec to any sprite recipe. |
+| Room settings | gain `custom_cast` (`off`, `host_approval`, `open`; missing means `host_approval`) and `custom_paintings` (boolean; missing means true) |
+
+Limits per account: 200 assets and 5 MB (the size is the JSON of the stored records). A pixel recipe is validated by the engine on save (`invalid_sprite`). Guests get `forbidden` ("Log in to use your Workshop"); over a limit gets `invalid_state`.
+
+| WS `type` | Direction | Payload |
+| --- | --- | --- |
+| `save_sprite_asset` | Client to server | name, role_hint, concept, tags, recipe, source, id? (present: update the account's own asset; absent: create). Accounts only. Replies `sprite_assets_list`. |
+| `delete_sprite_asset` | Client to server | id. Replies `sprite_assets_list`. |
+| `list_sprite_assets` | Client to server | empty. |
+| `sprite_assets_list` | Server to client | assets (newest first), used_bytes, max_assets, max_bytes. The envelope `ack_id` is the request's `id`. |
+| `offer_to_cast` | Client to server | asset_id (from the sender's own Workshop). In a room, account only. Under `host_approval` the entry is `pending` (the host's own offers are `approved`); under `open` it is `approved`; under `off`, `forbidden`. Only `npc` and `enemy` looks can be offered, at most 10 per player and 60 per room; a pixel recipe is refused while `custom_paintings` is false. Replies `presence` (ok). |
+| `cast_decision` | Client to server | asset_id, approve. Host: approve a pending entry, or deny or remove one (approve false). The offering player may withdraw their own entry (approve false). |
+| `cast_state` | Server to client | entries (cast entries, pending and approved). Sent to everyone on every change and to a joining or reconnecting player. |
+
+The cast is room state: it is not written to saves, and entries are visible only to players in the room where they were offered. `update_settings` is host-only; once the game has started it accepts only `custom_cast` and `custom_paintings`. Setting `custom_cast` to `open` approves every waiting entry. The DM's context lists approved `npc` and `enemy` entries (id, kind, name, concept up to 120 characters, neutralised as untrusted text; at most 20) while `custom_cast` is not `off`, and painted ones only while `custom_paintings` is on. `asset_ref` is checked on the server against that usable list and the action kind (`create_npc` takes `npc`, `create_enemy` takes `enemy`); anything else is ignored and the designed sprite is used. The beat never fails and the engine still decides all stats.

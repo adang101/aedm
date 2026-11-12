@@ -2,7 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFakeProvider, type FakeProvider, type ModelProvider, type ModelRequest } from "@aedm/llm";
-import { ServerMessageSchema, WS_VERSION, type CharacterCreate, type ServerMessage } from "@aedm/schemas";
+import { designSpriteOffline } from "@aedm/engine";
+import { PALETTE_HEX, PIXEL_COUNT, PIXEL_WIDTH, ServerMessageSchema, WS_VERSION, encodePixels, type CharacterCreate, type PixelSprite, type ServerMessage, type SpriteSpec } from "@aedm/schemas";
 import WebSocket from "ws";
 import type { AssetStore } from "../src/assets/store";
 import { createGameServer, type GameServer, type GameServerOptions } from "../src/server";
@@ -240,9 +241,13 @@ export interface Table {
 }
 
 /** Two players in a lobby with characters claimed and ready. */
-export async function lobbyOfTwo(h: Harness): Promise<Table> {
+export async function lobbyOfTwo(h: Harness, opts: { accounts?: boolean } = {}): Promise<Table> {
   const a = await h.connect();
   const b = await h.connect();
+  if (opts.accounts) {
+    await registerAccount(a, "alice");
+    await registerAccount(b, "bob");
+  }
   const code = await a.createAndJoin("Alice");
   await b.join(code, "Bob");
   const ra = await a.request("claim_character", { character_id: "new", character: brindle() });
@@ -255,8 +260,8 @@ export async function lobbyOfTwo(h: Harness): Promise<Table> {
 }
 
 /** Lobby of two, then start the game and wait for the opening narration to finish on both clients. */
-export async function startedTable(h: Harness): Promise<Table> {
-  const t = await lobbyOfTwo(h);
+export async function startedTable(h: Harness, opts: { accounts?: boolean } = {}): Promise<Table> {
+  const t = await lobbyOfTwo(h, opts);
   const ma = t.a.mark();
   const mb = t.b.mark();
   const r = await t.a.request("start_game", {});
@@ -266,4 +271,29 @@ export async function startedTable(h: Harness): Promise<Table> {
   await t.a.wait("narration_chunk", (p) => p.done, { from: ma });
   await t.b.wait("narration_chunk", (p) => p.done, { from: mb });
   return t;
+}
+
+export async function registerAccount(c: TestClient, username: string): Promise<void> {
+  const r = await c.request("register", { username, password: "a-very-secret-passphrase", display_name: username });
+  if (r.type !== "auth_ok") throw new Error(`register failed: ${JSON.stringify(r)}`);
+}
+
+/** A valid painted sprite (a filled block on the 48 x 64 canvas). The default rectangle passes the engine's checks. */
+export function pixelSprite(rect: [number, number, number, number] = [16, 10, 31, 60]): PixelSprite {
+  const a = new Uint8Array(PIXEL_COUNT);
+  for (let y = rect[1]; y <= rect[3]; y++) for (let x = rect[0]; x <= rect[2]; x++) a[y * PIXEL_WIDTH + x] = 1;
+  return { kind: "pixel", v: 1, width: 48, height: 64, palette: [PALETTE_HEX[5]!], pixels: encodePixels(a), size: "medium", traits: "painted" };
+}
+
+export const specSprite = (concept = "a heron ferryman", seed = 3): SpriteSpec => designSpriteOffline({ concept, name: "Heron", role: "npc", kind: "npc" }, seed);
+
+/** Saves a Workshop asset for a logged-in client and returns its id. */
+export async function saveAsset(c: TestClient, over: Record<string, unknown> = {}): Promise<string> {
+  const before = (await c.request("list_sprite_assets", {}));
+  const known = new Set(before.type === "sprite_assets_list" ? before.payload.assets.map((a) => a.id) : []);
+  const r = await c.request("save_sprite_asset", { name: "Heron", role_hint: "npc", concept: "a ferryman", tags: [], recipe: specSprite(), source: "designed", ...over });
+  if (r.type !== "sprite_assets_list") throw new Error(`save failed: ${JSON.stringify(r)}`);
+  const made = r.payload.assets.find((a) => !known.has(a.id));
+  if (!made) throw new Error("no new asset");
+  return made.id;
 }
