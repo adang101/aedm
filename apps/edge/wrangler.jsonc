@@ -20,8 +20,8 @@
     "run_worker_first": ["/ws", "/healthz"]
   },
 
-  // Plain settings. The API key is a secret: `pnpm wrangler secret put ANTHROPIC_API_KEY`. Never put it here.
-  "vars": { "AEDM_LLM_PROVIDER": "fake" },
+  // Plain settings. API keys are secrets (`wrangler secret put GEMINI_API_KEY`). Never put one here. Set "fake" for the offline DM.
+  "vars": { "AEDM_LLM_PROVIDER": "gemini" },
 
   "observability": { "enabled": true }
 }
