@@ -1,5 +1,4 @@
 import { WS_VERSION, type Ability, type ServerMessageType } from "@aedm/schemas";
-import { WebSocket } from "ws";
 
 /** Bounded set of recently seen message ids (idempotency). */
 export class RecentIds {
@@ -34,6 +33,13 @@ export class RateLimiter {
   }
 }
 
+/** The little a connection needs from a socket, so Node's `ws` and Cloudflare's WebSocket both fit. */
+export interface Socket {
+  readonly open: boolean;
+  send(data: string): void;
+  close(): void;
+}
+
 let nextConnId = 1;
 let nextMsgId = 1;
 
@@ -51,17 +57,17 @@ export class Conn {
   readonly recent = new RecentIds();
   readonly limiter = new RateLimiter();
 
-  constructor(readonly ws: WebSocket, private readonly clock: () => number) {}
+  constructor(readonly socket: Socket, private readonly clock: () => number) {}
 
   get open(): boolean {
-    return this.ws.readyState === WebSocket.OPEN;
+    return this.socket.open;
   }
 
   send(type: ServerMessageType, payload: unknown, ackId?: string): void {
     if (!this.open) return;
     const msg = { v: WS_VERSION, type, id: `s${nextMsgId++}`, ts: this.clock(), payload, ...(ackId ? { ack_id: ackId } : {}) };
     try {
-      this.ws.send(JSON.stringify(msg));
+      this.socket.send(JSON.stringify(msg));
     } catch {
       /* socket died between the check and the send: the close handler cleans up */
     }
@@ -73,7 +79,7 @@ export class Conn {
 
   close(): void {
     try {
-      this.ws.close();
+      this.socket.close();
     } catch {
       /* ignore */
     }

@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { FsKv, type KvBackend } from "../kv";
 import { validatePixelSprite } from "@aedm/engine";
 import {
   WORKSHOP_MAX_ASSETS, WORKSHOP_MAX_BYTES, WorkshopAssetRecordSchema, type WorkshopAsset, type WorkshopAssetRecord,
@@ -40,8 +39,10 @@ export const toWire = (r: WorkshopAssetRecord): WorkshopAsset => {
 interface WorkshopFile { v: 1; assets: WorkshopAssetRecord[] }
 
 export interface JsonWorkshopStoreOptions {
-  /** Folder for one `<userId>.json` per account (created on first write, mode 0700). */
-  dir: string;
+  /** Folder for one `<userId>.json` per account (created on first write, mode 0700). Ignored when `kv` is given. */
+  dir?: string;
+  /** Where the per-account `<userId>.json` values live. Defaults to files in `dir`. */
+  kv?: KvBackend;
   clock?: () => number;
   limits?: Partial<WorkshopLimits>;
 }
@@ -53,13 +54,17 @@ export class JsonWorkshopStore implements WorkshopStore {
   private readonly cache = new Map<string, Promise<WorkshopAssetRecord[]>>();
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly opts: JsonWorkshopStoreOptions) {
+  private readonly kv: KvBackend;
+
+  constructor(opts: JsonWorkshopStoreOptions) {
+    if (!opts.kv && !opts.dir) throw new Error("JsonWorkshopStore needs a dir or a kv");
+    this.kv = opts.kv ?? new FsKv(opts.dir as string);
     this.clock = opts.clock ?? Date.now;
     this.limits = { maxAssets: opts.limits?.maxAssets ?? WORKSHOP_MAX_ASSETS, maxBytes: opts.limits?.maxBytes ?? WORKSHOP_MAX_BYTES };
   }
 
   private fileFor(userId: string): string | null {
-    return /^[A-Za-z0-9_-]{1,64}$/.test(userId) ? join(this.opts.dir, `${userId}.json`) : null;
+    return /^[A-Za-z0-9_-]{1,64}$/.test(userId) ? `${userId}.json` : null;
   }
 
   private load(userId: string): Promise<WorkshopAssetRecord[]> {
@@ -68,17 +73,16 @@ export class JsonWorkshopStore implements WorkshopStore {
       p = (async () => {
         const file = this.fileFor(userId);
         if (!file) return [];
-        try {
-          const data = JSON.parse(await readFile(file, "utf8")) as Partial<WorkshopFile>;
+        {
+          const text = await this.kv.get(file);
+          if (text === null) return [];
+          const data = JSON.parse(text) as Partial<WorkshopFile>;
           const out: WorkshopAssetRecord[] = [];
           for (const a of data.assets ?? []) {
             const r = WorkshopAssetRecordSchema.safeParse(a);
             if (r.success && r.data.owner_user_id === userId) out.push(r.data);
           }
           return out;
-        } catch (err) {
-          if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-          throw err;
         }
       })();
       this.cache.set(userId, p);
@@ -91,10 +95,7 @@ export class JsonWorkshopStore implements WorkshopStore {
     if (!file) return Promise.resolve();
     const snapshot = JSON.stringify({ v: 1, assets } satisfies WorkshopFile);
     const job = this.queue.then(async () => {
-      await mkdir(this.opts.dir, { recursive: true, mode: 0o700 });
-      const tmp = `${file}.tmp`;
-      await writeFile(tmp, snapshot, { encoding: "utf8", mode: 0o600 });
-      await rename(tmp, file);
+      await this.kv.put(file, snapshot);
     });
     this.queue = job.catch(() => undefined);
     return job;

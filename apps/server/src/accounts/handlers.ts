@@ -1,7 +1,6 @@
 import { CharacterCreateSchema, RoomSettingsSchema, validateRegistration, type Ability, type CharacterCreate, type ClientMessage } from "@aedm/schemas";
 import type { Conn } from "../net";
 import { DEFAULT_SETTINGS, type Room, type RoomRegistry } from "../rooms";
-import { listOwnedSaves, readSaveExact } from "../saves";
 import type { Deps } from "../types";
 import { normalizeUsername, summarize, toAuthUser, type CharacterTemplate, type UserRecord } from "./store";
 
@@ -48,7 +47,7 @@ export class AccountHandlers {
       case "save_character_template": return this.saveTemplate(conn, user, msg as Msg<"save_character_template">);
       case "delete_character_template": return this.deleteTemplate(conn, user, msg as Msg<"delete_character_template">);
       case "list_campaigns": {
-        const campaigns = await listOwnedSaves(this.deps.saveDir, user.id);
+        const campaigns = await this.deps.saves.listOwned(user.id);
         return conn.send("campaigns_list", { campaigns }, msg.id);
       }
       case "resume_campaign": return this.resumeCampaign(conn, user, msg as Msg<"resume_campaign">);
@@ -210,7 +209,7 @@ export class AccountHandlers {
   private async resumeCampaign(conn: Conn, user: UserRecord, msg: Msg<"resume_campaign">): Promise<void> {
     if (conn.roomId) return conn.error("invalid_state", "You are already in a room.", msg.id);
     const { save_id, room_id } = msg.payload;
-    const save = await readSaveExact(this.deps.saveDir, room_id, save_id);
+    const save = await this.deps.saves.readExact(room_id, save_id);
     if (!save || save.owner_user_id !== user.id) return conn.error("not_found", "No such campaign.", msg.id);
     const room = this.registry.create(conn);
     room.ownerUserId = user.id;

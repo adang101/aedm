@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { FsKv, type KvBackend } from "../kv";
 import { AssetRecordSchema, type AssetKind, type AssetRecord } from "@aedm/schemas";
 
 /** Lowercase and collapse whitespace so trivially different spellings of a concept share an asset. */
@@ -27,8 +26,10 @@ export interface AssetStore {
 interface AssetsFile { v: 1; assets: AssetRecord[] }
 
 export interface JsonAssetStoreOptions {
-  /** Folder that holds assets.json (created on first write). */
-  dir: string;
+  /** Folder that holds assets.json (created on first write). Ignored when `kv` is given. */
+  dir?: string;
+  /** Where assets.json lives. Defaults to a file in `dir`. */
+  kv?: KvBackend;
 }
 
 /** Assets as one JSON file. Reads once, keeps everything in memory, writes atomically through a queue. */
@@ -37,20 +38,22 @@ export class JsonAssetStore implements AssetStore {
   private readonly records = new Map<string, AssetRecord>();
   private queue: Promise<void> = Promise.resolve();
 
-  constructor(private readonly opts: JsonAssetStoreOptions) {}
+  private readonly kv: KvBackend;
 
-  private get file(): string { return join(this.opts.dir, "assets.json"); }
+  constructor(opts: JsonAssetStoreOptions) {
+    if (!opts.kv && !opts.dir) throw new Error("JsonAssetStore needs a dir or a kv");
+    this.kv = opts.kv ?? new FsKv(opts.dir as string, { fileMode: 0o644, dirMode: 0o755 });
+  }
 
   private load(): Promise<void> {
     this.loaded ??= (async () => {
       let raw: AssetsFile | null = null;
       try {
-        raw = JSON.parse(await readFile(this.file, "utf8")) as AssetsFile;
+        const text = await this.kv.get("assets.json");
+        raw = text === null ? null : (JSON.parse(text) as AssetsFile);
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-          // A corrupt file must not stop the game: start empty, the next write replaces it.
-          if (!(err instanceof SyntaxError)) throw err;
-        }
+        // A corrupt file must not stop the game: start empty, the next write replaces it.
+        if (!(err instanceof SyntaxError)) throw err;
       }
       for (const r of raw?.assets ?? []) {
         const p = AssetRecordSchema.safeParse(r);
@@ -63,11 +66,8 @@ export class JsonAssetStore implements AssetStore {
   /** Atomic write (temp file, then rename). Writes run one at a time and serialize the state as of their turn. */
   private persist(): Promise<void> {
     const job = this.queue.then(async () => {
-      await mkdir(this.opts.dir, { recursive: true });
       const data: AssetsFile = { v: 1, assets: [...this.records.values()] };
-      const tmp = `${this.file}.tmp`;
-      await writeFile(tmp, JSON.stringify(data), "utf8");
-      await rename(tmp, this.file);
+      await this.kv.put("assets.json", JSON.stringify(data));
     });
     this.queue = job.catch(() => undefined);
     return job;

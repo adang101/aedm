@@ -42,6 +42,8 @@ Update these as the scripts are added.
 - `pnpm eval` (LLM evals, which cost money; run only when asked)
 - `pnpm dev:server` (game server, defaults to the fake offline DM; set `AEDM_LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` for a real model)
 - `pnpm dev:web` (Vite client)
+- `pnpm dev:edge` (builds the client, then runs the Cloudflare Worker and Durable Object locally with `wrangler dev`)
+- `pnpm deploy:edge` (builds the client and deploys to Cloudflare; see `apps/edge/README.md`)
 
 ## Conventions
 

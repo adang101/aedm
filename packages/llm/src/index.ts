@@ -4,7 +4,7 @@ export { createAnthropicProvider, DEFAULT_MODELS, effortFor, type AnthropicLike,
 export { createFakeProvider, type FakeProvider, type FakeScript, type FakeReply, type FakeOptions } from "./providers/fake";
 export { improvDm, improvAbility, improvEnemy, improvSprite, parseDmUser } from "./providers/fake-improv";
 export { extractJson, formatZodError, type ZodIssueLike } from "./json";
-export { loadPrompt, renderTemplate, renderPrompt, templateKeys } from "./template";
+export { loadPrompt, registerPrompts, renderTemplate, renderPrompt, templateKeys } from "./template";
 export { NarrationExtractor } from "./narration-stream";
 export { completeWithRepair, parseText, type SafeParser, type ParseOutcome, type CallOptions } from "./pipeline";
 export { buildDmContext, buildDmSystem, catalogVars, escapeUntrusted, type DmSystemOptions, type DmContextPack, type PacingContext, type SceneEntity, type PartyMemberContext } from "./context";

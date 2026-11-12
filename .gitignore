@@ -9,3 +9,5 @@ coverage/
 data/saves/
 .claude/worktrees/
 data/accounts/
+.wrangler/
+.dev.vars

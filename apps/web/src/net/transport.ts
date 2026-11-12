@@ -13,9 +13,13 @@ export interface Transport {
 export type TransportFactory = (handlers: TransportHandlers) => Transport;
 
 export function defaultWsUrl(): string {
-  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  const env = (import.meta as unknown as { env?: Record<string, string | boolean | undefined> }).env;
   const configured = env?.VITE_AEDM_WS_URL;
-  if (configured) return configured;
+  if (typeof configured === "string" && configured) return configured;
+  // A production build is served by the same origin that hosts the game (the Cloudflare Worker answers /ws).
+  if (env?.PROD === true && typeof location !== "undefined" && location.host) {
+    return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+  }
   const host = typeof location !== "undefined" && location.hostname ? location.hostname : "localhost";
   const scheme = typeof location !== "undefined" && location.protocol === "https:" ? "wss" : "ws";
   return `${scheme}://${host}:8787`;
