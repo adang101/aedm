@@ -33,6 +33,17 @@ Optional plain variables in `wrangler.jsonc` `vars`:
 - `AEDM_GEMINI_THINKING` sets the thinking level of Gemini 3 models: `minimal`, `low` (default), `medium`, `high`, or `off` for the model default. Thinking tokens count against the output limit, so higher levels can leave too little room for the answer.
 - For Anthropic instead, set the `ANTHROPIC_API_KEY` secret and `AEDM_LLM_PROVIDER` to `anthropic`.
 
+## Git-connected builds (Workers Builds)
+
+If the Worker is connected to this GitHub repo in the Cloudflare dashboard (Settings, Build), use:
+
+- Root directory: `/`
+- Build command: `pnpm build:web`
+- Deploy command: `pnpm --filter @aedm/edge exec wrangler deploy`
+- Non-production branch deploy command: `pnpm --filter @aedm/edge exec wrangler deploy --dry-run`
+
+The dry run bundles the Worker on every pull request without deploying it. A real preview would need a separate Durable Object setup, so PR builds only check that the Worker bundles. Plain `npx wrangler ...` from the repo root downloads a separate wrangler and runs outside `apps/edge`, so it does not use this folder's `wrangler.jsonc` the way `pnpm --filter @aedm/edge exec` does.
+
 ## Custom domain later
 
 Buy the domain in the Cloudflare dashboard, then add to `wrangler.jsonc`:
