@@ -4,7 +4,7 @@ import {
 } from "@aedm/schemas";
 import type { GameMap, InlineTileset, Layout, MapBrief, MaterialRole } from "@aedm/schemas";
 import {
-  STARTER_BRIEFS, distance, findFreeTileNear, findPath, generateMap, getObjects, getSpawn, hasLineOfSight, isWalkable, renderAscii,
+  STARTER_BRIEFS, distance, findFreeTileNear, findPath, generateMap, getObjects, getSpawn, hasLineOfSight, isWalkable, reachableTiles, renderAscii,
   serializeSize, stripOrphanTiles, validateMap,
 } from "./index";
 import { MATERIAL_IDS } from "./materials";
@@ -424,6 +424,19 @@ describe("navigation", () => {
 
   it("distance is Chebyshev", () => {
     expect(distance({ x: 1, y: 1 }, { x: 4, y: 3 })).toBe(3);
+  });
+
+  it("reachableTiles covers the tiles within the step limit with shortest paths, skipping walls and occupied tiles", () => {
+    const m = blank();
+    wallsOf(m)[10 * 20 + 6] = WALL;
+    const tiles = reachableTiles(m, { x: 5, y: 10 }, 2, new Set(["5,9"]));
+    const at = (x: number, y: number) => tiles.find((t) => t.x === x && t.y === y);
+    expect(at(5, 10)).toBeUndefined();
+    expect(at(6, 10)).toBeUndefined();
+    expect(at(5, 9)).toBeUndefined();
+    expect(at(7, 10)).toBeUndefined(); // the wall blocks the diagonal shortcuts, so it takes 4 steps
+    expect(at(3, 8)?.path).toHaveLength(2);
+    expect(tiles.every((t) => distance(t, { x: 5, y: 10 }) <= 2 && t.path.length <= 2)).toBe(true);
   });
 
   it("findPath goes around a wall, excludes start, includes goal", () => {

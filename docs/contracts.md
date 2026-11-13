@@ -193,7 +193,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `stats` | object | hp, defense, attack_bonus, speed (tiles), damage_dice (basic attack NdM). Damage per round is computed by the engine. |
 | `weakness`, `resistance` | enum or null | A damage type or a condition (weakness only) |
 | `abilities` | array | 0 to 3 ability objects (minions 0) |
-| `behavior` | array | 2 to 3 strings, each at most 80 characters, turned into a simple behavior tree |
+| `behavior` | array | 2 to 3 strings, each at most 80 characters. The engine matches certain phrasings (`rules.ai.tactics` and `rules.ai.rangedPattern` in `rules.json`): ranged ("keeps its distance"), `focus_weakest` ("picks off the weakest"), `target_healer` ("goes for healers"), `protect_leader` ("guards its leader"), `pack` ("fights as a pack"), `fearless` ("fights to the death") and `cowardly` ("retreats when hurt"). Other lines are flavour. |
 | `loot_hint` | string | 0 to 80 characters |
 | `sprite_tags` | array | 0 to 5 short words |
 | `appearance` | string | Optional, 0 to 160 characters. Look hint for the sprite designer, together with `concept`. |

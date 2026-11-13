@@ -1,11 +1,11 @@
-import type { Ability, Condition, Difficulty, Effect, Save } from "@aedm/schemas";
-import { CONDITION_META, RULES } from "./data.ts";
+import type { Ability, Condition, Difficulty, Effect, Enemy, Save } from "@aedm/schemas";
+import { CONDITION_META, RULES, type Tactic } from "./data.ts";
 import { rollD20, rollDamage, rollNotation } from "./dice.ts";
 import type { EngineEvent } from "./events.ts";
 import {
-  abilitiesOf, applyCondition, applyDamage, applyHeal, archetypeOf, attackModifiers, basicAttackRange, canAct, canMove,
-  defenseOf, dexScore, enterTile, getEntity, hasCondition, isStanding, removeCondition, reviveAt, saveModifier,
-  speedOf, terrainAt, walkPath, weaknessMultiplied, weaponDamageDice,
+  abilitiesOf, applyCondition, applyDamage, applyHeal, archetypeOf, attackModifiers, basicAttackRange, breakMorale, canAct,
+  canMove, defenseOf, dexScore, enemyTactics, enterTile, getEntity, hasCondition, isLeader, isStanding, leaveCombat,
+  removeCondition, removeEntity, reviveAt, saveModifier, speedOf, terrainAt, walkPath, weaknessMultiplied, weaponDamageDice,
 } from "./mutate.ts";
 import type { Rng } from "./rng.ts";
 import { abilityModifier, proficiency, saveDc } from "./rules.ts";
@@ -13,7 +13,7 @@ import {
   cloneState, currentMap, emit, finish, newId, occupiedTiles, sideOf, sightBlockers, tileKey,
   type CombatState, type Entity, type GameState, type Mut, type TerrainTile,
 } from "./state.ts";
-import { findPath, hasLineOfSight, isWalkable } from "./map/index.ts";
+import { findPath, getObjects, hasLineOfSight, isWalkable, reachableTiles } from "./map/index.ts";
 
 export interface ActionResult { state: GameState; events: EngineEvent[]; ok: boolean; error?: string }
 type Point = { x: number; y: number };
@@ -219,6 +219,8 @@ export function endCombatM(m: Mut, reason: "victory" | "flee" | "truce" | "defea
     e.shield = 0;
     e.cooldowns = {};
     e.checkBonuses = [];
+    delete e.morale;
+    delete e.bloodied;
     if (e.kind === "pc" && (e.hp <= 0 || e.out)) {
       e.hp = RULES.downed.wakeHp;
       delete e.downedRounds;
@@ -875,10 +877,44 @@ export function advanceBeat(state: GameState, rng: Rng): ActionResult {
 
 // ---------- enemy AI ----------
 
+/** Standing creatures of the other side still in the fight, nearest first, then lowest HP, then id. */
 function foesOf(s: GameState, e: Entity): Entity[] {
+  const inFight = new Set(s.combat?.order.map((o) => o.entity_id));
   return Object.values(s.entities)
-    .filter((x) => x.mapId === e.mapId && isStanding(x) && sideOf(x) !== sideOf(e))
+    .filter((x) => x.mapId === e.mapId && inFight.has(x.id) && isStanding(x) && sideOf(x) !== sideOf(e))
     .sort((a, b) => dist(e, a) - dist(e, b) || a.hp - b.hp || a.id.localeCompare(b.id));
+}
+
+const isHealer = (s: GameState, f: Entity): boolean => abilitiesOf(s, f).some((ab) => ab.effects.some((x) => x.type === "heal"));
+
+/** The most hurt standing boss or elite on the creature's side, other than itself. */
+function leaderOf(s: GameState, e: Entity): Entity | undefined {
+  return alliesOf(s, e).find((a) => a.id !== e.id && isStanding(a) && isLeader(s, a));
+}
+
+/**
+ * Foes in the order this creature prefers to deal with them. Without tactics this is `foesOf`.
+ * Each tactic adds one sort key (earlier keys win); the sort is stable so ties keep the default order.
+ */
+function rankFoes(s: GameState, e: Entity, tactics: ReadonlySet<Tactic>): Entity[] {
+  const foes = foesOf(s, e);
+  if (tactics.size === 0 || foes.length < 2) return foes;
+  const leader = tactics.has("protect_leader") ? leaderOf(s, e) : undefined;
+  const mates = tactics.has("pack") ? alliesOf(s, e).filter((a) => a.id !== e.id && a.hp > 0) : [];
+  const reach = (s.combat?.turn.movementLeft ?? 0) + Math.max(basicAttackRange(s, e), ...abilitiesOf(s, e).map((ab) => ab.range_tiles));
+  const key = (f: Entity): number[] => [
+    leader && dist(leader, f) <= RULES.ai.leaderGuardRadius ? 0 : 1,
+    tactics.has("target_healer") && isHealer(s, f) ? 0 : 1,
+    tactics.has("focus_weakest") && dist(e, f) <= reach ? f.hp / f.hpMax : 2,
+    -mates.filter((a) => dist(a, f) <= 1).length,
+  ];
+  return foes
+    .map((f) => ({ f, k: key(f) }))
+    .sort((a, b) => {
+      const i = a.k.findIndex((v, j) => v !== b.k[j]);
+      return i < 0 ? 0 : (a.k[i] as number) - (b.k[i] as number);
+    })
+    .map((x) => x.f);
 }
 
 function alliesOf(s: GameState, e: Entity): Entity[] {
@@ -925,16 +961,22 @@ function planAbility(m: Mut, e: Entity, ab: Ability, foes: Entity[]): Target | n
   return null;
 }
 
-function walkToward(m: Mut, e: Entity, target: Entity, desired: number): void {
-  const s = m.s;
-  const map = s.maps[e.mapId];
-  const c = s.combat;
-  if (!map || !c || !canMove(e)) return;
+/** Spend movement to stand up if prone. False when the creature cannot move this turn. */
+function readyToMove(m: Mut, e: Entity): boolean {
+  const c = m.s.combat;
+  if (!c || !canMove(e)) return false;
   if (hasCondition(e, "prone") && c.turn.movementLeft >= RULES.turn.standCost) {
     removeCondition(m, e, "prone");
     c.turn.movementLeft -= RULES.turn.standCost;
   }
-  if (hasCondition(e, "prone")) return;
+  return !hasCondition(e, "prone");
+}
+
+function walkToward(m: Mut, e: Entity, target: Entity, desired: number): void {
+  const s = m.s;
+  const map = s.maps[e.mapId];
+  const c = s.combat as CombatState;
+  if (!map || !readyToMove(m, e)) return;
   const blockers = sightBlockers(s, e.mapId);
   const there = (p: Point) => dist(p, target) <= desired && (dist(p, target) <= 1 || hasLineOfSight(map, p, target, blockers));
   if (there(e)) return;
@@ -964,6 +1006,7 @@ function walkToward(m: Mut, e: Entity, target: Entity, desired: number): void {
 function aiActions(m: Mut, e: Entity): void {
   const s = m.s;
   const c = s.combat as CombatState;
+  const tactics = enemyTactics(s, e);
   const tryAbilities = (): boolean => {
     let used = false;
     for (let pass = 0; pass < 2; pass++) {
@@ -971,8 +1014,7 @@ function aiActions(m: Mut, e: Entity): void {
       for (const ab of abilitiesOf(s, e)) {
         if (!ab.id || abilityReady(e, ab)) continue;
         if (ab.action === "action" ? c.turn.actionUsed : c.turn.quickUsed) continue;
-        const foes = foesOf(s, e);
-        const plan = planAbility(m, e, ab, foes);
+        const plan = planAbility(m, e, ab, rankFoes(s, e, tactics));
         if (plan === null) continue;
         if (useAbilityM(m, e.id, ab.id, plan) === undefined) { didOne = true; used = true; break; }
       }
@@ -984,7 +1026,7 @@ function aiActions(m: Mut, e: Entity): void {
     if (c.turn.actionUsed) return false;
     const range = basicAttackRange(s, e);
     const taunt = e.conditions.find((x) => x.condition === "taunted");
-    const foes = foesOf(s, e);
+    const foes = rankFoes(s, e, tactics);
     const pool = taunt?.source ? foes.filter((f) => f.id === taunt.source).concat(foes) : foes;
     for (const f of pool) {
       if (canReach(m, e, f, range) && basicAttackM(m, e.id, f.id) === undefined) return true;
@@ -998,18 +1040,78 @@ function aiActions(m: Mut, e: Entity): void {
   const act1 = tryAbilities();
   const act2 = tryBasic();
   if (act1 || act2) return;
-  const foes = foesOf(s, e);
-  const nearest = foes[0];
-  if (!nearest) return;
-  walkToward(m, e, nearest, basicAttackRange(s, e));
+  const target = rankFoes(s, e, tactics)[0];
+  if (!target) return;
+  const range = basicAttackRange(s, e);
+  const leader = tactics.has("protect_leader") ? leaderOf(s, e) : undefined;
+  if (leader && dist(e, target) > c.turn.movementLeft + range) walkToward(m, e, leader, RULES.ai.leaderGuardRadius);
+  else walkToward(m, e, target, range);
   if (e.hp <= 0) return;
   tryAbilities();
   tryBasic();
 }
 
+/** Test morale once per fight when an enemy is hurt below its role's threshold: a d20 must reach the DC to hold. */
+function checkMorale(m: Mut, e: Entity, a: Enemy): void {
+  const cfg = RULES.ai.morale;
+  const base = cfg.breakBelowPct[a.role];
+  const tactics = enemyTactics(m.s, e);
+  if (e.morale || base === 0 || tactics.has("fearless")) return;
+  const pct = base + (tactics.has("cowardly") ? cfg.cowardlyBonusPct : 0);
+  if (e.hp * 100 >= e.hpMax * pct) return;
+  const d = rollD20(m.rng, "none");
+  const held = d.kept >= cfg.checkDc;
+  emit(m, { type: "roll", kind: "morale", who: e.id, whoName: e.name, label: "morale", dice: d.dice, modifier: 0, total: d.kept, target: cfg.checkDc, outcome: held ? "success" : "failure" });
+  if (held) e.morale = "held";
+  else breakMorale(m, e, "hurt");
+}
+
+const onMapEdge = (map: Parameters<typeof getObjects>[0], p: Point): boolean =>
+  p.x === 0 || p.y === 0 || p.x === map.width - 1 || p.y === map.height - 1 ||
+  getObjects(map).some((o) => o.type === "exit" && o.x === p.x && o.y === p.y);
+
+/** A surrendering enemy becomes a wary NPC the DM can talk through, out of the turn order. */
+function surrender(m: Mut, e: Entity, a: Enemy): void {
+  const s = m.s;
+  s.npcs[e.id] = {
+    id: e.id, name: e.name, concept: a.concept, role: "bystander", map_id: e.mapId, x: e.x, y: e.y, sprite_tags: a.sprite_tags,
+    ...(a.appearance ? { appearance: a.appearance } : {}),
+    disposition: "wary", alive: true, last_seen_beat: s.turn,
+  };
+  Object.assign(e, { kind: "npc", disposition: "wary", refId: e.id });
+  leaveCombat(s, e.id);
+  emit(m, { type: "surrendered", entityId: e.id, name: e.name, npcId: e.id });
+}
+
 /**
- * Take a whole turn for a non-player creature: move toward the nearest foe, attack or use an ability,
- * then end the turn. Works for any entity whose turn it is (the server may also use it for autopilot).
+ * A broken enemy does not attack. It runs to the reachable tile farthest from its foes; once it is out of
+ * reach (far away, or on a map edge or exit) it flees, and if it cannot get any farther it surrenders.
+ */
+function retreat(m: Mut, e: Entity, a: Enemy): void {
+  const s = m.s;
+  const c = s.combat as CombatState;
+  const map = s.maps[e.mapId];
+  const foes = foesOf(s, e);
+  const clearance = (p: Point) => Math.min(...foes.map((f) => dist(p, f)));
+  const start = clearance(e);
+  let best = { d: start, path: [] as Point[] };
+  if (map && foes.length > 0 && readyToMove(m, e)) {
+    for (const t of reachableTiles(map, e, c.turn.movementLeft, occupiedTiles(s, e.mapId, { exceptId: e.id }))) {
+      const d = clearance(t);
+      if (d > best.d) best = { d, path: t.path };
+    }
+    c.turn.movementLeft -= walkPath(m, e, best.path, best.path.length);
+  }
+  if (e.hp <= 0) return;
+  if (!map || foes.every((f) => dist(e, f) >= RULES.ai.morale.fleeDistance) || onMapEdge(map, e)) {
+    emit(m, { type: "fled", entityId: e.id, name: e.name });
+    removeEntity(m, e.id);
+  } else if (best.d <= start) surrender(m, e, a);
+}
+
+/**
+ * Take a whole turn for a non-player creature: test morale, then move toward a foe, attack or use an ability
+ * (or, once broken, run), then end the turn. Works for any entity whose turn it is (the server may also use it for autopilot).
  */
 export function enemyTakeTurn(state: GameState, rng: Rng, entityId: string): ActionResult {
   return act(state, rng, "enemy_turn", (m) => {
@@ -1018,7 +1120,10 @@ export function enemyTakeTurn(state: GameState, rng: Rng, entityId: string): Act
     if (c.active_id !== entityId) return "it is not that creature's turn";
     const e = m.s.entities[entityId];
     if (!e || !isStanding(e)) return "that creature cannot act";
-    aiActions(m, e);
+    const a = archetypeOf(m.s, e);
+    if (a) checkMorale(m, e, a);
+    if (a && e.morale === "broken") retreat(m, e, a);
+    else aiActions(m, e);
     endTurnM(m);
     return undefined;
   });

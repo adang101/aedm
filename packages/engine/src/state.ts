@@ -44,6 +44,10 @@ export interface Entity {
   downedRounds?: number;
   /** True once a downed pc has been out for 3 rounds. */
   out?: boolean;
+  /** Enemy morale this fight: `held` once a check was passed, `broken` once it flees or surrenders. */
+  morale?: "held" | "broken";
+  /** Set once a boss or elite was reported as bloodied this fight. */
+  bloodied?: true;
 }
 
 export interface TerrainTile {

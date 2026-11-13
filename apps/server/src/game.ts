@@ -54,6 +54,7 @@ const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 function humanLine(e: EngineEvent): string {
   if (e.type === "combat_started") return "Combat begins. Initiative is rolled.";
   if (e.type === "combat_ended") return `Combat ends (${e.reason}).`;
+  if (e.type === "surrendered") return `${e.name} surrenders.`;
   return cap(describeEvent(e).replace(/^\[engine: /, "").replace(/\]$/, ""));
 }
 

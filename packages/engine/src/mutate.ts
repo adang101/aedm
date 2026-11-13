@@ -1,6 +1,6 @@
 /** Low-level state mutations shared by combat, abilities and DM actions. All take a `Mut` context. */
 import type { Ability, Advantage, Condition, DamageType, Enemy, Enemy as EnemyT } from "@aedm/schemas";
-import { CONDITION_META, RULES } from "./data.ts";
+import { CONDITION_META, RULES, type Tactic } from "./data.ts";
 import { combineAdvantage, rollDamage } from "./dice.ts";
 import { emit, sideOf, tileKey, type ConditionInstance, type Entity, type Mut, type TerrainTile, type GameState } from "./state.ts";
 import { abilityModifier, defense as defenseCalc, speed as speedCalc, weaponDice } from "./rules.ts";
@@ -82,7 +82,34 @@ export function isRangedAttacker(s: GameState, e: Entity): boolean {
   }
   const a = archetypeOf(s, e);
   if (!a) return false;
-  return new RegExp(RULES.ai.rangedPattern, "i").test(a.behavior.join(" "));
+  return RANGED_RE.test(a.behavior.join(" "));
+}
+
+const RANGED_RE = new RegExp(RULES.ai.rangedPattern, "i");
+const TACTIC_RES = (Object.entries(RULES.ai.tactics) as [Tactic, string][]).map(([id, src]) => [id, new RegExp(src, "i")] as const);
+const NO_TACTICS: ReadonlySet<Tactic> = new Set();
+
+/** Tactics an enemy archetype's `behavior` text asks for. Other creatures have none. Fearless overrides cowardly. */
+export function enemyTactics(s: GameState, e: Entity): ReadonlySet<Tactic> {
+  const a = archetypeOf(s, e);
+  if (!a) return NO_TACTICS;
+  const text = a.behavior.join(" ");
+  const found = new Set(TACTIC_RES.filter(([, re]) => re.test(text)).map(([id]) => id));
+  if (found.has("fearless")) found.delete("cowardly");
+  return found;
+}
+
+/** An enemy whose archetype role is boss or elite: the creature its side's minions rally around. */
+export function isLeader(s: GameState, e: Entity): boolean {
+  const role = archetypeOf(s, e)?.role;
+  return role !== undefined && RULES.ai.leaderRoles.includes(role);
+}
+
+/** The enemy's nerve fails. No-op for fearless or already broken creatures. */
+export function breakMorale(m: Mut, e: Entity, reason: "hurt" | "leader_down"): void {
+  if (e.morale === "broken" || enemyTactics(m.s, e).has("fearless")) return;
+  e.morale = "broken";
+  emit(m, { type: "morale_broken", entityId: e.id, name: e.name, reason });
 }
 
 export function basicAttackRange(s: GameState, e: Entity): number {
@@ -119,17 +146,20 @@ export function removeCondition(m: Mut, target: Entity, condition: Condition): v
 
 // ---------- damage, healing, death ----------
 
-export function removeEntity(m: Mut, id: string): void {
-  const s = m.s;
-  delete s.entities[id];
+/** Take a creature out of the turn order, keeping the cursor on the same turn. */
+export function leaveCombat(s: GameState, id: string): void {
   const c = s.combat;
-  if (c) {
-    const i = c.order.findIndex((o) => o.entity_id === id);
-    if (i >= 0) {
-      c.order.splice(i, 1);
-      if (i <= c.cursor) c.cursor -= 1;
-    }
+  if (!c) return;
+  const i = c.order.findIndex((o) => o.entity_id === id);
+  if (i >= 0) {
+    c.order.splice(i, 1);
+    if (i <= c.cursor) c.cursor -= 1;
   }
+}
+
+export function removeEntity(m: Mut, id: string): void {
+  delete m.s.entities[id];
+  leaveCombat(m.s, id);
 }
 
 function defeat(m: Mut, t: Entity): void {
@@ -142,6 +172,11 @@ function defeat(m: Mut, t: Entity): void {
     emit(m, { type: "npc_died", entityId: t.id, name: t.name });
   }
   removeEntity(m, t.id);
+  if (isLeader(m.s, t) && RULES.ai.morale.leaderDownBreaksMinions && m.s.combat) {
+    const rest = Object.values(m.s.entities);
+    if (rest.some((x) => sideOf(x) === "enemy" && isStanding(x) && isLeader(m.s, x))) return;
+    for (const x of rest) if (archetypeOf(m.s, x)?.role === "minion" && isStanding(x)) breakMorale(m, x, "leader_down");
+  }
 }
 
 export function weaknessMultiplied(s: GameState, target: Entity, type: DamageType | undefined, amount: number): { amount: number; note?: string } {
@@ -196,6 +231,9 @@ export function applyDamage(m: Mut, target: Entity, amount: number, opts: Damage
     } else {
       defeat(m, target);
     }
+  } else if (m.s.combat && !target.bloodied && isLeader(m.s, target) && target.hp * 100 < target.hpMax * RULES.ai.morale.bloodiedPct) {
+    target.bloodied = true;
+    emit(m, { type: "bloodied", entityId: target.id, entityName: target.name });
   }
   return lost;
 }
