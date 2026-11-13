@@ -22,7 +22,10 @@ export interface SaveFile {
   campaign_title?: string;
   state: GameState;
   turns: RecentTurn[];
-  summaries: string[];
+  /** One compact summary of everything older than `chapters`. */
+  story_so_far: string;
+  /** Summaries of the most recent stretches of play, oldest first. */
+  chapters: string[];
   scene_note: string;
   /** Private DM notes. Never sent to clients. */
   dm_notes: string[];
@@ -34,11 +37,30 @@ export const isSafeId = (s: string): boolean => SAFE_ID.test(s);
 const SAVE_KEY = /^([A-Za-z0-9_-]{1,64})\/([A-Za-z0-9_-]{1,64})\.json$/;
 const saveKey = (roomId: string, saveId: string): string => `${roomId}/${saveId}.json`;
 
+/** A save as stored: older files lack the newer fields and have `summaries` instead of `story_so_far` and `chapters`. */
+type StoredSave = Omit<SaveFile, "story_so_far" | "chapters" | "state"> & {
+  story_so_far?: string;
+  chapters?: string[];
+  /** Before tiered memory: a rolling list of cumulative summaries, newest last. */
+  summaries?: string[];
+  state: Omit<GameState, "threads"> & { threads?: GameState["threads"] };
+};
+
+/** Fills in what older saves lack: the last cumulative summary becomes the story so far, and threads start empty. */
+function migrateSave({ summaries, ...save }: StoredSave): SaveFile {
+  return {
+    ...save,
+    story_so_far: save.story_so_far ?? summaries?.at(-1) ?? "",
+    chapters: save.chapters ?? [],
+    state: { ...save.state, threads: save.state.threads ?? [] },
+  };
+}
+
 function parseSave(text: string | null): SaveFile | null {
   if (text === null) return null;
   try {
-    const parsed = JSON.parse(text) as SaveFile;
-    return parsed.v === SAVE_VERSION && parsed.state ? parsed : null;
+    const parsed = JSON.parse(text) as StoredSave;
+    return parsed.v === SAVE_VERSION && parsed.state ? migrateSave(parsed) : null;
   } catch {
     return null;
   }

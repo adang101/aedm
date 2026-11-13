@@ -44,6 +44,16 @@ apps/web  ──WebSocket (contracts.md messages)──▶  apps/server
 - Prompts live in `packages/llm/prompts/*.md`.
 - Ability forge: the forge adapts a player's idea to the story and the engine rather than transcribing it. Besides the concept and ability text it sees the campaign (the story bible's title, digest and tone in a game; the room's pitch in the lobby), the other characters' abilities as one-line summaries plus the character's own earlier ones (so sets stay varied and teammates are not duplicated), the character's power budget with a per-ability target, and a short cost guide the engine renders from `costs.json`. It may rename and reflavor an ability but keeps the core effect, and always explains what it changed in `forge_notes`. At creation each ability is forged against `floor(remaining budget / abilities left)`; the engine clamp and the repair call shape it to fit, so abilities are no longer dropped for cost (dropping the last ones stays only as a safety net). Level-up forges against the budget that is left.
 
+**Memory and continuity.** The DM keeps a story straight from what each turn's context hands back, never from the model's own memory.
+
+- *Notebook:* the DM's private `dm_notes` come back as `<dm_notebook>` (the last 8, `ServerConfig.dmNotebookLimit`). They are model output, so angle brackets are escaped.
+- *NPC dossier:* each NPC record keeps its `voice`, the last 3 lines it said and the last 5 DM notes (`npc_note`), plus the beat it was last seen. `<npcs>` lists up to 12 NPCs, not only those on the current map: the ones here first, then the most recently seen, with the dead last as one short line each so they are never brought back. `<scene>` still lists the entities on the current map for ids and positions.
+- *Story threads:* `open_thread` and `close_thread` keep a short list of unresolved clues, promises, debts and dangers in the game state; `<threads>` shows the open ones (at most 12).
+- *Current act:* `currentAct` (engine, `plot.ts`) maps the current stage onto the bible's acts proportionally (`floor(stageIndex * acts / stages)`, the last act once the story is finished). Without a plot the milestone progress stands in for the stage. It appears in `<pacing>`, or in `<campaign>` when there is no plot.
+- *Tiered summaries:* a chapter (at most 120 words, only its own batch of 20 turns) is written when the recent turns pass 36; the last 4 chapters are kept, and a fifth folds the oldest into `story so far` (at most 250 words). Both calls use the `fast` tier (`summary.md`, `story-so-far.md`). If a call fails, the turns return to the recent list and nothing is lost; a failed fold keeps the extra chapter for the next try.
+- Prompt changes (`dm-system.md`, `summary.md`, new `story-so-far.md`): the evals were not run.
+- The DM response `v` stays 1: the change adds optional fields and action types. Saves keep loading (see `contracts.md`).
+
 ## Content model (maps and sprites)
 
 The DM can ask for any place or creature the story needs. It never draws tiles or pixels; it writes a structured *spec*, and deterministic engine code turns the spec into a valid, renderable component. The same spec later feeds the image model, so procedural placeholders and generated art share one contract.

@@ -17,7 +17,7 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | `v` | integer | 1 |
 | `narration` | string | 40 to 150 words, plain text, no markup or HTML. Listed first so it can stream. |
 | `actions` | array | 0 to 8 action objects, applied in order |
-| `dm_notes` | string | Optional, at most 100 words. Stored privately and never sent to clients. |
+| `dm_notes` | string | Optional, at most 100 words. Stored privately and never sent to clients. The latest few come back to the DM in its `<dm_notebook>` context block. |
 | `importance` | integer | 1 to 5 |
 | `high_stakes` | boolean | Default false. True routes the next call to the Strong tier. |
 
@@ -26,8 +26,9 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | Action `type` | Fields | Engine validation |
 | --- | --- | --- |
 | `request_check` | target (character ID or "party"), ability (str, dex, con, int, wis, cha), dc, tags (0 to 2), advantage (none, advantage, disadvantage), reason (at most 120) | DC clamped to 5 through 30; tags from the allowed list; target is present |
-| `create_npc` | name, concept (at most 200), role (merchant, quest_giver, ally, bystander, villain), map_id, x, y, sprite_tags (0 to 5), appearance (optional, at most 160: look hint for the sprite designer) | Tile walkable and free; name not already used by a living NPC |
-| `npc_say` | entity_id, text (at most 60 words) | Entity exists, is in the scene, and is not dead according to `world_facts` |
+| `create_npc` | name, concept (at most 200), role (merchant, quest_giver, ally, bystander, villain), map_id, x, y, sprite_tags (0 to 5), appearance (optional, at most 160: look hint for the sprite designer), voice (optional, at most 80: speech style, kept in the NPC dossier) | Tile walkable and free; name not already used by a living NPC |
+| `npc_say` | entity_id, text (at most 60 words) | Entity exists, is in the scene, and is not dead according to `world_facts`. The line (cut to 120 characters) is also kept on the NPC's record; the last `npc.linesKept` stay. |
+| `npc_note` | entity_id (an NPC id), note (at most 120) | The NPC exists and is alive (record and `world_facts`); it need not be in the scene. The note joins the NPC's `notes`; the last `npc.notesKept` stay and older ones drop. |
 | `create_enemy` | concept (at most 200), role (minion, standard, elite, boss), setting_notes (at most 200), ref (optional; `en_` plus snake_case, at most 40), appearance (optional, at most 160: look hint for the sprite designer) | Runs the enemy builder; the result is validated and registered as an archetype under `ref` (or a generated ID), so a later `spawn_entity` in the same response can use `ref` as its `archetype_id` |
 | `spawn_entity` | archetype_id, map_id, x and y or slot_id, count (1 to 6) | Archetype exists; tiles walkable; the encounter's threat total stays inside the budget for its difficulty |
 | `start_combat` | participants (entity and character IDs), difficulty (easy, standard, hard, deadly) | Participants present; the engine rolls initiative |
@@ -41,9 +42,26 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | `award_growth` | character_id, amount (1 to 25), reason (at most 120) | Session caps from `rules-numbers.md` |
 | `complete_milestone` | milestone_id | Exists in the story bible and is not yet completed; the engine grants 100 growth to each present character. With a plot, a milestone of a later stage than the current one is rejected (stages complete in order); finishing the last open milestone of a stage advances the stage. |
 | `adjust_plot` | stages (1 to 7): stage_id, goal (at most 300), milestones (1 to 4: id, description at most 300) | The campaign has a plot. Each stage id is in the plot, appears once, and comes after the current stage (the stage of the first incomplete milestone), so started stages and completed milestones never change. New milestone ids must not clash with kept milestones or each other, and the bible keeps at most 30. All or nothing: any bad entry rejects the action. The engine replaces the goals and milestones of those stages and keeps stage order. |
+| `open_thread` | text (at most 160) | Fewer than `npc.maxOpenThreads` threads are open. The engine assigns the id (`th_` plus a number). Closed threads beyond `npc.maxThreads` are dropped oldest first. |
+| `close_thread` | thread_id, resolution (at most 120, may be "") | The thread exists and is open. |
 | `suggest_actions` | chips (2 to 4 strings, at most 4 words each) | Shown as quick-reply chips, mainly for phones |
 
 The DM never changes HP, stats, dice results or inventory directly. Those change only as results of engine rules.
+
+**Memory and continuity (additive; the DM response `v` stays 1)**
+
+The new `voice`, `npc_note`, `open_thread` and `close_thread` are optional fields and new action types, so older responses stay valid.
+
+| Record | Fields |
+| --- | --- |
+| NPC record (`GameState.npcs`) | Beside id, name, concept, role, position, sprite_tags, appearance, disposition and alive: `voice` (optional, at most 80), `lines` (optional, strings of at most 120, newest last), `notes` (optional, strings of at most 120, newest last), `last_seen_beat` (optional integer: the beat counter `GameState.turn` when the NPC was created, spoke or got a note) |
+| Story thread (`GameState.threads`) | id, text (at most 160), status (`open` or `closed`), resolution (optional, at most 120). Missing in older saves means none. |
+
+The numbers are in `packages/engine/data/rules.json` under `npc`: `linesKept` 3, `notesKept` 5, `dossierMax` 12 (NPCs listed to the DM), `maxOpenThreads` 12, `maxThreads` 100.
+
+Context blocks (see `docs/design.md`, Memory and continuity): `<summaries>` (story so far plus recent chapters), `<dm_notebook>`, `<npcs>`, `<threads>`, and the current act inside `<pacing>` (inside `<campaign>` when the bible has no plot).
+
+Save files (`SAVE_VERSION` stays 1): `summaries` (a list of cumulative summaries) is replaced by `story_so_far` (string) and `chapters` (the last 4 summaries, oldest first). A save with only `summaries` loads with its last entry as `story_so_far` and no chapters; a save whose state has no `threads` loads with none.
 
 **Map brief (inside `generate_map`, v2)**
 

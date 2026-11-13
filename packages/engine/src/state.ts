@@ -2,7 +2,7 @@ import {
   CharacterCreateSchema, CharacterSchema,
   type Ability, type AbilityDraft, type AbilityScoreKey, type Character, type CharacterCreate, type CharacterView,
   type CheckTag, type Condition, type ContentRating, type Difficulty, type Disposition, type Enemy, type EntityView,
-  type GameMap, type Item, type MapBrief, type NpcRecord, type Quest, type SpriteRecipe, type StoryBible,
+  type GameMap, type Item, type MapBrief, type NpcRecord, type Quest, type StoryThread, type SpriteRecipe, type StoryBible,
   type TerrainKind, type WorldFact, type DamageType,
 } from "@aedm/schemas";
 import type { EngineEvent } from "./events.ts";
@@ -94,6 +94,8 @@ export interface GameState {
   nextId: number;
   bible: StoryBible;
   facts: WorldFact[];
+  /** The DM's open and closed story threads (see `open_thread`). */
+  threads: StoryThread[];
   contentRating: ContentRating;
   maps: Record<string, GameMap>;
   currentMapId: string | null;
@@ -180,6 +182,7 @@ export function createGameState(opts: {
     nextId: 0,
     bible: structuredClone(opts.bible),
     facts: structuredClone(opts.facts),
+    threads: [],
     contentRating: opts.contentRating,
     maps: {},
     currentMapId: null,

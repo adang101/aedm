@@ -53,6 +53,9 @@ export function computePartyLevel(state: GameState, characterIds: string[]): num
   return Math.max(1, Math.floor(lv.reduce((a, b) => a + b, 0) / lv.length));
 }
 
+/** Longest line the NPC dossier keeps (a spoken line can run to 60 words). */
+const DOSSIER_TEXT_MAX = 120;
+
 const norm = (s: string) => s.trim().toLowerCase();
 
 function findNpcByName(s: GameState, name: string): NpcRecord | undefined {
@@ -91,6 +94,8 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
         id, name, concept: a.concept, role: a.role, map_id: a.map_id, x: a.x, y: a.y, sprite_tags: a.sprite_tags,
         ...(a.appearance ? { appearance: a.appearance } : {}),
         alive: true, ...(disposition ? { disposition } : {}),
+        ...(a.voice ? { voice: a.voice } : {}),
+        last_seen_beat: s.turn,
       };
       s.npcs[id] = rec;
       const ent: Entity = {
@@ -118,7 +123,20 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       if (!ent) return `no creature ${a.entity_id} is here`;
       if (ent.kind === "pc") return "player characters speak for themselves";
       if (ent.mapId !== s.currentMapId) return `${ent.name} is not in the current scene`;
+      if (rec) {
+        rec.lines = [...(rec.lines ?? []), a.text.slice(0, DOSSIER_TEXT_MAX)].slice(-RULES.npc.linesKept);
+        rec.last_seen_beat = s.turn;
+      }
       emit(m, { type: "npc_said", entityId: ent.id, name: ent.name, text: a.text });
+      return undefined;
+    }
+
+    case "npc_note": {
+      const rec = s.npcs[a.entity_id];
+      if (!rec) return `unknown NPC ${a.entity_id}`;
+      if (rec.alive === false || isFactTrue(s, rec.name, "is_alive", "false")) return `${rec.name} is dead`;
+      rec.notes = [...(rec.notes ?? []), a.note].slice(-RULES.npc.notesKept);
+      rec.last_seen_beat = s.turn;
       return undefined;
     }
 
@@ -403,6 +421,23 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       s.bible.milestones = all;
       for (const st of a.stages) (plot.stages.find((p) => p.id === st.stage_id) as { goal: string }).goal = st.goal;
       emit(m, { type: "plot_adjusted", stages: a.stages.map((x) => x.stage_id) });
+      return undefined;
+    }
+
+    case "open_thread": {
+      if (s.threads.filter((t) => t.status === "open").length >= RULES.npc.maxOpenThreads) return `already ${RULES.npc.maxOpenThreads} open threads; close one first`;
+      s.threads.push({ id: newId(s, "th"), text: a.text, status: "open" });
+      const closed = s.threads.findIndex((t) => t.status === "closed");
+      if (s.threads.length > RULES.npc.maxThreads && closed >= 0) s.threads.splice(closed, 1);
+      return undefined;
+    }
+
+    case "close_thread": {
+      const t = s.threads.find((x) => x.id === a.thread_id);
+      if (!t) return `unknown thread ${a.thread_id}`;
+      if (t.status === "closed") return `thread ${t.id} is already closed`;
+      t.status = "closed";
+      if (a.resolution) t.resolution = a.resolution;
       return undefined;
     }
 

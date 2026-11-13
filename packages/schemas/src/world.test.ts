@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { StoryBibleSchema } from "./world";
+import { NpcRecordSchema, StoryBibleSchema, StoryThreadSchema } from "./world";
 import { RoomSettingsPatchSchema, RoomSettingsSchema } from "./ws";
 
 const base = {
@@ -24,6 +24,28 @@ describe("story bible plot", () => {
     const stages = [{ id: "a", title: "A", goal: "g" }];
     expect(StoryBibleSchema.safeParse({ ...base, plot: { pattern: "heist", arc: "rise", stages } }).success).toBe(false);
     expect(StoryBibleSchema.safeParse({ ...base, plot: { pattern: "comedy", arc: "sideways", stages } }).success).toBe(false);
+  });
+});
+
+describe("npc dossier and story threads", () => {
+  const npc = { id: "npc_1", name: "Odalys", concept: "Innkeeper", role: "ally", map_id: "m_inn", x: 1, y: 2, sprite_tags: [] };
+  it("an NPC record parses with and without the dossier fields", () => {
+    expect(NpcRecordSchema.safeParse(npc).success).toBe(true);
+    expect(NpcRecordSchema.safeParse({ ...npc, voice: "warm", lines: ["Hello."], notes: ["Owes a favor"], last_seen_beat: 3 }).success).toBe(true);
+  });
+  it("rejects over-long dossier text and a negative beat", () => {
+    expect(NpcRecordSchema.safeParse({ ...npc, voice: "v".repeat(81) }).success).toBe(false);
+    expect(NpcRecordSchema.safeParse({ ...npc, lines: ["l".repeat(121)] }).success).toBe(false);
+    expect(NpcRecordSchema.safeParse({ ...npc, notes: ["n".repeat(121)] }).success).toBe(false);
+    expect(NpcRecordSchema.safeParse({ ...npc, last_seen_beat: -1 }).success).toBe(false);
+  });
+  it("a story thread is strict", () => {
+    const t = { id: "th_1", text: "Who lit the beacon?", status: "open" };
+    expect(StoryThreadSchema.safeParse(t).success).toBe(true);
+    expect(StoryThreadSchema.safeParse({ ...t, status: "closed", resolution: "The keeper." }).success).toBe(true);
+    expect(StoryThreadSchema.safeParse({ ...t, status: "stalled" }).success).toBe(false);
+    expect(StoryThreadSchema.safeParse({ ...t, extra: 1 }).success).toBe(false);
+    expect(StoryThreadSchema.safeParse({ ...t, text: "t".repeat(161) }).success).toBe(false);
   });
 });
 

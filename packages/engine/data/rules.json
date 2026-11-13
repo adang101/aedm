@@ -259,6 +259,11 @@
     "maxQuests": 50,
     "maxQuestNotes": 50,
     "maxInventory": 100,
-    "maxFacts": 1000
+    "maxFacts": 1000,
+    "linesKept": 3,
+    "notesKept": 5,
+    "dossierMax": 12,
+    "maxOpenThreads": 12,
+    "maxThreads": 100
   }
 }
