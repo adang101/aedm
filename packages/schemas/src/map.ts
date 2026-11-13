@@ -119,11 +119,25 @@ export const EntitySlotObjectSchema = z.strictObject({
   count: z.number().int().min(1).max(6),
   ...pos,
 });
+/** A lock on a chest or door: the DC to pick (DEX) or force (STR), and optionally the name of the key item that opens it. */
+export const LockSchema = z.strictObject({
+  dc: z.number().int().min(5).max(30),
+  key_item_name: text(40).optional(),
+});
+export type Lock = z.infer<typeof LockSchema>;
+
+export const SIGN_TEXT_MAX = 200;
+export const MAX_LEVER_LINKS = 4;
+
+/** `lock` is for chests and doors, `links` (door ids on the same map) for levers, `text` for signs. All optional and additive. */
 export const InteractableObjectSchema = z.strictObject({
   type: z.literal("interactable"),
   id: EntityIdSchema,
   kind: InteractableKindSchema,
   state: InteractableStateSchema,
+  lock: LockSchema.optional(),
+  links: z.array(EntityIdSchema).min(1).max(MAX_LEVER_LINKS).optional(),
+  text: text(SIGN_TEXT_MAX).optional(),
   ...pos,
 });
 export const TriggerObjectSchema = z.strictObject({
@@ -225,6 +239,17 @@ export const MapSchema = z
         l.objects.forEach((o, j) => {
           if (o.x >= m.width || o.y >= m.height) {
             ctx.addIssue({ code: "custom", message: "object outside map bounds", path: ["layers", i, "objects", j] });
+          }
+        });
+        const doors = new Set(l.objects.flatMap((o) => (o.type === "interactable" && o.kind === "door" ? [o.id] : [])));
+        l.objects.forEach((o, j) => {
+          if (o.type !== "interactable") return;
+          const at = ["layers", i, "objects", j];
+          if (o.lock && o.kind !== "chest" && o.kind !== "door") ctx.addIssue({ code: "custom", message: `a ${o.kind} cannot have a lock`, path: [...at, "lock"] });
+          if (o.links && o.kind !== "lever") ctx.addIssue({ code: "custom", message: `only a lever has links, not a ${o.kind}`, path: [...at, "links"] });
+          if (o.text && o.kind !== "sign") ctx.addIssue({ code: "custom", message: `only a sign has text, not a ${o.kind}`, path: [...at, "text"] });
+          for (const link of o.links ?? []) {
+            if (!doors.has(link)) ctx.addIssue({ code: "custom", message: `lever ${o.id} links to ${link}, which is not a door on this map`, path: [...at, "links"] });
           }
         });
       }

@@ -1,7 +1,7 @@
 import { AbilityDraftSchema, CONDITIONS, DAMAGE_TYPES, TERRAIN_KINDS, type AbilityDraft } from "@aedm/schemas";
 import { LlmError } from "./errors";
 import { completeWithRepair, type CallOptions, type SafeParser } from "./pipeline";
-import type { ModelProvider } from "./provider";
+import { MAX_OUTPUT_TOKENS, type ModelProvider } from "./provider";
 import { escapeUntrusted } from "./context";
 import { loadPrompt, renderTemplate } from "./template";
 
@@ -119,7 +119,7 @@ export async function forgeAbility<T>(
 
   const outcome = await completeWithRepair(
     provider,
-    { tier: "standard", system, messages: [{ role: "user", content: user }], purpose: "forge" },
+    { tier: "standard", system, messages: [{ role: "user", content: user }], purpose: "forge", maxTokens: MAX_OUTPUT_TOKENS.forge },
     ForgeReplySchema,
     opts,
     (reply) => {

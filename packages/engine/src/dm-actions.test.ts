@@ -6,7 +6,8 @@ import { describeEvent } from "./events.ts";
 import { createRng } from "./rng.ts";
 import { validateBiblePlot } from "./plot.ts";
 import { designSpriteOffline } from "./sprites.ts";
-import { addMap, type GameState } from "./state.ts";
+import { addMap } from "./map-state.ts";
+import type { GameState } from "./state.ts";
 import { PARTY_IDS, PLOT_BIBLE, chorister, makeTestMap, makeWorld, withArchetype } from "./testkit.ts";
 
 const CTX: DmContext = { presentCharacterIds: PARTY_IDS, partyLevel: 1 };
@@ -29,6 +30,13 @@ describe("request_check", () => {
     expect(r.pendingChecks[1]).toMatchObject({ target: "party", dc: 5, advantage: "disadvantage" });
     expect(r.rejected).toHaveLength(1);
     expect(r.applied).toHaveLength(2);
+  });
+  it("carries branch text into the pending check", () => {
+    const { state } = makeWorld();
+    const r = apply(state, [
+      { type: "request_check", target: "ch_brindle", ability: "int", dc: 10, tags: [], advantage: "none", reason: "x", on_success: "It opens.", on_failure: "It jams." },
+    ]);
+    expect(r.pendingChecks[0]).toMatchObject({ onSuccess: "It opens.", onFailure: "It jams." });
   });
 });
 

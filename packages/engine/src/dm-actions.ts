@@ -1,7 +1,10 @@
 import { CHECK_TAGS, DIFFICULTIES, type Difficulty, type DmAction, type Item, type MapBrief, type NpcRecord, type SpriteRecipe } from "@aedm/schemas";
 import { clampDc, type CheckRequest } from "./checks.ts";
 import { endCombatM, startCombatM } from "./combat.ts";
-import { PLOTS, RULES } from "./data.ts";
+import { dropRemainsM, labelOf, stashPocketsM, stockMapM } from "./containers.ts";
+import { equipIfBetter } from "./inventory.ts";
+import { setLockM, setSignTextM } from "./interact.ts";
+import { INTERACT, PLOTS, RULES } from "./data.ts";
 import type { EngineEvent } from "./events.ts";
 import { addGrowthM } from "./growth.ts";
 import { currentStage } from "./plot.ts";
@@ -16,7 +19,8 @@ import { designSpriteOffline, spriteSeed } from "./sprites.ts";
 import { allyStats, bossThreatCap, encounterBudget, enemyThreat } from "./threat.ts";
 import { findFreeTileNear, getObjects, isWalkable } from "./map/index.ts";
 
-export { addMap, placePartyOnMap, registerArchetype } from "./state.ts";
+export { placePartyOnMap, registerArchetype } from "./state.ts";
+export { addMap } from "./map-state.ts";
 
 export type CreateEnemyAction = Extract<DmAction, { type: "create_enemy" }>;
 
@@ -87,6 +91,8 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       if (a.target === "party" && present.length === 0) return "no characters are present";
       for (const t of a.tags) if (!(CHECK_TAGS as readonly string[]).includes(t)) return `tag ${t} is not allowed`;
       const req: CheckRequest = { target: a.target, ability: a.ability, dc: clampDc(a.dc), tags: a.tags, advantage: a.advantage, reason: a.reason };
+      if (a.on_success) req.onSuccess = a.on_success;
+      if (a.on_failure) req.onFailure = a.on_failure;
       out.pendingChecks.push(req);
       emit(m, { type: "check_requested", target: req.target, ability: req.ability, dc: req.dc, tags: req.tags, reason: req.reason });
       return undefined;
@@ -276,15 +282,42 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       const item: Item = { id: newId(s, "it"), name: a.item.name, kind: a.item.kind, value, ...(tier !== undefined ? { tier } : {}) };
       c.inventory.push(item);
       s.session.lootValueThisEncounter += value;
-      let equipped = false;
-      if (a.item.kind === "weapon" && tier !== undefined && tier > c.weapon_tier) { c.weapon_tier = tier; equipped = true; }
-      if (a.item.kind === "armor" && tier !== undefined) {
-        const bonus = RULES.armorTierBonus[String(tier)] ?? 0;
-        if (bonus > c.armor_bonus) { c.armor_bonus = bonus; equipped = true; }
-      }
+      const equipped = equipIfBetter(c, item);
       emit(m, { type: "item_granted", recipient: c.id, recipientName: c.name, itemId: item.id, name: item.name, kind: item.kind, value, ...(tier !== undefined ? { tier } : {}), ...(equipped ? { equipped } : {}) });
       return undefined;
     }
+
+    case "stock_container": {
+      stockMapM(m, s.currentMapId ?? "");
+      const byObject = Object.values(s.containers).find((x) => x.object_id === a.container_id && x.map_id === s.currentMapId);
+      const c = s.containers[a.container_id] ?? byObject;
+      const npcEnt = c ? undefined : s.entities[a.container_id];
+      const npcRec = npcEnt ? s.npcs[npcEnt.id] : undefined;
+      if (!c && !(npcEnt && npcEnt.kind === "npc" && npcRec && npcRec.alive !== false)) return `${a.container_id} is not a container or a living NPC`;
+      const caps = levelCaps(ctx.partyLevel);
+      let total = 0;
+      for (const i of a.items) {
+        if ((i.kind === "weapon" || i.kind === "armor") && (i.tier ?? 1) > caps.weaponTier) return `tier ${i.tier ?? 1} is above the level ${caps.level} allowance of ${caps.weaponTier}`;
+        total += i.kind === "quest" ? 0 : i.value;
+      }
+      const remaining = lootCap(ctx.partyLevel) - s.session.lootValueThisEncounter;
+      if (total > remaining) return `value ${total} exceeds the remaining loot cap of ${Math.max(0, remaining)}`;
+      const have = c ? c.items : Object.values(s.containers).find((x) => x.kind === "pockets" && x.owner_entity_id === npcEnt?.id)?.items ?? [];
+      if (have.length + a.items.length > INTERACT.pileCap) return "that container is full";
+      const items: Item[] = a.items.map((i) => {
+        const gear = i.kind === "weapon" || i.kind === "armor";
+        return { id: newId(s, "it"), name: i.name, kind: i.kind, value: i.kind === "quest" ? 0 : i.value, ...(gear ? { tier: i.tier ?? 1 } : {}) };
+      });
+      const target = c ?? stashPocketsM(m, npcEnt as Entity, []);
+      target.items.push(...items);
+      s.session.lootValueThisEncounter += total;
+      emit(m, { type: "container_stocked", containerId: target.id, label: labelOf(target), count: items.length, value: total });
+      return undefined;
+    }
+
+    case "set_sign_text": return setSignTextM(m, s.currentMapId ?? "", a.object_id, a.text);
+
+    case "set_lock": return setLockM(m, s.currentMapId ?? "", a.target_id, { dc: a.dc, ...(a.key_item_name ? { key_item_name: a.key_item_name } : {}) });
 
     case "update_quest": {
       const q = s.bible.quests.find((x) => x.id === a.quest_id);
@@ -321,7 +354,10 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
         if (!wantAlive && npc) {
           npc.alive = false;
           const ent = s.entities[npc.id];
-          if (ent) removeEntity(m, ent.id);
+          if (ent) {
+            dropRemainsM(m, ent);
+            removeEntity(m, ent.id);
+          }
           emit(m, { type: "npc_died", entityId: npc.id, name: npc.name });
         }
         record();

@@ -307,12 +307,27 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .inv { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .inv li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; background: var(--bg-2); border-radius: 6px; }
 
+/* ---------- containers and inventory actions ---------- */
+.loot-panel {
+  position: fixed; z-index: 40; left: 16px; bottom: 16px; width: min(340px, calc(100vw - 32px)); max-height: 60dvh; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; padding: 12px; box-shadow: 0 12px 36px #000a;
+}
+.loot-panel[hidden] { display: none; }
+.loot-panel h2 { min-width: 0; overflow-wrap: anywhere; }
+.loot-list { max-height: 36dvh; overflow-y: auto; }
+.loot-name { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.inv li { align-items: center; }
+.inv-actions { flex: none; gap: 4px; }
+.badge.locked { background: var(--fire-d); border-color: var(--fire-m); color: var(--fire-x); }
+.ctx-item:disabled { opacity: .5; cursor: not-allowed; }
+
 /* ---------- phones and narrow windows ---------- */
 @media (max-width: 860px) {
   .lobby-grid { grid-template-columns: 1fr; }
   .grid2, .split { grid-template-columns: 1fr; }
 }
 @media (max-width: 760px) {
+  .loot-panel { left: 0; right: 0; bottom: 0; width: auto; max-height: 55dvh; border-radius: 12px 12px 0 0; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
   .screen.game { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(220px, 42%) minmax(0, 1fr); }
   .panel { border-left: 0; border-top: 1px solid var(--line); }
   .member { min-width: 96px; }

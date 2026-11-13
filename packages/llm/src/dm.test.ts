@@ -2,6 +2,7 @@ import { DmResponseSchema } from "@aedm/schemas";
 import { describe, expect, it } from "vitest";
 import { runDmTurn } from "./dm";
 import { LlmError } from "./errors";
+import { MAX_OUTPUT_TOKENS } from "./provider";
 import { createFakeProvider } from "./providers/fake";
 import { makeLanternPack } from "./testing";
 
@@ -37,10 +38,32 @@ describe("runDmTurn", () => {
     expect(p.requests).toHaveLength(2);
     const repair = p.requests[1]!;
     expect(repair.purpose).toBe("repair");
-    expect(repair.messages).toHaveLength(3);
-    expect(repair.messages[1]).toEqual({ role: "assistant", content: bad });
-    expect(repair.messages[2]!.content).toMatch(/^- importance: /m);
+    // minimal repair: one user message with the bad reply and the errors, not the whole DM context
+    expect(repair.messages).toHaveLength(1);
+    expect(repair.messages[0]!.role).toBe("user");
+    expect(repair.messages[0]!.content).toContain(bad);
+    expect(repair.messages[0]!.content).toMatch(/^- importance: /m);
+    expect(repair.messages[0]!.content).not.toContain("<player_input");
+    expect(repair.maxTokens).toBe(p.requests[0]!.maxTokens);
     expect(repair.system).toBe(p.requests[0]!.system);
+  });
+
+  it("the repair payload is a fraction of the first request", async () => {
+    const big = makeLanternPack([{ characterId: "ch_brindle", characterName: "Brindle Ash", text: "I look around." }]);
+    big.chapters = Array.from({ length: 4 }, (_, i) => `chapter ${i} ${"word ".repeat(120)}`);
+    const p = createFakeProvider([good({ importance: 9 }), good()]);
+    await runDmTurn(p, big);
+    const size = (r: { messages: { content: string }[] }) => r.messages.reduce((n, m) => n + m.content.length, 0);
+    expect(size(p.requests[1]!)).toBeLessThan(size(p.requests[0]!) / 3);
+  });
+
+  it("caps the output per purpose, and a caller can override the DM cap", async () => {
+    const p = createFakeProvider([good(), good()]);
+    await runDmTurn(p, pack());
+    await runDmTurn(p, pack(), { maxTokens: 900 });
+    expect(p.requests[0]!.maxTokens).toBe(MAX_OUTPUT_TOKENS.dm);
+    expect(p.requests[1]!.maxTokens).toBe(900);
+    for (const cap of Object.values(MAX_OUTPUT_TOKENS)) expect(cap).toBeGreaterThanOrEqual(800);
   });
 
   it("salvages valid actions after two bad replies, drops the rest, never makes a third call", async () => {

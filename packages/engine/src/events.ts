@@ -43,6 +43,22 @@ export type EngineEvent =
   | { type: "npc_died"; entityId: string; name: string }
   | { type: "item_granted"; recipient: string; recipientName: string; itemId: string; name: string; kind: string; value: number; tier?: number; equipped?: boolean }
   | { type: "item_used"; entityId: string; entityName: string; itemName: string }
+  | { type: "container_opened"; containerId: string; kind: string; label: string; itemCount: number; by: string; byName: string }
+  | { type: "container_closed"; containerId: string; label: string; by: string; byName: string }
+  | { type: "item_taken"; by: string; byName: string; itemId: string; name: string; kind: string; value: number; tier?: number; containerId: string; equipped?: boolean }
+  | { type: "item_dropped"; by: string; byName: string; itemId: string; name: string; containerId: string; x: number; y: number }
+  | { type: "item_given"; from: string; fromName: string; to: string; toName: string; itemId: string; name: string }
+  | { type: "loot_dropped"; containerId: string; sourceName: string; count: number; value: number; x: number; y: number }
+  | { type: "interactable_changed"; mapId: string; objectId: string; kind: string; state: "open" | "closed" | "locked"; x: number; y: number; by?: string; byName?: string; via?: string }
+  | { type: "unlocked"; mapId: string; objectId: string; kind: string; method: "key" | "pick" | "force"; by: string; byName: string; containerId?: string }
+  | { type: "lock_failed"; mapId: string; objectId: string; kind: string; method: "pick" | "force"; by: string; byName: string }
+  | { type: "noise"; mapId: string; x: number; y: number; radius: number; source: string; sourceName: string }
+  | { type: "lever_pulled"; mapId: string; objectId: string; state: "open" | "closed"; affected: string[]; x: number; y: number; by: string; byName: string }
+  | { type: "sign_read"; mapId: string; objectId: string; text: string; by: string; byName: string }
+  | { type: "sign_written"; mapId: string; objectId: string; text: string }
+  | { type: "container_stocked"; containerId: string; label: string; count: number; value: number }
+  | { type: "lock_set"; mapId: string; objectId: string; kind: string; dc: number; keyed: boolean }
+  | { type: "examined"; targetId: string; kind: string; text: string }
   | { type: "quest_updated"; questId: string; title: string; status: string; note: string }
   | { type: "fact_set"; subject: string; predicate: string; object: string }
   | { type: "growth_awarded"; characterId: string; name: string; amount: number; reason: string; growth: number }
@@ -109,6 +125,22 @@ export function describeEvent(e: EngineEvent): string {
     case "npc_died": return wrap(`${e.name} is dead`);
     case "item_granted": return wrap(`${e.recipientName} receives ${e.name} (${e.kind}, value ${e.value}${e.tier ? `, tier ${e.tier}` : ""}${e.equipped ? ", equipped" : ""})`);
     case "item_used": return wrap(`${e.entityName} uses ${e.itemName}`);
+    case "container_opened": return wrap(`${e.byName} opens ${e.label} (${e.itemCount} item${e.itemCount === 1 ? "" : "s"})`);
+    case "container_closed": return wrap(`${e.byName} closes ${e.label}`);
+    case "item_taken": return wrap(`${e.byName} takes ${e.name} (${e.kind}, value ${e.value}${e.tier ? `, tier ${e.tier}` : ""}${e.equipped ? ", equipped" : ""})`);
+    case "item_dropped": return wrap(`${e.byName} drops ${e.name} at (${e.x},${e.y})`);
+    case "item_given": return wrap(`${e.fromName} gives ${e.name} to ${e.toName}`);
+    case "loot_dropped": return wrap(`${e.sourceName} leaves ${e.count} item${e.count === 1 ? "" : "s"} (value ${e.value}) at (${e.x},${e.y})`);
+    case "interactable_changed": return wrap(`${e.kind} ${e.objectId} is now ${e.state}${e.via ? ` (via ${e.via})` : ""}${e.byName ? `, by ${e.byName}` : ""}`);
+    case "unlocked": return wrap(`${e.byName} unlocks ${e.kind} ${e.objectId} (${e.method === "key" ? "with the key" : e.method === "pick" ? "picking it" : "forcing it, which breaks the lock"})`);
+    case "lock_failed": return wrap(`${e.byName} fails to ${e.method === "pick" ? "pick" : "force"} the lock on ${e.kind} ${e.objectId}`);
+    case "noise": return wrap(`${e.sourceName} makes a loud noise at (${e.x},${e.y}) that carries ${e.radius} tiles`);
+    case "lever_pulled": return wrap(`${e.byName} pulls lever ${e.objectId}${e.affected.length > 0 ? `; ${e.affected.join(", ")} change` : "; nothing seems to happen"}`);
+    case "sign_read": return wrap(`${e.byName} reads sign ${e.objectId}: ${e.text}`);
+    case "sign_written": return wrap(`sign ${e.objectId} now reads: ${e.text}`);
+    case "container_stocked": return wrap(`${e.label} (${e.containerId}) now holds ${e.count} more item${e.count === 1 ? "" : "s"}`);
+    case "lock_set": return wrap(`${e.kind} ${e.objectId} is now locked (DC ${e.dc}${e.keyed ? ", has a key" : ""})`);
+    case "examined": return wrap(`${e.targetId}: ${e.text}`);
     case "quest_updated": return wrap(`quest "${e.title}" is now ${e.status}${e.note ? `: ${e.note}` : ""}`);
     case "fact_set": return wrap(`fact recorded: ${e.subject} ${e.predicate} ${e.object}`);
     case "growth_awarded": return wrap(`${e.name} gains ${e.amount} growth (${e.reason})`);

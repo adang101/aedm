@@ -60,12 +60,13 @@ export interface ParsedDmContext {
 export function parseDmUser(user: string): ParsedDmContext {
   const scene = /<scene map_id="([^"]*)" setting="([^"]*)">([\s\S]*?)<\/scene>/.exec(user);
   const entities: Ent[] = [];
-  for (const m of (scene?.[3] ?? "").matchAll(/^- id=(\S+) kind=(\S+) name="([^"]*)" at=\((\d+),(\d+)\)(?: hp=\S+)?(?: disposition=(\S+))?/gm)) {
-    entities.push({ id: m[1]!, kind: m[2]!, name: m[3]!, x: Number(m[4]), y: Number(m[5]), ...(m[6] ? { disposition: m[6] } : {}) });
+  // `- id "name" kind @x,y hp 3/12 disposition`; objects carry no coordinates, wounded things carry hp.
+  for (const m of (scene?.[3] ?? "").matchAll(/^- (\S+) "([^"]*)" (\S+)(?: @(\d+),(\d+))?(?: hp \d+(?:\/\d+)?)?(?: (\S+))?$/gm)) {
+    entities.push({ id: m[1]!, kind: m[3]!, name: m[2]!, x: m[4] ? Number(m[4]) : 4, y: m[5] ? Number(m[5]) : 4, ...(m[6] ? { disposition: m[6] } : {}) });
   }
   const party: Member[] = [];
-  for (const m of tag(user, "party").matchAll(/^- id=(\S+) name="([^"]*)".*present=(yes|no)/gm)) {
-    party.push({ id: m[1]!, name: m[2]!, present: m[3] === "yes" });
+  for (const m of tag(user, "party").matchAll(/^- (\S+) "([^"]*)".*?( \(away\))?$/gm)) {
+    party.push({ id: m[1]!, name: m[2]!, present: !m[3] });
   }
   const intents: Intent[] = [];
   for (const m of user.matchAll(/<player_input character_id="([^"]*)" character="([^"]*)">\n?([\s\S]*?)\n?<\/player_input>/g)) {
@@ -74,14 +75,14 @@ export function parseDmUser(user: string): ParsedDmContext {
   return {
     mapId: scene?.[1] ?? "m_start",
     setting: scene?.[2] ?? "town",
-    description: /^Description: (.*)$/m.exec(scene?.[3] ?? "")?.[1] ?? "",
+    description: (scene?.[3] ?? "").split("\n").find((l) => l.trim() !== "" && !l.startsWith("- ") && !l.startsWith("Exits:"))?.trim() ?? "",
     entities,
     party,
     intents,
     engine: tag(user, "engine_results").split("\n").filter((l) => l.startsWith("[engine")),
     facts: tag(user, "canonical_facts").split("\n").filter((l) => l.startsWith("- ")),
-    rating: /Content rating: (\w+)/.exec(user)?.[1] ?? "family",
-    cast: [...tag(user, "cast").matchAll(/^- asset_ref=(\S+) kind=(\S+) name="([^"]*)"/gm)].map((m) => ({ assetRef: m[1]!, kind: m[2]!, name: m[3]! })),
+    rating: /Rating: (\w+)\./.exec(user)?.[1] ?? "family",
+    cast: [...tag(user, "cast").matchAll(/^- asset_ref=(\S+) (npc|enemy) "([^"]*)"/gm)].map((m) => ({ assetRef: m[1]!, kind: m[2]!, name: m[3]! })),
   };
 }
 
@@ -302,6 +303,8 @@ export function improvDm(user: string): string {
       actions.push({
         type: "request_check", target: checkIntent.characterId, ability: rule.ability,
         dc: 10 + (h % 7), tags: rule.tags, advantage: "none", reason: rule.reason,
+        on_success: "You pull it off, and the moment turns in your favor.",
+        on_failure: "It slips away from you, and the moment turns against you.",
       });
     }
 
