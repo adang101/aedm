@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  addCharacter, addMap, applyDmActions, createGameState, generateMap, placePartyOnMap, rngFromState, STARTER_BRIEFS,
-  type GameState,
+  addCharacter, addMap, applyDmActions, createGameState, currentMap, findFreeTileNear, generateMap, occupiedTiles, placePartyOnMap,
+  registerArchetype, rngFromState, RULES, startCombat, STARTER_BRIEFS, type GameState,
 } from "@aedm/engine";
+import { chorister } from "@aedm/engine/testkit";
 import { buildDmContext, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS } from "@aedm/llm";
-import { fixtures } from "@aedm/schemas";
+import { fixtures, type NpcRecord } from "@aedm/schemas";
 import { buildContextPack, presentCharacterIds } from "./context";
 
 function world(): GameState {
@@ -51,6 +52,87 @@ describe("buildContextPack", () => {
     expect(pack.growthRemaining).toEqual({ ch_brindle: 50, ch_tamsin: 50 });
     expect(pack.engineLines).toEqual(["[engine: test line]"]);
     expect(pack.intents).toHaveLength(1);
+  });
+
+  it("hands back the notebook, memory tiers and open threads", () => {
+    const s = world();
+    const opened = applyDmActions(s, rngFromState(s), [
+      { type: "open_thread", text: "Who lit the beacon?" }, { type: "open_thread", text: "Where is Edda?" },
+    ], { presentCharacterIds: ["ch_brindle"], partyLevel: 1 });
+    const closed = applyDmActions(opened.state, rngFromState(opened.state), [
+      { type: "close_thread", thread_id: opened.state.threads[0]!.id, resolution: "The keeper." },
+    ], { presentCharacterIds: ["ch_brindle"], partyLevel: 1 });
+    const pack = buildContextPack({ state: closed.state, players, intents: [], storySoFar: "Old story.", chapters: ["Ch 1"], dmNotes: ["secret"] });
+    expect(pack).toMatchObject({ storySoFar: "Old story.", chapters: ["Ch 1"], dmNotes: ["secret"] });
+    expect(pack.threads).toEqual([{ id: closed.state.threads[1]!.id, text: "Where is Edda?" }]);
+    expect(buildContextPack({ state: s, players, intents: [] })).toMatchObject({ storySoFar: "", chapters: [], dmNotes: [], threads: [] });
+  });
+
+  it("builds the NPC dossier: here first, then most recently seen, the dead last, capped", () => {
+    const base = world();
+    const rec = (name: string, over: Partial<NpcRecord>): NpcRecord =>
+      ({ id: `npc_${name}`, name, concept: `${name}, a local`, role: "bystander", map_id: "m_start", x: 0, y: 0, sprite_tags: [], alive: true, ...over });
+    const npcs = [
+      rec("Alma", { map_id: "m_elsewhere", last_seen_beat: 9, voice: "slow" }),
+      rec("Bram", { map_id: "m_elsewhere", last_seen_beat: 2 }),
+      rec("Cora", { last_seen_beat: 1, notes: ["owes the party"], lines: ["Hello."] }),
+      rec("Dov", { alive: false, last_seen_beat: 50 }),
+    ];
+    const s: GameState = { ...base, npcs: Object.fromEntries(npcs.map((n) => [n.id, n])) };
+    const dossier = buildContextPack({ state: s, players, intents: [] }).npcs;
+    expect(dossier.map((n) => n.name)).toEqual(["Cora", "Alma", "Bram", "Dov"]);
+    expect(dossier.map((n) => n.here)).toEqual([true, false, false, false]);
+    expect(dossier[0]).toMatchObject({ alive: true, concept: "Cora, a local", notes: ["owes the party"], lines: ["Hello."], mapId: "m_start" });
+    expect(dossier[1]!.voice).toBe("slow");
+    expect(dossier[3]!.alive).toBe(false);
+
+    const many = { ...base, npcs: Object.fromEntries(Array.from({ length: RULES.npc.dossierMax + 5 }, (_, i) => [`npc_${i}`, rec(`N${i}`, { id: `npc_${i}`, map_id: "m_elsewhere", last_seen_beat: i })])) };
+    const capped = buildContextPack({ state: many, players, intents: [] }).npcs;
+    expect(capped).toHaveLength(RULES.npc.dossierMax);
+    expect(capped[0]!.name).toBe(`N${RULES.npc.dossierMax + 4}`);
+  });
+
+  it("builds the combat block in initiative order and shows an ally's HP in the dossier; no block outside combat", () => {
+    const s0 = world();
+    const arch = registerArchetype(s0, { ...chorister, role: "elite", concept: "c".repeat(150) });
+    if (!arch.ok) throw new Error(arch.errors.join(";"));
+    const map = currentMap(arch.state)!;
+    const at = (n: number) => findFreeTileNear(map, 20 + n, 10, occupiedTiles(arch.state, map.id))!;
+    const ctx = { presentCharacterIds: ["ch_brindle", "ch_tamsin"], partyLevel: 1 };
+    const spawned = applyDmActions(arch.state, rngFromState(arch.state), [
+      { type: "spawn_entity", archetype_id: arch.archetype.id as string, map_id: map.id, x: at(0).x, y: at(0).y, count: 1 },
+      { type: "create_npc", name: "Edda", concept: "Guide", role: "ally", map_id: map.id, x: at(2).x, y: at(2).y, sprite_tags: [] },
+    ], ctx);
+    expect(spawned.rejected).toEqual([]);
+    expect(buildContextPack({ state: spawned.state, players, intents: [] }).combat).toBeUndefined();
+    const ids = Object.values(spawned.state.entities).filter((e) => e.kind !== "pc").map((e) => e.id);
+    const fight = startCombat(spawned.state, rngFromState(spawned.state), ["ch_brindle", "ch_tamsin", ...ids], "standard");
+    expect(fight.ok).toBe(true);
+    const enemy = Object.values(fight.state.entities).find((e) => e.kind === "enemy")!;
+    fight.state.entities[enemy.id]!.morale = "broken";
+    fight.state.entities[enemy.id]!.bloodied = true;
+    const pack = buildContextPack({ state: fight.state, players, intents: [] });
+    expect(pack.combat!.order.map((o) => o.id)).toEqual(fight.state.combat!.order.map((o) => o.entity_id));
+    expect(pack.combat!.activeId).toBe(fight.state.combat!.active_id);
+    const e = pack.combat!.order.find((o) => o.id === enemy.id)!;
+    expect(e).toMatchObject({ side: "enemy", role: "elite", morale: "broken", bloodied: true, behavior: chorister.behavior });
+    expect(e.concept).toHaveLength(100);
+    const ally = pack.combat!.order.find((o) => o.name === "Edda")!;
+    expect(ally).toMatchObject({ side: "party" });
+    expect(ally.role).toBeUndefined();
+    expect(pack.npcs[0]!.hp).toEqual({ hp: ally.hp, hpMax: ally.hpMax });
+  });
+
+  it("shows the current act: inside the pacing block with a plot, as a pack field without one", () => {
+    const s = world();
+    const acts = [{ title: "Arrival", goal: "Learn the marsh." }, { title: "Descent", goal: "Reach the vault." }];
+    const withPlot = buildContextPack({ state: { ...s, bible: { ...s.bible, acts } }, players, intents: [] });
+    expect(withPlot.pacing!.act).toMatchObject({ index: 0, count: 2, act: { title: "Arrival" } });
+    expect(withPlot.act).toBeUndefined();
+    const { plot: _p, ...noPlot } = s.bible;
+    const bare = buildContextPack({ state: { ...s, bible: { ...noPlot, acts } }, players, intents: [] });
+    expect(bare.pacing).toBeUndefined();
+    expect(bare.act).toMatchObject({ index: 0, count: 2, act: { title: "Arrival" } });
   });
 
   it("renders into a prompt the DM builder accepts, with the intent as untrusted input", () => {

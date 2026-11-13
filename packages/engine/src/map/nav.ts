@@ -149,6 +149,31 @@ export function findPath(map: GameMap, from: Point, to: Point, occupied?: Set<st
   return null;
 }
 
+/** Every tile reachable within `maxSteps` (BFS over the same 8 directions and corner rule as `findPath`), with the shortest path to it. Excludes the start. */
+export function reachableTiles(map: GameMap, from: Point, maxSteps: number, occupied?: Set<string>): { x: number; y: number; path: Point[] }[] {
+  const seen = new Set<string>([key(from.x, from.y)]);
+  const out: { x: number; y: number; path: Point[] }[] = [];
+  let frontier: Point[][] = [[]];
+  for (let step = 0; step < maxSteps; step++) {
+    const next: Point[][] = [];
+    for (const path of frontier) {
+      const cur = path[path.length - 1] ?? from;
+      for (const [dx, dy] of DIRS) {
+        const nx = cur.x + dx;
+        const ny = cur.y + dy;
+        if (seen.has(key(nx, ny)) || !isWalkable(map, nx, ny) || occupied?.has(key(nx, ny))) continue;
+        if (dx !== 0 && dy !== 0 && (!isWalkable(map, cur.x + dx, cur.y) || !isWalkable(map, cur.x, cur.y + dy))) continue;
+        seen.add(key(nx, ny));
+        const p = [...path, { x: nx, y: ny }];
+        out.push({ x: nx, y: ny, path: p });
+        next.push(p);
+      }
+    }
+    frontier = next;
+  }
+  return out;
+}
+
 /** Nearest (BFS, 8-dir over walkable tiles) walkable tile that is not occupied. May return the origin itself. */
 export function findFreeTileNear(map: GameMap, x: number, y: number, occupied: Set<string>): Point | null {
   if (!inBounds(map, x, y)) return null;

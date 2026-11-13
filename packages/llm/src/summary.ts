@@ -3,19 +3,37 @@ import type { CallOptions } from "./pipeline";
 import { MAX_OUTPUT_TOKENS, type ModelProvider } from "./provider";
 import { loadPrompt } from "./template";
 
-/** Compresses older turns (plus the previous summary) into a short running summary. Plain text out. */
-export async function summarizeTurns(
+/** Hard caps a little above the word limits the prompts ask for. */
+const CHAPTER_WORDS = 160;
+const STORY_WORDS = 320;
+
+async function summarize(provider: ModelProvider, prompt: string, user: string, maxWords: number, opts: CallOptions): Promise<string> {
+  const res = await provider.complete(
+    { tier: "fast", system: loadPrompt(prompt), messages: [{ role: "user", content: user }], purpose: "summary", maxTokens: MAX_OUTPUT_TOKENS.summary },
+    opts.signal ? { signal: opts.signal } : {},
+  );
+  return res.text.trim().split(/\s+/).slice(0, maxWords).join(" ");
+}
+
+/** Summarises one batch of turns, and only those turns, into a chapter for the DM's memory. Plain text out. */
+export function summarizeChapter(
   provider: ModelProvider,
-  input: { previousSummary: string; turns: { speaker: string; text: string }[] },
+  input: { turns: { speaker: string; text: string }[] },
+  opts: CallOptions = {},
+): Promise<string> {
+  const turns = input.turns.map((t) => `${t.speaker.replace(/[<>\n]/g, " ")}: ${escapeUntrusted(t.text, 600)}`).join("\n");
+  return summarize(provider, "summary", `<turns>\n${turns}\n</turns>`, CHAPTER_WORDS, opts);
+}
+
+/** Folds a chapter into the running summary of everything older. Plain text out. */
+export function foldIntoStory(
+  provider: ModelProvider,
+  input: { storySoFar: string; chapter: string },
   opts: CallOptions = {},
 ): Promise<string> {
   const user = [
-    `<previous_summary>\n${escapeUntrusted(input.previousSummary, 2000) || "(none)"}\n</previous_summary>`,
-    `<turns>\n${input.turns.map((t) => `${t.speaker.replace(/[<>\n]/g, " ")}: ${escapeUntrusted(t.text, 600)}`).join("\n")}\n</turns>`,
+    `<story_so_far>\n${escapeUntrusted(input.storySoFar, 2500) || "(none)"}\n</story_so_far>`,
+    `<chapter>\n${escapeUntrusted(input.chapter, 1200)}\n</chapter>`,
   ].join("\n");
-  const res = await provider.complete(
-    { tier: "fast", system: loadPrompt("summary"), messages: [{ role: "user", content: user }], purpose: "summary", maxTokens: MAX_OUTPUT_TOKENS.summary },
-    opts.signal ? { signal: opts.signal } : {},
-  );
-  return res.text.trim().split(/\s+/).slice(0, 200).join(" ");
+  return summarize(provider, "story-so-far", user, STORY_WORDS, opts);
 }

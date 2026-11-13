@@ -50,7 +50,7 @@ describe("runDmTurn", () => {
 
   it("the repair payload is a fraction of the first request", async () => {
     const big = makeLanternPack([{ characterId: "ch_brindle", characterName: "Brindle Ash", text: "I look around." }]);
-    big.summaries = Array.from({ length: 6 }, (_, i) => `summary ${i} ${"word ".repeat(120)}`);
+    big.chapters = Array.from({ length: 4 }, (_, i) => `chapter ${i} ${"word ".repeat(120)}`);
     const p = createFakeProvider([good({ importance: 9 }), good()]);
     await runDmTurn(p, big);
     const size = (r: { messages: { content: string }[] }) => r.messages.reduce((n, m) => n + m.content.length, 0);

@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./data/*": "./data/*"
+    "./data/*": "./data/*",
+    "./testkit": "./src/testkit.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

@@ -90,6 +90,25 @@ importers:
         specifier: workspace:*
         version: link:../schemas
 
+  packages/evals:
+    dependencies:
+      '@aedm/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@aedm/llm':
+        specifier: workspace:*
+        version: link:../llm
+      '@aedm/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+      '@aedm/server':
+        specifier: workspace:*
+        version: link:../../apps/server
+    devDependencies:
+      tsx:
+        specifier: ^4.20.0
+        version: 4.23.15
+
   packages/llm:
     dependencies:
       '@aedm/engine':

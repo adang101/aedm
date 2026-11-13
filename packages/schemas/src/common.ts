@@ -45,3 +45,13 @@ export const MapIdSchema = z.string().trim().regex(/^m_[A-Za-z0-9_-]{1,60}$/, "m
 export const TileCoord = z.number().int().min(0).max(255);
 
 export const HexColorSchema = z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, "color must be #rrggbb");
+
+/** Combat numbers of an enemy archetype, or of an allied NPC. */
+export const EnemyStatsSchema = z.strictObject({
+  hp: z.number().int().min(1).max(500),
+  defense: z.number().int().min(5).max(30),
+  attack_bonus: z.number().int().min(-2).max(15),
+  speed: z.number().int().min(1).max(12),
+  damage_dice: DiceSchema,
+});
+export type EnemyStats = z.infer<typeof EnemyStatsSchema>;

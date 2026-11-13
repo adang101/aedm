@@ -63,6 +63,10 @@ export interface ServerConfig {
   recentTurnLimit: number;
   /** Resolve unambiguous mechanical intents (walks, empty input) with the engine and skip the DM call when a whole beat is mechanical. */
   intentRouter: boolean;
+  /** How many of the DM's latest private notes are handed back to it. */
+  dmNotebookLimit: number;
+  /** DM reaction calls allowed per combat round (on top of the end-of-round narration). Extra triggers wait for the round narration. */
+  combatReactionsPerRound: number;
 }
 
 export const DEFAULT_CONFIG: ServerConfig = {
@@ -80,6 +84,8 @@ export const DEFAULT_CONFIG: ServerConfig = {
   devLog: false,
   recentTurnLimit: 12,
   intentRouter: true,
+  dmNotebookLimit: 8,
+  combatReactionsPerRound: 1,
 };
 
 /** Everything injected into rooms and games. */

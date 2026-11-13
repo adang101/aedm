@@ -257,14 +257,14 @@ export function clampAbilityToLevel(
       }
       if (!best) break;
       (best.duration_turns as number) -= 1;
-      note(`${best.type} duration reduced to ${best.duration_turns} turn(s) to fit the cost cap`);
+      note(`${best.type} duration reduced to ${best.duration_turns} turn(s) to fit your power budget`);
     }
     // 2. shrink radius
     for (const e of effects) {
       if (!over()) break;
       if (typeof e.radius_tiles === "number" && e.radius_tiles > 1) {
         e.radius_tiles = 1;
-        note(`${e.type} radius reduced to 1 to fit the cost cap`);
+        note(`${e.type} radius reduced to 1 to fit your power budget`);
       }
     }
     // 3. shrink dice, biggest first
@@ -277,19 +277,19 @@ export function clampAbilityToLevel(
       }
       if (!best) break;
       const to = stepDiceDown(best.dice as string) as string;
-      note(`${best.type} dice reduced from ${best.dice as string} to ${to} to fit the cost cap`);
+      note(`${best.type} dice reduced from ${best.dice as string} to ${to} to fit your power budget`);
       best.dice = to;
     }
     // 4. limited uses
     if (over() && !(src.uses_per_rest === 1 && src.cooldown_turns === undefined)) {
       delete src.cooldown_turns;
       src.uses_per_rest = 1;
-      note("changed to 1 use per rest to fit the cost cap");
+      note("changed to 1 use per rest to fit your power budget");
     }
     // 5. drop trailing effects
     while (over() && effects.length > 1) {
       const dropped = effects.pop() as MutableEffect;
-      note(`removed ${dropped.type} effect to fit the cost cap`);
+      note(`removed ${dropped.type} effect to fit your power budget`);
     }
   }
 

@@ -148,8 +148,6 @@ describe("deterministic combat narration", () => {
     const t = await startedTable(h);
     const { mark } = await startFight(t, provider, ["standard"]);
     const before = provider.dmRequests().length;
-    const typed = "I shout a challenge at the brute";
-    say(t.a, typed); // free text during combat is not dropped, only held for the next DM call
     for (let i = 0; i < 300 && roundOf(h) < 2; i++) {
       const active = stateOf(h).combat?.active_id;
       if (active && stateOf(h).entities[active]?.kind === "pc") { void t.a.request("end_turn", {}); void t.b.request("end_turn", {}); }

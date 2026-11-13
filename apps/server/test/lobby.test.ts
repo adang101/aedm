@@ -57,6 +57,24 @@ describe("rooms and lobby", () => {
     expect(extra[4]?.type).toBe("error");
   });
 
+  it("claim_character gives the forge the room's pitch and the other characters' abilities", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const a = await h.connect();
+    const b = await h.connect();
+    const code = await a.createAndJoin("Alice");
+    await b.join(code, "Bob");
+    await a.request("update_settings", { campaign_pitch: "A drowned city of lanterns" });
+    await a.request("claim_character", { character_id: "new", character: brindle() });
+    await b.request("claim_character", { character_id: "new", character: tamsin() });
+    const forges = provider.requests.filter((r) => r.purpose === "forge").map((r) => r.messages[0]!.content);
+    expect(forges.length).toBeGreaterThan(3);
+    expect(forges.every((u) => u.includes("Story: A drowned city of lanterns"))).toBe(true);
+    expect(forges[0]).not.toContain("<party_abilities>");
+    expect(forges.at(-1)).toContain("<party_abilities>");
+    expect(forges.at(-1)).toContain("Brindle Ash:");
+  });
+
   it("claim_character forges abilities within the level 1 budget and tells the player what the forge did", async () => {
     h = await startHarness();
     const a = await h.connect();

@@ -40,7 +40,7 @@ export interface Rules {
   attack: { meleeRange: number; rangedRange: number; critDiceMultiplier: number; rangedKeyAbilities: string[]; pcDamageType: DamageType; enemyDamageType: DamageType; minDamage: number };
   sprites: { shapes: string[]; palette: string[]; accents: string[] };
   exploration: { maxMoveTiles: number };
-  npc: { dispositionByRole: Record<string, Disposition>; maxQuests: number; maxQuestNotes: number; maxInventory: number; maxFacts: number };
+  npc: { dispositionByRole: Record<string, Disposition>; maxQuests: number; maxQuestNotes: number; maxInventory: number; maxFacts: number; linesKept: number; notesKept: number; dossierMax: number; allyStatPct: number; combatSafeActions: string[]; maxCombatConditions: number; maxOpenThreads: number; maxThreads: number };
   draught: { name: string; dice: string; bonus: number; value: number; action: string };
   loot: { base: number; perLevel: number };
   damage: { types: DamageType[]; weaknessNum: number; weaknessDen: number; resistanceNum: number; resistanceDen: number };
@@ -55,8 +55,25 @@ export interface Rules {
   powerBudget: { base: number; perLevel: number; perAbilityCapPct: number };
   maxAverageEffect: { base: number; perLevel: number };
   log: { maxEvents: number };
-  ai: { rangedPattern: string; healBelowPct: number };
+  ai: {
+    rangedPattern: string;
+    healBelowPct: number;
+    tactics: Record<Tactic, string>;
+    leaderRoles: EnemyRole[];
+    leaderGuardRadius: number;
+    morale: {
+      breakBelowPct: Record<EnemyRole, number>;
+      cowardlyBonusPct: number;
+      checkDc: number;
+      leaderDownBreaksMinions: boolean;
+      fleeDistance: number;
+      bloodiedPct: number;
+    };
+  };
 }
+
+/** Enemy tactics the engine recognises in an archetype's `behavior` text (`rules.ai.tactics` holds the patterns). */
+export type Tactic = "focus_weakest" | "target_healer" | "protect_leader" | "pack" | "fearless" | "cowardly";
 
 export interface LevelRow {
   level: number; proficiency: number; budget: number; perAbilityCap: number; maxAverage: number;

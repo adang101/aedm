@@ -28,6 +28,9 @@ const actions = [
   { type: "complete_milestone", milestone_id: "m1" },
   { type: "adjust_plot", stages: [{ stage_id: "nightmare", goal: "The marsh turns on the party.", milestones: [{ id: "m9", description: "The party flees the drowned chapel." }] }] },
   { type: "suggest_actions", chips: ["Search the desk", "Talk to Odalys"] },
+  { type: "npc_note", entity_id: "npc_odalys", note: "Promised to hide the party's boat." },
+  { type: "open_thread", text: "Who lit the beacon on the drowned lighthouse?" },
+  { type: "close_thread", thread_id: "th_9", resolution: "The keeper did, to call the cult." },
 ];
 
 describe("DmAction", () => {
@@ -49,6 +52,17 @@ describe("DmAction", () => {
   it("rejects unknown type and unknown fields", () => {
     expect(DmActionSchema.safeParse({ type: "give_gold", amount: 5000 }).success).toBe(false);
     expect(DmActionSchema.safeParse({ ...actions[6], extra: 1 }).success).toBe(false);
+  });
+  it("dossier and thread actions: optional voice, defaults and strict limits", () => {
+    const npc = actions[1] as Record<string, unknown>;
+    expect(DmActionSchema.safeParse({ ...npc, voice: "clipped, nautical slang" }).success).toBe(true);
+    expect(DmActionSchema.safeParse({ ...npc, voice: "v".repeat(81) }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[17], note: "n".repeat(121) }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[17], extra: 1 }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[18], text: "t".repeat(161) }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[18], extra: 1 }).success).toBe(false);
+    expect(DmActionSchema.parse({ type: "close_thread", thread_id: "th_9" })).toMatchObject({ resolution: "" });
+    expect(DmActionSchema.safeParse({ ...actions[19], resolution: "r".repeat(121) }).success).toBe(false);
   });
   it("applies defaults", () => {
     const a = DmActionSchema.parse(actions[0]);

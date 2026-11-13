@@ -1,6 +1,6 @@
-import { parseDice, type Ability, type Difficulty, type Enemy, type EnemyDraft, type EnemyRole } from "@aedm/schemas";
+import { parseDice, type Ability, type EnemyStats, type Difficulty, type Enemy, type EnemyDraft, type EnemyRole } from "@aedm/schemas";
 import { averageHundredths } from "./dice.ts";
-import { ENEMY_DATA } from "./data.ts";
+import { ENEMY_DATA, RULES } from "./data.ts";
 import { abilityCost, clampAbilityToLevel, validateAbilityForLevel } from "./cost.ts";
 import { clampLevel } from "./rules.ts";
 
@@ -66,6 +66,20 @@ export function enemyThreat(e: EnemyLike): number {
     speed: e.stats.speed,
     abilityCosts: e.abilities.map((a) => abilityCost(a as Ability)),
   });
+}
+
+/** Combat stat block of an allied NPC: the standard enemy for the party level, with HP and damage scaled by `npc.allyStatPct`. */
+export function allyStats(level: number): EnemyStats {
+  const base = standardEnemy(level);
+  const pct = RULES.npc.allyStatPct;
+  const damage = Math.round((base.damageHundredths * pct) / 100);
+  return {
+    hp: Math.max(1, Math.round((base.hp * pct) / 100)),
+    defense: base.defense,
+    attack_bonus: base.attack,
+    speed: RULES.speed.base,
+    damage_dice: bestDice("1d4", { min: damage, max: damage }),
+  };
 }
 
 export interface Range { min: number; max: number }

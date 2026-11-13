@@ -17,7 +17,7 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | `v` | integer | 1 |
 | `narration` | string | 40 to 150 words, plain text, no markup or HTML. Listed first so it can stream. |
 | `actions` | array | 0 to 8 action objects, applied in order |
-| `dm_notes` | string | Optional, at most 100 words. Stored privately and never sent to clients. |
+| `dm_notes` | string | Optional, at most 100 words. Stored privately and never sent to clients. The latest few come back to the DM in its `<dm_notebook>` context block. |
 | `importance` | integer | 1 to 5 |
 | `high_stakes` | boolean | Default false. True routes the next call to the Strong tier. |
 
@@ -26,8 +26,9 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | Action `type` | Fields | Engine validation |
 | --- | --- | --- |
 | `request_check` | target (character ID or "party"), ability (str, dex, con, int, wis, cha), dc, tags (0 to 2), advantage (none, advantage, disadvantage), reason (at most 120), on_success and on_failure (optional, 1 to 60 words each: plain text, second person, present tense) | DC clamped to 5 through 30; tags from the allowed list; target is present. After the engine rolls, the branch text for the result is shown as DM narration (tags stripped, clamped to 60 words) and is flavor only: it never changes HP, items or numbers. **Optional fields added; the DM response `v` stays 1** (old replies still parse). A follow-up DM call happens only when the matching branch is missing or the response has `high_stakes: true`. |
-| `create_npc` | name, concept (at most 200), role (merchant, quest_giver, ally, bystander, villain), map_id, x, y, sprite_tags (0 to 5), appearance (optional, at most 160: look hint for the sprite designer) | Tile walkable and free; name not already used by a living NPC |
-| `npc_say` | entity_id, text (at most 60 words) | Entity exists, is in the scene, and is not dead according to `world_facts` |
+| `create_npc` | name, concept (at most 200), role (merchant, quest_giver, ally, bystander, villain), map_id, x, y, sprite_tags (0 to 5), appearance (optional, at most 160: look hint for the sprite designer), voice (optional, at most 80: speech style, kept in the NPC dossier) | Tile walkable and free; name not already used by a living NPC |
+| `npc_say` | entity_id, text (at most 60 words) | Entity is a living creature in the scene, an NPC or an enemy (never a player character), and is not dead according to `world_facts`. The line is broadcast as chat; for an NPC record it (cut to 120 characters) is also kept in the dossier, and the last `npc.linesKept` stay. Enemies have no record, so nothing is kept for them. |
+| `npc_note` | entity_id (an NPC id), note (at most 120) | The NPC exists and is alive (record and `world_facts`); it need not be in the scene. The note joins the NPC's `notes`; the last `npc.notesKept` stay and older ones drop. |
 | `create_enemy` | concept (at most 200), role (minion, standard, elite, boss), setting_notes (at most 200), ref (optional; `en_` plus snake_case, at most 40), appearance (optional, at most 160: look hint for the sprite designer) | Runs the enemy builder; the result is validated and registered as an archetype under `ref` (or a generated ID), so a later `spawn_entity` in the same response can use `ref` as its `archetype_id` |
 | `spawn_entity` | archetype_id, map_id, x and y or slot_id, count (1 to 6) | Archetype exists; tiles walkable; the encounter's threat total stays inside the budget for its difficulty |
 | `start_combat` | participants (entity and character IDs), difficulty (easy, standard, hard, deadly) | Participants present; the engine rolls initiative |
@@ -41,9 +42,28 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | `award_growth` | character_id, amount (1 to 25), reason (at most 120) | Session caps from `rules-numbers.md` |
 | `complete_milestone` | milestone_id | Exists in the story bible and is not yet completed; the engine grants 100 growth to each present character. With a plot, a milestone of a later stage than the current one is rejected (stages complete in order); finishing the last open milestone of a stage advances the stage. |
 | `adjust_plot` | stages (1 to 7): stage_id, goal (at most 300), milestones (1 to 4: id, description at most 300) | The campaign has a plot. Each stage id is in the plot, appears once, and comes after the current stage (the stage of the first incomplete milestone), so started stages and completed milestones never change. New milestone ids must not clash with kept milestones or each other, and the bible keeps at most 30. All or nothing: any bad entry rejects the action. The engine replaces the goals and milestones of those stages and keeps stage order. |
+| `open_thread` | text (at most 160) | Fewer than `npc.maxOpenThreads` threads are open. The engine assigns the id (`th_` plus a number). Closed threads beyond `npc.maxThreads` are dropped oldest first. |
+| `close_thread` | thread_id, resolution (at most 120, may be "") | The thread exists and is open. |
 | `suggest_actions` | chips (2 to 4 strings, at most 4 words each) | Shown as quick-reply chips, mainly for phones |
 
 The DM never changes HP, stats, dice results or inventory directly. Those change only as results of engine rules.
+
+**Memory and continuity (additive; the DM response `v` stays 1)**
+
+During combat (`GameState.combat` set) the engine refuses every action not in `npc.combatSafeActions`: `npc_say`, `apply_condition`, `request_check`, `end_combat`, `set_fact`, `npc_note`, `open_thread`, `close_thread`, `suggest_actions`, `update_quest`. The refusal reason is `<type> is not allowed during combat`. At most `npc.maxCombatConditions` (1) `apply_condition` is applied per response; later ones are refused. The engine's `applyDmActions` enforces it for every caller (`DmContext.conditionsApplied` carries the count when a caller applies a response one action at a time, as the server does), and the server skips its `create_enemy` and `generate_map` pre-passes for a refused action. This is a semantic change only: the DM response `v` stays 1.
+
+The new `voice`, `npc_note`, `open_thread` and `close_thread` are optional fields and new action types, so older responses stay valid.
+
+| Record | Fields |
+| --- | --- |
+| NPC record (`GameState.npcs`) | Beside id, name, concept, role, position, sprite_tags, appearance, disposition and alive: `voice` (optional, at most 80), `lines` (optional, strings of at most 120, newest last), `notes` (optional, strings of at most 120, newest last), `last_seen_beat` (optional integer: the beat counter `GameState.turn` when the NPC was created, spoke or got a note), `stats` (optional combat stat block: hp, defense, attack_bonus, speed, damage_dice. Only `ally` NPCs have one: the engine derives it at creation from the standard enemy for the party level, with hp and damage scaled by `npc.allyStatPct`. Their entity HP is `stats.hp`; other roles stay at 1 HP. Combat reads it through the same lookup as an enemy archetype's stats.) |
+| Story thread (`GameState.threads`) | id, text (at most 160), status (`open` or `closed`), resolution (optional, at most 120). Missing in older saves means none. |
+
+The numbers are in `packages/engine/data/rules.json` under `npc`: `linesKept` 3, `notesKept` 5, `dossierMax` 12 (NPCs listed to the DM), `allyStatPct` 75 (ally HP and damage as a percentage of the standard enemy), `maxCombatConditions` 1, `combatSafeActions` (the list above), `maxOpenThreads` 12, `maxThreads` 100.
+
+Context blocks (see `docs/design.md`, Memory and continuity): `<combat>` (only while a fight is on: round, active creature and the initiative order, each with id, name, side, hp/hpMax, conditions and, for enemies, role, concept (at most 100 characters), behavior, morale and bloodied; model-written text is escaped), `<summaries>` (story so far plus recent chapters), `<dm_notebook>`, `<npcs>`, `<threads>`, and the current act inside `<pacing>` (inside `<campaign>` when the bible has no plot).
+
+Save files (`SAVE_VERSION` stays 1): `summaries` (a list of cumulative summaries) is replaced by `story_so_far` (string) and `chapters` (the last 4 summaries, oldest first). A save with only `summaries` loads with its last entry as `story_so_far` and no chapters; a save whose state has no `threads` loads with none.
 
 **Map brief (inside `generate_map`, v2)**
 
@@ -175,7 +195,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 | `stats` | object | hp, defense, attack_bonus, speed (tiles), damage_dice (basic attack NdM). Damage per round is computed by the engine. |
 | `weakness`, `resistance` | enum or null | A damage type or a condition (weakness only) |
 | `abilities` | array | 0 to 3 ability objects (minions 0) |
-| `behavior` | array | 2 to 3 strings, each at most 80 characters, turned into a simple behavior tree |
+| `behavior` | array | 2 to 3 strings, each at most 80 characters. The engine matches certain phrasings (`rules.ai.tactics` and `rules.ai.rangedPattern` in `rules.json`): ranged ("keeps its distance"), `focus_weakest` ("picks off the weakest"), `target_healer` ("goes for healers"), `protect_leader` ("guards its leader"), `pack` ("fights as a pack"), `fearless` ("fights to the death") and `cowardly` ("retreats when hurt"). Other lines are flavour. |
 | `loot_hint` | string | 0 to 80 characters |
 | `sprite_tags` | array | 0 to 5 short words |
 | `appearance` | string | Optional, 0 to 160 characters. Look hint for the sprite designer, together with `concept`. |

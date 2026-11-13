@@ -643,12 +643,16 @@ export function improvBible(user = ""): string {
   return JSON.stringify(lanternMarshBible(p, a));
 }
 
+/** A chapter: the last few turns, trimmed. */
 export function improvSummary(user: string): string {
-  const prev = tag(user, "previous_summary");
   const turns = tag(user, "turns").split("\n").filter(Boolean);
-  const recent = turns.slice(-6).map((l) => l.replace(/\s+/g, " ").slice(0, 120));
-  const s = [prev && prev !== "(none)" ? prev : "", ...recent].filter(Boolean).join(" ");
-  return words(s).slice(0, 140).join(" ");
+  return words(turns.slice(-6).map((l) => l.replace(/\s+/g, " ").slice(0, 120)).join(" ")).slice(0, 110).join(" ");
+}
+
+/** The running story: the old summary and the new chapter joined, keeping the newest words. */
+export function improvStoryFold(user: string): string {
+  const prev = tag(user, "story_so_far");
+  return words([prev === "(none)" ? "" : prev, tag(user, "chapter")].join(" ")).slice(-230).join(" ");
 }
 
 // ---------- dispatch ----------
@@ -661,5 +665,6 @@ export function improvFor(req: ModelRequest): string {
   if (req.purpose === "sprite" || (first.includes("<concept>") && first.includes("<appearance>"))) return improvSprite(first);
   if (first.includes("<story_pitch>")) return improvBible(first);
   if (first.includes("<turns>")) return improvSummary(first);
+  if (first.includes("<chapter>")) return improvStoryFold(first);
   return improvDm(first);
 }
