@@ -7,17 +7,22 @@ const cache = new Map<string, string>();
  * Anything registered wins over the file read.
  */
 export function registerPrompts(prompts: Record<string, string>): void {
-  for (const [name, text] of Object.entries(prompts)) cache.set(name, text);
+  for (const [name, text] of Object.entries(prompts)) cache.set(name, normalizeEol(text));
 }
 
 /** Reads packages/llm/prompts/<name>.md (relative to this module, never __dirname). */
 export function loadPrompt(name: string): string {
   const hit = cache.get(name);
   if (hit !== undefined) return hit;
-  const text = readFileSync(new URL(`../prompts/${name}.md`, import.meta.url), "utf8");
+  const text = normalizeEol(readFileSync(new URL(`../prompts/${name}.md`, import.meta.url), "utf8"));
   cache.set(name, text);
   return text;
 }
+
+/** A Windows checkout (core.autocrlf) gives CRLF; prompts are always LF so every host sends the model the same text. */
+const normalizeEol = (text: string) => text.replace(/
+/g, "
+");
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
 
