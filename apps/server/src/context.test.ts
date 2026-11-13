@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  addCharacter, addMap, applyDmActions, createGameState, generateMap, placePartyOnMap, rngFromState, RULES, STARTER_BRIEFS,
-  type GameState,
+  addCharacter, addMap, applyDmActions, createGameState, currentMap, findFreeTileNear, generateMap, occupiedTiles, placePartyOnMap,
+  registerArchetype, rngFromState, RULES, startCombat, STARTER_BRIEFS, type GameState,
 } from "@aedm/engine";
+import { chorister } from "@aedm/engine/testkit";
 import { buildDmContext, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS } from "@aedm/llm";
 import { fixtures, type NpcRecord } from "@aedm/schemas";
 import { buildContextPack, presentCharacterIds } from "./context";
@@ -89,6 +90,37 @@ describe("buildContextPack", () => {
     const capped = buildContextPack({ state: many, players, intents: [] }).npcs;
     expect(capped).toHaveLength(RULES.npc.dossierMax);
     expect(capped[0]!.name).toBe(`N${RULES.npc.dossierMax + 4}`);
+  });
+
+  it("builds the combat block in initiative order and shows an ally's HP in the dossier; no block outside combat", () => {
+    const s0 = world();
+    const arch = registerArchetype(s0, { ...chorister, role: "elite", concept: "c".repeat(150) });
+    if (!arch.ok) throw new Error(arch.errors.join(";"));
+    const map = currentMap(arch.state)!;
+    const at = (n: number) => findFreeTileNear(map, 20 + n, 10, occupiedTiles(arch.state, map.id))!;
+    const ctx = { presentCharacterIds: ["ch_brindle", "ch_tamsin"], partyLevel: 1 };
+    const spawned = applyDmActions(arch.state, rngFromState(arch.state), [
+      { type: "spawn_entity", archetype_id: arch.archetype.id as string, map_id: map.id, x: at(0).x, y: at(0).y, count: 1 },
+      { type: "create_npc", name: "Edda", concept: "Guide", role: "ally", map_id: map.id, x: at(2).x, y: at(2).y, sprite_tags: [] },
+    ], ctx);
+    expect(spawned.rejected).toEqual([]);
+    expect(buildContextPack({ state: spawned.state, players, intents: [] }).combat).toBeUndefined();
+    const ids = Object.values(spawned.state.entities).filter((e) => e.kind !== "pc").map((e) => e.id);
+    const fight = startCombat(spawned.state, rngFromState(spawned.state), ["ch_brindle", "ch_tamsin", ...ids], "standard");
+    expect(fight.ok).toBe(true);
+    const enemy = Object.values(fight.state.entities).find((e) => e.kind === "enemy")!;
+    fight.state.entities[enemy.id]!.morale = "broken";
+    fight.state.entities[enemy.id]!.bloodied = true;
+    const pack = buildContextPack({ state: fight.state, players, intents: [] });
+    expect(pack.combat!.order.map((o) => o.id)).toEqual(fight.state.combat!.order.map((o) => o.entity_id));
+    expect(pack.combat!.activeId).toBe(fight.state.combat!.active_id);
+    const e = pack.combat!.order.find((o) => o.id === enemy.id)!;
+    expect(e).toMatchObject({ side: "enemy", role: "elite", morale: "broken", bloodied: true, behavior: chorister.behavior });
+    expect(e.concept).toHaveLength(100);
+    const ally = pack.combat!.order.find((o) => o.name === "Edda")!;
+    expect(ally).toMatchObject({ side: "party" });
+    expect(ally.role).toBeUndefined();
+    expect(pack.npcs[0]!.hp).toEqual({ hp: ally.hp, hpMax: ally.hpMax });
   });
 
   it("shows the current act: inside the pacing block with a plot, as a pack field without one", () => {

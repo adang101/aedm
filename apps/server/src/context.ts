@@ -1,7 +1,7 @@
-import type { DmContextPack, NpcDossierEntry, SceneEntity } from "@aedm/llm";
+import type { CombatContext, DmContextPack, NpcDossierEntry, SceneEntity } from "@aedm/llm";
 import type { NpcRecord } from "@aedm/schemas";
 import {
-  MATERIAL_IDS, RULES, computePartyLevel, currentAct, currentMap, entitiesOnMap, getObjects, lootCap, pacingBlock, type GameState,
+  MATERIAL_IDS, RULES, computePartyLevel, currentAct, currentMap, entitiesOnMap, getObjects, lootCap, pacingBlock, sideOf as combatSide, type GameState,
 } from "@aedm/engine";
 
 export interface RecentTurn {
@@ -61,7 +61,31 @@ function npcDossier(state: GameState): NpcDossierEntry[] {
     .map((n) => ({
       id: n.id, name: n.name, role: n.role, disposition: n.disposition, alive: n.alive !== false, mapId: n.map_id, here: here(n),
       concept: n.concept, voice: n.voice, lines: n.lines ?? [], notes: n.notes ?? [],
+      hp: n.role === "ally" && state.entities[n.id] ? { hp: state.entities[n.id]!.hp, hpMax: state.entities[n.id]!.hpMax } : undefined,
     }));
+}
+
+const COMBAT_CONCEPT_MAX = 100;
+
+/** The fight in progress for the DM: initiative order with sides, HP, conditions and, for enemies, role, concept, behavior and morale. */
+function combatBlock(state: GameState): CombatContext | undefined {
+  const c = state.combat;
+  if (!c) return undefined;
+  return {
+    round: c.round,
+    activeId: c.active_id,
+    order: c.order.flatMap((o) => {
+      const e = state.entities[o.entity_id];
+      if (!e) return [];
+      const a = e.kind === "enemy" ? state.archetypes[e.refId] : undefined;
+      return [{
+        id: e.id, name: e.name, side: combatSide(e), hp: e.hp, hpMax: e.hpMax, conditions: e.conditions.map((x) => x.condition),
+        ...(a ? { role: a.role, concept: a.concept.slice(0, COMBAT_CONCEPT_MAX), behavior: a.behavior } : {}),
+        ...(e.morale ? { morale: e.morale } : {}),
+        ...(e.bloodied ? { bloodied: true } : {}),
+      }];
+    }),
+  };
 }
 
 /** Pure: game state plus this beat's inputs become the DM's context pack. */
@@ -132,6 +156,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     chapters: input.chapters ?? [],
     dmNotes: input.dmNotes ?? [],
     act: pacing ? undefined : currentAct(state.bible) ?? undefined,
+    combat: combatBlock(state),
     npcs: npcDossier(state),
     threads: state.threads.filter((t) => t.status === "open").map((t) => ({ id: t.id, text: t.text })),
     facts: state.facts.map((f) => ({ ...f })),
