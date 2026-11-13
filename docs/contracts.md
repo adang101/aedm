@@ -27,7 +27,7 @@ These plain-language definitions each become a Zod schema in `packages/schemas`;
 | --- | --- | --- |
 | `request_check` | target (character ID or "party"), ability (str, dex, con, int, wis, cha), dc, tags (0 to 2), advantage (none, advantage, disadvantage), reason (at most 120) | DC clamped to 5 through 30; tags from the allowed list; target is present |
 | `create_npc` | name, concept (at most 200), role (merchant, quest_giver, ally, bystander, villain), map_id, x, y, sprite_tags (0 to 5), appearance (optional, at most 160: look hint for the sprite designer), voice (optional, at most 80: speech style, kept in the NPC dossier) | Tile walkable and free; name not already used by a living NPC |
-| `npc_say` | entity_id, text (at most 60 words) | Entity exists, is in the scene, and is not dead according to `world_facts`. The line (cut to 120 characters) is also kept on the NPC's record; the last `npc.linesKept` stay. |
+| `npc_say` | entity_id, text (at most 60 words) | Entity is a living creature in the scene, an NPC or an enemy (never a player character), and is not dead according to `world_facts`. The line is broadcast as chat; for an NPC record it (cut to 120 characters) is also kept in the dossier, and the last `npc.linesKept` stay. Enemies have no record, so nothing is kept for them. |
 | `npc_note` | entity_id (an NPC id), note (at most 120) | The NPC exists and is alive (record and `world_facts`); it need not be in the scene. The note joins the NPC's `notes`; the last `npc.notesKept` stay and older ones drop. |
 | `create_enemy` | concept (at most 200), role (minion, standard, elite, boss), setting_notes (at most 200), ref (optional; `en_` plus snake_case, at most 40), appearance (optional, at most 160: look hint for the sprite designer) | Runs the enemy builder; the result is validated and registered as an archetype under `ref` (or a generated ID), so a later `spawn_entity` in the same response can use `ref` as its `archetype_id` |
 | `spawn_entity` | archetype_id, map_id, x and y or slot_id, count (1 to 6) | Archetype exists; tiles walkable; the encounter's threat total stays inside the budget for its difficulty |
@@ -50,16 +50,18 @@ The DM never changes HP, stats, dice results or inventory directly. Those change
 
 **Memory and continuity (additive; the DM response `v` stays 1)**
 
+During combat (`GameState.combat` set) the engine refuses every action not in `npc.combatSafeActions`: `npc_say`, `apply_condition`, `request_check`, `end_combat`, `set_fact`, `npc_note`, `open_thread`, `close_thread`, `suggest_actions`, `update_quest`. The refusal reason is `<type> is not allowed during combat`. At most `npc.maxCombatConditions` (1) `apply_condition` is applied per response; later ones are refused. The engine's `applyDmActions` enforces it for every caller (`DmContext.conditionsApplied` carries the count when a caller applies a response one action at a time, as the server does), and the server skips its `create_enemy` and `generate_map` pre-passes for a refused action. This is a semantic change only: the DM response `v` stays 1.
+
 The new `voice`, `npc_note`, `open_thread` and `close_thread` are optional fields and new action types, so older responses stay valid.
 
 | Record | Fields |
 | --- | --- |
-| NPC record (`GameState.npcs`) | Beside id, name, concept, role, position, sprite_tags, appearance, disposition and alive: `voice` (optional, at most 80), `lines` (optional, strings of at most 120, newest last), `notes` (optional, strings of at most 120, newest last), `last_seen_beat` (optional integer: the beat counter `GameState.turn` when the NPC was created, spoke or got a note) |
+| NPC record (`GameState.npcs`) | Beside id, name, concept, role, position, sprite_tags, appearance, disposition and alive: `voice` (optional, at most 80), `lines` (optional, strings of at most 120, newest last), `notes` (optional, strings of at most 120, newest last), `last_seen_beat` (optional integer: the beat counter `GameState.turn` when the NPC was created, spoke or got a note), `stats` (optional combat stat block: hp, defense, attack_bonus, speed, damage_dice. Only `ally` NPCs have one: the engine derives it at creation from the standard enemy for the party level, with hp and damage scaled by `npc.allyStatPct`. Their entity HP is `stats.hp`; other roles stay at 1 HP. Combat reads it through the same lookup as an enemy archetype's stats.) |
 | Story thread (`GameState.threads`) | id, text (at most 160), status (`open` or `closed`), resolution (optional, at most 120). Missing in older saves means none. |
 
-The numbers are in `packages/engine/data/rules.json` under `npc`: `linesKept` 3, `notesKept` 5, `dossierMax` 12 (NPCs listed to the DM), `maxOpenThreads` 12, `maxThreads` 100.
+The numbers are in `packages/engine/data/rules.json` under `npc`: `linesKept` 3, `notesKept` 5, `dossierMax` 12 (NPCs listed to the DM), `allyStatPct` 75 (ally HP and damage as a percentage of the standard enemy), `maxCombatConditions` 1, `combatSafeActions` (the list above), `maxOpenThreads` 12, `maxThreads` 100.
 
-Context blocks (see `docs/design.md`, Memory and continuity): `<summaries>` (story so far plus recent chapters), `<dm_notebook>`, `<npcs>`, `<threads>`, and the current act inside `<pacing>` (inside `<campaign>` when the bible has no plot).
+Context blocks (see `docs/design.md`, Memory and continuity): `<combat>` (only while a fight is on: round, active creature and the initiative order, each with id, name, side, hp/hpMax, conditions and, for enemies, role, concept (at most 100 characters), behavior, morale and bloodied; model-written text is escaped), `<summaries>` (story so far plus recent chapters), `<dm_notebook>`, `<npcs>`, `<threads>`, and the current act inside `<pacing>` (inside `<campaign>` when the bible has no plot).
 
 Save files (`SAVE_VERSION` stays 1): `summaries` (a list of cumulative summaries) is replaced by `story_so_far` (string) and `chapters` (the last 4 summaries, oldest first). A save with only `summaries` loads with its last entry as `story_so_far` and no chapters; a save whose state has no `threads` loads with none.
 

@@ -9,23 +9,23 @@ const scenario = (id: string): DmScenario => DM_SCENARIOS.find((s) => s.id === i
 const FILLER = "Rain drums on the roof while the lamps gutter and the room waits for what comes next. ".repeat(4);
 
 /** Plays a hand-written DM response through a scenario's setup, the engine and its check. */
-function judge(id: string, narration: string, actions: DmAction[] = []) {
+function judge(id: string, narration: string, actions: DmAction[] = [], pad = FILLER) {
   const s = scenario(id);
-  const response: DmResponse = { v: 1, narration: `${narration} ${FILLER}`.trim(), actions, importance: 2, high_stakes: false };
+  const response: DmResponse = { v: 1, narration: `${narration} ${pad}`.trim(), actions, importance: 2, high_stakes: false };
   return s.check(settleDm(s.setup(), { response }));
 }
 
 describe("scenario catalogue", () => {
-  it("has E01 to E26 and F01 to F18 with unique ids", () => {
+  it("has E01 to E30 and F01 to F18 with unique ids", () => {
     const ids = [...DM_SCENARIOS, ...FORGE_SCENARIOS].map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(DM_SCENARIOS.map((s) => s.id)).toEqual(Array.from({ length: 26 }, (_, i) => `E${String(i + 1).padStart(2, "0")}`));
+    expect(DM_SCENARIOS.map((s) => s.id)).toEqual(Array.from({ length: 30 }, (_, i) => `E${String(i + 1).padStart(2, "0")}`));
     expect(FORGE_SCENARIOS.map((s) => s.id)).toEqual(Array.from({ length: 18 }, (_, i) => `F${String(i + 1).padStart(2, "0")}`));
   });
 
   it.each(DM_SCENARIOS.map((s) => [s.id, s] as const))("%s builds its setup", (_id, s) => {
     const setup = s.setup();
-    expect(setup.pack.intents.length).toBeGreaterThan(0);
+    expect(setup.pack.intents.length + setup.pack.engineLines.length).toBeGreaterThan(0);
     expect(s.threshold).toBeGreaterThan(0);
   });
 });
@@ -74,6 +74,49 @@ describe("DM scenario checks", () => {
     const r = judge("E25", "A letter lies in the sand.", [open]);
     expect(r.pass).toBe(true);
     expect(r.notes?.[0]).toMatch(/proposed 1/);
+  });
+
+  const entityNamed = (id: string, name: string) => Object.values(scenario(id).setup().state.entities).find((e) => e.name === name)!.id;
+  const say = (entity_id: string, text: string): DmAction => ({ type: "npc_say", entity_id, text });
+
+  it("E27 needs Garran to answer and no new fight", () => {
+    const garran = entityNamed("E27", "Garran");
+    expect(judge("E27", "Garran swallows hard.", [say(garran, "A man in a grey hood. I never saw his face.")]).pass).toBe(true);
+    expect(judge("E27", "Garran swallows hard and says nothing.").pass).toBe(false);
+    const fight: DmAction = { type: "start_combat", participants: ["ch_brindle", garran], difficulty: "easy" };
+    expect(judge("E27", "Garran lunges.", [say(garran, "Never!"), fight]).pass).toBe(false);
+  });
+
+  it("E28 needs the boss or an ally to speak, in few words and with combat-safe actions only", () => {
+    const boss = entityNamed("E28", "Cantor Vael");
+    expect(judge("E28", "Vael bares bloody teeth.", [say(boss, "You will sing with the drowned.")], "").pass).toBe(true);
+    expect(judge("E28", "Vael bares bloody teeth.", [], "").pass).toBe(false);
+    const grant: DmAction = { type: "grant_item", recipient: "ch_brindle", item: { name: "Pearl", kind: "trinket", value: 1 } };
+    expect(judge("E28", "Vael bares bloody teeth.", [say(boss, "Fools!"), grant], "").pass).toBe(false);
+    const long = "Vael snarls. ".repeat(31);
+    const r = scenario("E28").check(settleDm(scenario("E28").setup(), { response: { v: 1, narration: long, actions: [say(boss, "Fools!")], importance: 2, high_stakes: false } }));
+    expect(r.pass).toBe(false);
+    expect(r.reasons.join(" ")).toMatch(/60 words/);
+  });
+
+  it("E29 needs a check for the stunt and no damage in the narration", () => {
+    const check: DmAction = { type: "request_check", target: "ch_tamsin", ability: "str", dc: 12, tags: [], advantage: "none", reason: "Kick the brazier" };
+    const r = (narration: string, actions: DmAction[]) => scenario("E29").check(settleDm(scenario("E29").setup(), {
+      response: { v: 1, narration, actions, importance: 2, high_stakes: false },
+    }));
+    const calm = "Tamsin plants a boot against the brazier and heaves; coals skitter across the flagstones toward the cultists, who scramble back.";
+    expect(r(calm, [check]).pass).toBe(true);
+    expect(r(calm, []).pass).toBe(false);
+    expect(r(`${calm} The first cultist takes 5 damage and screams.`, [check]).pass).toBe(false);
+    const item: DmAction = { type: "grant_item", recipient: "ch_tamsin", item: { name: "Pearl", kind: "trinket", value: 1 } };
+    expect(r(calm, [check, item]).pass).toBe(false);
+  });
+
+  it("E30 needs end_combat with the truce reason", () => {
+    const end = (reason: "truce" | "victory"): DmAction => ({ type: "end_combat", reason });
+    expect(judge("E30", "The cultists stumble out into the rain.", [end("truce")], "").pass).toBe(true);
+    expect(judge("E30", "The cultists stumble out into the rain.", [end("victory")], "").pass).toBe(false);
+    expect(judge("E30", "The cultists stumble out into the rain.", [], "").pass).toBe(false);
   });
 
   it("E26 fails on a later-stage milestone", () => {

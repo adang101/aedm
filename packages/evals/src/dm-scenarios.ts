@@ -1,12 +1,12 @@
-import { encounterBudget, lootCap, RULES } from "@aedm/engine";
-import { PLOT_BIBLE } from "@aedm/engine/testkit";
+import { clampEnemy, encounterBudget, lootCap, RULES } from "@aedm/engine";
+import { PLOT_BIBLE, chorister } from "@aedm/engine/testkit";
 import { buildDmSystem } from "@aedm/llm";
 import { CHECK_TAGS, type StoryBible } from "@aedm/schemas";
 import {
   accepted, depictsSpeaking, expect, hasAction, inFiction, narrationWords, noSourceLeak, noTextLeak, ofType, proposed, verdict, visibleText, voicesNpc,
 } from "./checks";
 import type { CheckResult, DmOutcome, DmScenario } from "./types";
-import { BRINDLE, ORRIN, TAMSIN, buildDmSetup, say, type SetupOptions } from "./world";
+import { BRINDLE, ORRIN, TAMSIN, buildDmSetup, say, type FoeSpec, type SetupOptions } from "./world";
 
 const HARD = 1;
 const SOFT = 0.8;
@@ -291,6 +291,84 @@ const E26: DmScenario = dm("E26", "Continuity", "Stage order: the first stage is
     return verdict([expect(later.length === 0, `proposed complete_milestone for a later stage: ${later.map((a) => a.milestone_id).join(", ")}`)]);
   });
 
+// ---------- combat: the DM stays present during a fight ----------
+
+const COMBAT_SAFE: readonly string[] = RULES.npc.combatSafeActions;
+const COMBAT_NARRATION_MAX_WORDS = 60;
+const DAMAGE_CLAIM = /\b(takes?|taking|suffers?|loses?|deals?|dealt|inflicts?) \d+\b|\b\d+ (points? of )?damage\b/i;
+
+const cultist: FoeSpec = { enemy: { ...chorister, name: "Cultist" }, at: [12, 6], count: 2 };
+const cantor: FoeSpec = {
+  enemy: clampEnemy({ ...chorister, name: "Cantor Vael", role: "boss", concept: "A drowned choir-master who sings the sleepers under." }, 1).enemy,
+  at: [12, 6], bloodied: true,
+};
+
+/** Failure reasons for combat replies: only combat-safe actions, narration within the combat length. */
+const combatManners = (o: DmOutcome): (string | undefined)[] => [
+  expect(o.proposed.every((a) => COMBAT_SAFE.includes(a.type)), `proposed an action that is not combat-safe: ${o.proposed.filter((a) => !COMBAT_SAFE.includes(a.type)).map((a) => a.type).join(", ")}`),
+  expect(narrationWords(o.response.narration) <= COMBAT_NARRATION_MAX_WORDS, `narration runs past ${COMBAT_NARRATION_MAX_WORDS} words`),
+];
+
+const E27: DmScenario = dm("E27", "Combat", "Parley: a surrendered enemy is questioned after the fight", SOFT,
+  {
+    intents: [say(BRINDLE, "I crouch beside the prisoner and ask: Who sent you?")],
+    npcs: [{ name: "Garran", concept: "A cultist who threw down his knife and surrendered.", role: "villain", x: 12, y: 6, voice: "sullen, clipped, afraid" }],
+    facts: [{ subject: "Garran", predicate: "disposition", object: "wary" }],
+    recentTurns: [{ speaker: "DM", kind: "dm", text: "Garran drops his knife and raises both hands. The fight is over; he is breathing hard and watching your weapons." }],
+    engineLines: ["[engine: Garran surrenders and can be talked to]"],
+    tweak: (s) => {
+      const id = Object.values(s.npcs).find((n) => n.name === "Garran")!.id;
+      s.npcs[id]!.disposition = "wary";
+      s.entities[id]!.disposition = "wary";
+    },
+  },
+  (o) => {
+    const garran = Object.values(o.before.npcs).find((n) => n.name === "Garran")!.id;
+    return verdict([
+      expect(proposed(o, "npc_say").some((a) => a.entity_id === garran), "no npc_say from Garran's id"),
+      expect(!hasAction(o.proposed, "start_combat"), "started a new combat"),
+    ]);
+  });
+
+const E28: DmScenario = dm("E28", "Combat", "Taunting foe: the boss is bloodied and the DM reacts", SOFT,
+  {
+    intents: [],
+    fight: [cantor],
+    engineLines: ["[engine: Cantor Vael is bloodied]"],
+    sceneNote: "The flooded chapel. Cantor Vael stands before the drowned organ, one hand pressed to his ribs.",
+  },
+  (o) => {
+    const boss = Object.values(o.before.entities).find((e) => e.name === "Cantor Vael")!.id;
+    const allies = Object.values(o.before.entities).filter((e) => e.kind === "npc").map((e) => e.id);
+    return verdict([
+      expect(proposed(o, "npc_say").some((a) => a.entity_id === boss || allies.includes(a.entity_id)), "no npc_say from the boss or an ally"),
+      ...combatManners(o),
+    ]);
+  });
+
+const E29: DmScenario = dm("E29", "Combat", "Mid-fight stunt: kick the brazier into the cultists", SOFT,
+  {
+    intents: [say(TAMSIN, "I kick the brazier into the cultists!")],
+    fight: [cultist],
+    sceneNote: "The chapel crypt. A brazier of glowing coals stands between the party and the cultists.",
+  },
+  (o) => verdict([
+    expect(hasAction(o.proposed, "request_check"), "no request_check for the stunt"),
+    expect(!DAMAGE_CLAIM.test(o.response.narration), "narration claims damage the engine did not report"),
+    ...combatManners(o),
+  ]));
+
+const E30: DmScenario = dm("E30", "Combat", "Truce: broken enemies are let go", SOFT,
+  {
+    intents: [say(ORRIN, "I lower my blade. Go. Leave this chapel and do not come back, and nobody else has to bleed.")],
+    fight: [{ ...cultist, morale: "broken", hp: 3 }],
+    engineLines: ["[engine: Cultist A's nerve breaks (badly hurt)]", "[engine: Cultist B's nerve breaks (badly hurt)]"],
+  },
+  (o) => verdict([
+    expect(proposed(o, "end_combat").some((a) => a.reason === "truce"), "no end_combat with reason truce"),
+    ...combatManners(o),
+  ]));
+
 export const DM_SCENARIOS: DmScenario[] = [
-  E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E11, E12, E13, E14, E15, E16, E17, E18, E19, E20, E21, E22, E23, E24, E25, E26,
+  E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E11, E12, E13, E14, E15, E16, E17, E18, E19, E20, E21, E22, E23, E24, E25, E26, E27, E28, E29, E30,
 ];
