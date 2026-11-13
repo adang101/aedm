@@ -8,7 +8,7 @@ import { buildEnemy } from "./enemy";
 import { forgeAbility } from "./forge";
 import type { ModelRequest } from "./provider";
 import { createFakeProvider } from "./providers/fake";
-import { summarizeTurns } from "./summary";
+import { foldIntoStory, summarizeChapter } from "./summary";
 import { makeLanternPack } from "./testing";
 
 const INPUTS = [
@@ -267,9 +267,12 @@ describe("fake forge / enemy / bible / summary", () => {
     expect(q.requests).toHaveLength(2);
   });
 
-  it("summarises offline", async () => {
-    const s = await summarizeTurns(createFakeProvider(), { previousSummary: "", turns: [{ speaker: "DM", text: "Fog fell." }] });
-    expect(s).toContain("Fog fell");
+  it("summarises a chapter offline and folds it into the story", async () => {
+    const chapter = await summarizeChapter(createFakeProvider(), { turns: [{ speaker: "DM", text: "Fog fell." }] });
+    expect(chapter).toContain("Fog fell");
+    const story = await foldIntoStory(createFakeProvider(), { storySoFar: "The party reached the marsh.", chapter });
+    expect(story).toContain("reached the marsh");
+    expect(story).toContain("Fog fell");
   });
 });
 
