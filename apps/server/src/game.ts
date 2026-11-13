@@ -457,6 +457,8 @@ export class GameSession {
     if (this.state.combat) {
       this.combatIntents.push({ characterId: ch.id, characterName: ch.name, text });
       if (this.combatIntents.length > MAX_PENDING_LINES) this.combatIntents.shift();
+      // answer now if this round's reaction is unspent (the speaker may be mid-turn); otherwise the round narration does
+      this.enqueue(() => this.advanceCombat());
       return;
     }
     if (!this.beat) this.beat = { intents: [], speakers: new Set(), timer: null };
@@ -830,6 +832,8 @@ export class GameSession {
         continue;
       }
       if (this.takeReaction(c.round)) {
+        // the DM call must not eat a player's turn: the timer restarts in full when the loop reaches them again
+        this.clearTurnTimer();
         await this.dmTurn({ intents: [], engineLines: [], allowFollowup: true, tick: false });
         continue;
       }

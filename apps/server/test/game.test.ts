@@ -167,23 +167,26 @@ describe("combat", () => {
   const bloodied = (id: string): EngineEvent => ({ type: "bloodied", entityId: id, entityName: "Brute" });
   const surrendered = (id: string): EngineEvent => ({ type: "surrendered", entityId: id, name: "Brute" });
 
-  it("speech during combat reaches the next DM call as player input, once, and the enemy can answer in character", async () => {
+  it("speech during combat is answered mid-turn as player input, once, and the speaker keeps their turn", async () => {
     const provider = scriptedProvider();
     h = await startHarness({ provider, random: constantRandom(0.5) });
     const t = await startedTable(h);
     const { p1, enemy, mark } = await startFight(t, provider);
     const timer = await t.a.wait("turn_timer", () => true, { from: mark });
-    const owner = clientFor(t, timer.payload.entity_id, p1);
+    const activeId = timer.payload.entity_id;
+    const owner = clientFor(t, activeId, p1);
+    await gameOf(h).idle();
     const before = provider.dmRequests().length;
     provider.queueDm(dmReply([{ type: "npc_say", entity_id: enemy.id, text: "Your courage will drown with you." }]));
-    await say(owner, "Hold the line, I will draw them off!");
-    await sleep(30);
-    expect(provider.dmRequests().length).toBe(before); // nothing is sent until the turn boundary
     const m2 = owner.mark();
-    expect((await owner.request("end_turn", {})).type).toBe("presence");
+    await say(owner, "Hold the line, I will draw them off!");
     const chat = await t.a.wait("chat", (c) => c.from_id === enemy.id, { from: m2 });
     expect(chat.payload.text).toBe("Your courage will drown with you.");
     await gameOf(h).idle();
+    // still the speaker's turn, with a fresh timer
+    const restarted = await owner.wait("turn_timer", (tt) => tt.entity_id === activeId, { from: m2 });
+    expect(restarted.payload.seconds_left).toBeGreaterThan(0);
+    expect(gameOf(h).state.combat?.active_id).toBe(activeId);
     const withSpeech = provider.dmRequests().slice(before).filter((r) => r.messages[0]!.content.includes("Hold the line, I will draw them off!"));
     expect(withSpeech).toHaveLength(1);
     expect(withSpeech[0]!.messages[0]!.content).toMatch(/<player_input character_id="[^"]+" character="[^"]+">\nHold the line/);
