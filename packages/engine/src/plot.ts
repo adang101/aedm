@@ -1,5 +1,5 @@
 /** Story structure: plot patterns, emotional arcs and pacing. Pure; all numbers live in data/plots.json. */
-import type { Plot, PlotArc, PlotPattern, PlotStage, StoryBible } from "@aedm/schemas";
+import type { Act, Plot, PlotArc, PlotPattern, PlotStage, StoryBible } from "@aedm/schemas";
 import { PLOT_PATTERNS } from "@aedm/schemas";
 import { PLOTS, type PlotStageData } from "./data.ts";
 import { createRng } from "./rng.ts";
@@ -107,6 +107,28 @@ export function currentStage(bible: StoryBible): CurrentStage | null {
   return { index, stage, data, finished: !open };
 }
 
+export interface CurrentAct {
+  /** Zero-based index into `bible.acts`. */
+  index: number;
+  count: number;
+  act: Act;
+}
+
+/**
+ * The bible's act the story is in: the plot's stages (or, without a plot, the milestones) are spread proportionally
+ * over the acts, and a finished story is in the last act. Null when the bible has no acts.
+ */
+export function currentAct(bible: StoryBible): CurrentAct | null {
+  const acts = bible.acts;
+  if (!acts?.length) return null;
+  const cur = currentStage(bible);
+  const [done, total] = cur
+    ? [cur.finished ? cur.index + 1 : cur.index, bible.plot!.stages.length]
+    : [bible.milestones.filter((m) => m.completed).length, bible.milestones.length];
+  const index = Math.min(acts.length - 1, Math.floor((done * acts.length) / Math.max(1, total)));
+  return { index, count: acts.length, act: acts[index] as Act };
+}
+
 export interface PacingBlock {
   pattern: PlotPattern;
   patternName: string;
@@ -124,6 +146,8 @@ export interface PacingBlock {
   trend: Trend;
   trendText: string;
   openMilestones: number;
+  /** The bible's current act; null when the bible has no acts. */
+  act: CurrentAct | null;
 }
 
 /** What the DM context pack's pacing block shows. Null for a bible without a plot. */
@@ -142,6 +166,7 @@ export function pacingBlock(bible: StoryBible): PacingBlock | null {
     next: nextStage && nextData ? { id: nextStage.id, name: nextData.name, title: nextStage.title, goal: nextStage.goal } : null,
     tension: cur.data.tension, difficulty: cur.data.difficulty, trend, trendText: TREND_TEXT[trend],
     openMilestones: bible.milestones.filter((m) => !m.completed && m.stage === cur.stage.id).length,
+    act: currentAct(bible),
   };
 }
 

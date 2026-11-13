@@ -2,7 +2,7 @@ import type { Condition, DamageType, Difficulty } from "@aedm/schemas";
 
 /** Narratable facts produced by the engine. Every state-changing function returns a list of these. */
 export type EngineEvent =
-  | { type: "roll"; kind: "check" | "attack" | "save" | "initiative" | "revive" | "heal"; who: string; whoName: string; label: string; dice: number[]; modifier: number; total: number; target: number; outcome: "success" | "failure" | "crit" | "fumble" }
+  | { type: "roll"; kind: "check" | "attack" | "save" | "initiative" | "revive" | "heal" | "morale"; who: string; whoName: string; label: string; dice: number[]; modifier: number; total: number; target: number; outcome: "success" | "failure" | "crit" | "fumble" }
   | { type: "check_requested"; target: string; ability: string; dc: number; tags: string[]; reason: string }
   | { type: "damage"; target: string; targetName: string; source?: string; sourceName?: string; amount: number; absorbed: number; hp: number; hpMax: number; damageType?: DamageType; dice?: number[]; crit?: boolean; modifier?: string }
   | { type: "heal"; target: string; targetName: string; source?: string; sourceName?: string; amount: number; hp: number; hpMax: number; dice?: number[] }
@@ -17,6 +17,10 @@ export type EngineEvent =
   | { type: "revived"; entityId: string; entityName: string; hp: number }
   | { type: "out_of_fight"; entityId: string; entityName: string }
   | { type: "defeated"; entityId: string; entityName: string }
+  | { type: "bloodied"; entityId: string; entityName: string }
+  | { type: "morale_broken"; entityId: string; name: string; reason: "hurt" | "leader_down" }
+  | { type: "fled"; entityId: string; name: string }
+  | { type: "surrendered"; entityId: string; name: string; npcId?: string }
   | { type: "woke"; entityId: string; entityName: string; hp: number }
   | { type: "combat_started"; order: { entity_id: string; initiative: number }[]; difficulty: Difficulty; round: number }
   | { type: "turn_started"; entityId: string; entityName: string; round: number }
@@ -79,6 +83,10 @@ export function describeEvent(e: EngineEvent): string {
     case "revived": return wrap(`${e.entityName} is revived with ${e.hp} HP`);
     case "out_of_fight": return wrap(`${e.entityName} is out of the fight`);
     case "defeated": return wrap(`${e.entityName} is defeated`);
+    case "bloodied": return wrap(`${e.entityName} is bloodied`);
+    case "morale_broken": return wrap(`${e.name}'s nerve breaks (${e.reason === "hurt" ? "badly hurt" : "its leader has fallen"})`);
+    case "fled": return wrap(`${e.name} flees the fight`);
+    case "surrendered": return wrap(`${e.name} surrenders and can be talked to${e.npcId ? ` (${e.npcId})` : ""}`);
     case "woke": return wrap(`${e.entityName} wakes at ${e.hp} HP`);
     case "combat_started": return wrap(`combat begins (${e.difficulty}); initiative order ${e.order.map((o) => `${o.entity_id} ${o.initiative}`).join(", ")}`);
     case "turn_started": return wrap(`round ${e.round}: ${e.entityName}'s turn`);

@@ -5,6 +5,7 @@ import enemyBuilder from "../../../packages/llm/prompts/enemy-builder.md";
 import repair from "../../../packages/llm/prompts/repair.md";
 import spriteDesigner from "../../../packages/llm/prompts/sprite-designer.md";
 import storyBible from "../../../packages/llm/prompts/story-bible.md";
+import storySoFar from "../../../packages/llm/prompts/story-so-far.md";
 import summary from "../../../packages/llm/prompts/summary.md";
 
 /** Every file in packages/llm/prompts, keyed by name. test/prompts.test.ts fails if one is missing here. */
@@ -16,5 +17,6 @@ export const PROMPTS: Record<string, string> = {
   repair,
   "sprite-designer": spriteDesigner,
   "story-bible": storyBible,
+  "story-so-far": storySoFar,
   summary,
 };

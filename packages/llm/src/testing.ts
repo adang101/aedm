@@ -7,7 +7,11 @@ export function makeLanternPack(intents: { characterId: string; characterName: s
     storyDigest: LANTERN_MARSH_BIBLE.digest,
     contentRating: "family",
     linesAndVeils: "No graphic gore.",
-    summaries: [],
+    storySoFar: "",
+    chapters: [],
+    dmNotes: [],
+    npcs: [],
+    threads: [],
     facts: LANTERN_MARSH_FACTS,
     scene: {
       mapId: "m_hollowmere",

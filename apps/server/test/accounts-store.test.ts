@@ -15,7 +15,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "aedm-accounts-"));
   now = 1_700_000_000_000;
 });
-afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
+afterEach(async () => { await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }); });
 
 const reg = (s: JsonAccountStore, username = "alice", password = "correct horse") =>
   s.register({ username, password, display_name: "Alice" });

@@ -9,7 +9,7 @@ let h: Harness | undefined;
 const dirs: string[] = [];
 afterEach(async () => {
   await h?.stop(); h = undefined;
-  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
+  for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 });
 
 const pixel = pixelSprite;

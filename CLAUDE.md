@@ -39,7 +39,7 @@ Update these as the scripts are added.
 - `pnpm test` (unit and contract tests)
 - `pnpm typecheck`
 - `pnpm lint`
-- `pnpm eval` (LLM evals, which cost money; run only when asked)
+- `pnpm eval` (LLM evals, which cost money; run only when asked). Needs a real provider (`AEDM_LLM_PROVIDER` with its key, read from the environment or `.env`) and refuses the fake one unless `--allow-fake`. Flags: `pnpm eval -- --only E06,E21 --runs 3 --suite dm|forge|all --delay-ms 500`. Writes `packages/evals/reports/<timestamp>.json`; exits non-zero when a scenario is below its pass bar. See `packages/evals/README.md`.
 - `pnpm dev:server` (game server, defaults to the fake offline DM; set `AEDM_LLM_PROVIDER=gemini` with `GEMINI_API_KEY`, or `anthropic` with `ANTHROPIC_API_KEY`, for a real model)
 - `pnpm dev:web` (Vite client)
 - `pnpm dev:edge` (builds the client, then runs the Cloudflare Worker and Durable Object locally with `wrangler dev`)

@@ -32,6 +32,8 @@ export const CreateNpcActionSchema = z.strictObject({
   sprite_tags: z.array(shortWord).max(5),
   /** Optional look hint for the sprite designer (at most 160 chars). */
   appearance: AppearanceSchema.optional(),
+  /** Optional speech style (at most 80 chars), kept in the NPC's dossier. */
+  voice: text(80).optional(),
   /** Optional approved cast asset id from the context pack. The look comes from the cast; stats and everything else stay with the engine. */
   asset_ref: AssetIdSchema.optional(),
 });
@@ -40,6 +42,13 @@ export const NpcSayActionSchema = z.strictObject({
   type: z.literal("npc_say"),
   entity_id: EntityIdSchema,
   text: wordRange(1, 60),
+});
+
+/** Appends a short note (promise, grudge, secret known) to a living NPC's dossier. */
+export const NpcNoteActionSchema = z.strictObject({
+  type: z.literal("npc_note"),
+  entity_id: EntityIdSchema,
+  note: text(120),
 });
 
 export const CreateEnemyActionSchema = z.strictObject({
@@ -159,16 +168,29 @@ export const AdjustPlotActionSchema = z.strictObject({
   })).min(1).max(7),
 });
 
+/** Opens a story thread; the engine assigns its id. */
+export const OpenThreadActionSchema = z.strictObject({
+  type: z.literal("open_thread"),
+  text: text(160),
+});
+
+export const CloseThreadActionSchema = z.strictObject({
+  type: z.literal("close_thread"),
+  thread_id: EntityIdSchema,
+  resolution: text(120, 0).default(""),
+});
+
 export const SuggestActionsActionSchema = z.strictObject({
   type: z.literal("suggest_actions"),
   chips: z.array(text(60).refine((s) => countWords(s) <= 4, { message: "at most 4 words" })).min(2).max(4),
 });
 
 export const DmActionSchema = z.discriminatedUnion("type", [
-  RequestCheckActionSchema, CreateNpcActionSchema, NpcSayActionSchema, CreateEnemyActionSchema,
+  RequestCheckActionSchema, CreateNpcActionSchema, NpcSayActionSchema, NpcNoteActionSchema, CreateEnemyActionSchema,
   SpawnEntityActionSchema, StartCombatActionSchema, EndCombatActionSchema, ApplyConditionActionSchema,
   GrantItemActionSchema, UpdateQuestActionSchema, SetFactActionSchema, GenerateMapActionSchema,
-  ChangeSceneActionSchema, AwardGrowthActionSchema, CompleteMilestoneActionSchema, AdjustPlotActionSchema, SuggestActionsActionSchema,
+  ChangeSceneActionSchema, AwardGrowthActionSchema, CompleteMilestoneActionSchema, AdjustPlotActionSchema,
+  OpenThreadActionSchema, CloseThreadActionSchema, SuggestActionsActionSchema,
 ]);
 export type DmAction = z.infer<typeof DmActionSchema>;
 export type DmActionType = DmAction["type"];

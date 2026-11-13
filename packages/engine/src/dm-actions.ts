@@ -13,7 +13,7 @@ import {
   type Entity, type GameState, type Mut,
 } from "./state.ts";
 import { designSpriteOffline, spriteSeed } from "./sprites.ts";
-import { bossThreatCap, encounterBudget, enemyThreat } from "./threat.ts";
+import { allyStats, bossThreatCap, encounterBudget, enemyThreat } from "./threat.ts";
 import { findFreeTileNear, getObjects, isWalkable } from "./map/index.ts";
 
 export { addMap, placePartyOnMap, registerArchetype } from "./state.ts";
@@ -26,6 +26,8 @@ export interface DmContext {
   partyLevel: number;
   /** Difficulty the encounter budget is checked against when spawning. Default: standard. */
   difficulty?: Difficulty;
+  /** `apply_condition` actions already applied earlier in this response (the per-response combat limit counts them). Default 0. */
+  conditionsApplied?: number;
   /** Sprites the server designed or took from the approved cast (already validated), keyed by lowercase NPC name. create_npc uses one if present, else designs offline. */
   sprites?: Record<string, SpriteRecipe>;
 }
@@ -51,6 +53,21 @@ export function computePartyLevel(state: GameState, characterIds: string[]): num
   const lv = characterIds.map((id) => state.characters[id]?.level).filter((x): x is number => typeof x === "number");
   if (lv.length === 0) return 1;
   return Math.max(1, Math.floor(lv.reduce((a, b) => a + b, 0) / lv.length));
+}
+
+/** Longest line the NPC dossier keeps (a spoken line can run to 60 words). */
+const DOSSIER_TEXT_MAX = 120;
+
+/**
+ * Why the DM may not propose this action right now, or undefined. While a fight is on, only `npc.combatSafeActions`
+ * are allowed, and at most `npc.maxCombatConditions` conditions per response (`conditionsSoFar` already applied).
+ * One predicate for every caller, including the server's `create_enemy` and `generate_map` pre-pass.
+ */
+export function combatRefusal(s: GameState, a: DmAction, conditionsSoFar = 0): string | undefined {
+  if (!s.combat) return undefined;
+  if (!RULES.npc.combatSafeActions.includes(a.type)) return `${a.type} is not allowed during combat`;
+  if (a.type === "apply_condition" && conditionsSoFar >= RULES.npc.maxCombatConditions) return "only one condition may be applied per response during combat";
+  return undefined;
 }
 
 const norm = (s: string) => s.trim().toLowerCase();
@@ -91,10 +108,14 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
         id, name, concept: a.concept, role: a.role, map_id: a.map_id, x: a.x, y: a.y, sprite_tags: a.sprite_tags,
         ...(a.appearance ? { appearance: a.appearance } : {}),
         alive: true, ...(disposition ? { disposition } : {}),
+        ...(a.voice ? { voice: a.voice } : {}),
+        last_seen_beat: s.turn,
       };
       s.npcs[id] = rec;
+      const stats = a.role === "ally" ? allyStats(ctx.partyLevel) : undefined;
+      if (stats) rec.stats = stats;
       const ent: Entity = {
-        id, kind: "npc", name, mapId: a.map_id, x: a.x, y: a.y, hp: 1, hpMax: 1, conditions: [], shield: 0,
+        id, kind: "npc", name, mapId: a.map_id, x: a.x, y: a.y, hp: stats?.hp ?? 1, hpMax: stats?.hp ?? 1, conditions: [], shield: 0,
         sprite: ctx.sprites?.[norm(name)] ?? designSpriteOffline(
           { concept: `${a.concept} ${a.sprite_tags.join(" ")}`.trim(), ...(a.appearance ? { appearance: a.appearance } : {}), name, role: a.role, kind: "npc" },
           spriteSeed(m.rng),
@@ -118,7 +139,20 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       if (!ent) return `no creature ${a.entity_id} is here`;
       if (ent.kind === "pc") return "player characters speak for themselves";
       if (ent.mapId !== s.currentMapId) return `${ent.name} is not in the current scene`;
+      if (rec) {
+        rec.lines = [...(rec.lines ?? []), a.text.slice(0, DOSSIER_TEXT_MAX)].slice(-RULES.npc.linesKept);
+        rec.last_seen_beat = s.turn;
+      }
       emit(m, { type: "npc_said", entityId: ent.id, name: ent.name, text: a.text });
+      return undefined;
+    }
+
+    case "npc_note": {
+      const rec = s.npcs[a.entity_id];
+      if (!rec) return `unknown NPC ${a.entity_id}`;
+      if (rec.alive === false || isFactTrue(s, rec.name, "is_alive", "false")) return `${rec.name} is dead`;
+      rec.notes = [...(rec.notes ?? []), a.note].slice(-RULES.npc.notesKept);
+      rec.last_seen_beat = s.turn;
       return undefined;
     }
 
@@ -176,7 +210,6 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
     }
 
     case "start_combat": {
-      if (s.combat) return "a combat is already active";
       const ids = new Set<string>();
       for (const id of a.participants) {
         const e = s.entities[id];
@@ -324,7 +357,6 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
 
     case "change_scene": {
       if (!s.maps[a.map_id]) return `unknown map ${a.map_id}`;
-      if (s.combat) return "cannot change scene during combat";
       if (!placePartyInternal(m, a.map_id, a.entry, present)) return `map ${a.map_id} has no spawn named ${a.entry}`;
       s.currentMapId = a.map_id;
       emit(m, { type: "scene_changed", mapId: a.map_id, entry: a.entry });
@@ -406,6 +438,23 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       return undefined;
     }
 
+    case "open_thread": {
+      if (s.threads.filter((t) => t.status === "open").length >= RULES.npc.maxOpenThreads) return `already ${RULES.npc.maxOpenThreads} open threads; close one first`;
+      s.threads.push({ id: newId(s, "th"), text: a.text, status: "open" });
+      const closed = s.threads.findIndex((t) => t.status === "closed");
+      if (s.threads.length > RULES.npc.maxThreads && closed >= 0) s.threads.splice(closed, 1);
+      return undefined;
+    }
+
+    case "close_thread": {
+      const t = s.threads.find((x) => x.id === a.thread_id);
+      if (!t) return `unknown thread ${a.thread_id}`;
+      if (t.status === "closed") return `thread ${t.id} is already closed`;
+      t.status = "closed";
+      if (a.resolution) t.resolution = a.resolution;
+      return undefined;
+    }
+
     case "suggest_actions": {
       emit(m, { type: "chips", chips: a.chips });
       return undefined;
@@ -428,7 +477,8 @@ export function applyDmActions(state: GameState, rng: Rng, actions: DmAction[], 
   for (const a of actions) {
     let reason: string | undefined;
     try {
-      reason = handle(m, a, ctx, out);
+      const conditions = (ctx.conditionsApplied ?? 0) + applied.filter((x) => x.type === "apply_condition").length;
+      reason = combatRefusal(m.s, a, conditions) ?? handle(m, a, ctx, out);
     } catch (err) {
       reason = `internal error: ${err instanceof Error ? err.message : String(err)}`;
     }
