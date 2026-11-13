@@ -1,15 +1,15 @@
 {
-  "dm.user.opening": 797,
-  "dm.total.opening": 4994,
-  "dm.user.typical": 2422,
-  "dm.total.typical": 6619,
-  "dm.user.heavy": 4531,
-  "dm.total.heavy": 8728,
-  "system.dm": 4197,
-  "system.forge": 1224,
-  "system.enemy": 1377,
-  "system.bible": 1001,
-  "system.summary": 156,
-  "system.sprite": 992,
-  "system.repair": 73
+  "dm.user.opening": 527,
+  "dm.total.opening": 4549,
+  "dm.user.typical": 2060,
+  "dm.total.typical": 6083,
+  "dm.user.heavy": 3581,
+  "dm.total.heavy": 7603,
+  "system.dm": 4023,
+  "system.forge": 1179,
+  "system.enemy": 1334,
+  "system.bible": 982,
+  "system.summary": 153,
+  "system.sprite": 938,
+  "system.repair": 55
 }

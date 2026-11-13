@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { createProviderFromEnv, registerPrompts } from "@aedm/llm";
+import { createProviderFromEnv, formatUsageLine, registerPrompts, UsageLedger, withUsageLedger } from "@aedm/llm";
 import { JsonAccountStore } from "@aedm/server/src/accounts/store";
 import { JsonWorkshopStore } from "@aedm/server/src/accounts/workshop";
 import { JsonAssetStore } from "@aedm/server/src/assets/store";
@@ -37,7 +37,8 @@ export class GameHub extends DurableObject<Env> {
     registerPrompts(PROMPTS);
     const kv = new DoKv(this.ctx.storage as unknown as StorageLike);
     this.core = createGameCore({
-      provider: createProviderFromEnv(stringSettings(this.env)),
+      // Logs token counts per model call (never prompt text or keys) so usage shows in Worker logs.
+      provider: withUsageLedger(createProviderFromEnv(stringSettings(this.env)), new UsageLedger(), (purpose, usage) => console.log(formatUsageLine(purpose, usage))),
       saves: new KvSaveStore(prefixed(kv, "saves")),
       accounts: new JsonAccountStore({ kv: prefixed(kv, "accounts") }),
       workshop: new JsonWorkshopStore({ kv: prefixed(kv, "workshop") }),

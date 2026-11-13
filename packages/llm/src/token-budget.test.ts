@@ -9,7 +9,7 @@ import { loadPrompt, renderPrompt } from "./template";
 import { estimateTokens } from "./tokens";
 
 /**
- * Token budget regression test. Ceilings live in packages/llm/token-budgets.json (current value + 5%).
+ * Token budget regression test. Ceilings live in packages/llm/token-budgets.json (measured value plus a small margin; lower them when a change saves tokens).
  * Lower a ceiling when you shrink a prompt; never raise one without saying why.
  * Run `pnpm tokens` to print the table.
  */
