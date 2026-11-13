@@ -1,11 +1,12 @@
 import {
   addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, basicAttack, clampEnemy, cloneState, combatOutcome,
-  computePartyLevel, createGameState, currentMap, describeEvent, endCombat, endTurn, enemyRangesForLevel,
+  classifyIntent, computePartyLevel, createGameState, createRng, currentMap, describeEvent, digestEvents, getObjects, hasDramaticBeat,
+  narrateEvents, NARRATION, endCombat, endTurn, enemyRangesForLevel,
   enemyTakeTurn, entitiesOnMap, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
   pickPlot, placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
   skipAbilityPick, spendScorePoint, STARTER_BRIEFS, toCharacterView,
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
-  type CheckRequest, type CreateEnemyAction, type EngineEvent, type Entity, type GameState,
+  type CheckRequest, type CreateEnemyAction, type DramaLookup, type EngineEvent, type Entity, type GameState, type IntentContext,
 } from "@aedm/engine";
 import {
   buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn, summarizeTurns,
@@ -33,6 +34,7 @@ type Choice = "skip" | "wait" | "autopilot";
 export type Reply = (kind: "ok" | "error", code?: string, message?: string) => void;
 
 const MAX_PENDING_LINES = 30;
+const MAX_COMBAT_EVENTS = 200;
 const MAX_RECENT = 60;
 const SUMMARIZE_AT = 36;
 const SUMMARIZE_COUNT = 20;
@@ -80,6 +82,15 @@ export class GameSession {
   private vote: Vote | null = null;
   private voteN = 0;
   private lastNarratedRound = 1;
+  /** Combat events since the last narration or DM call; the deterministic narrator and the round digest read them. */
+  private combatEvents: EngineEvent[] = [];
+  /** Index in pendingLines where the current round's lines begin (they may be collapsed into one digest line). */
+  private roundLineStart = 0;
+  /** A boss or elite fell, or a PC dropped to 0 HP: the next advanceCombat step makes a real DM call. */
+  private dramatic = false;
+  /** State before the latest commit, so a defeated enemy's role can still be looked up. */
+  private lastPrev: GameState | null = null;
+  private lastChips: string[] = [];
   private closed = false;
   private handles = new Set<unknown>();
 
@@ -345,6 +356,7 @@ export class GameSession {
   /** Swap in a new state, tell everyone what changed, and react to combat starting or ending. */
   private commit(next: GameState): void {
     const prev = this.state;
+    this.lastPrev = prev;
     this.state = next;
     this.broadcastDelta(prev, next);
     if (!prev.combat && next.combat) {
@@ -373,7 +385,10 @@ export class GameSession {
           }
           break;
         case "chips":
-          if (e.chips.length >= 2 && e.chips.length <= 4) this.room.broadcast("chips", { chips: e.chips });
+          if (e.chips.length >= 2 && e.chips.length <= 4) {
+            this.room.broadcast("chips", { chips: e.chips });
+            this.lastChips = e.chips;
+          }
           break;
         case "npc_said":
           this.room.broadcast("chat", { from_id: e.entityId, from_name: e.name.slice(0, 40), channel: "ic", text: e.text });
@@ -394,10 +409,35 @@ export class GameSession {
       if (!DM_SKIP_EVENTS.has(e.type)) lines.push(describeEvent(e));
     }
     if (opts.toDm !== false) {
-      this.pendingLines.push(...lines);
-      if (this.pendingLines.length > MAX_PENDING_LINES) this.pendingLines.splice(0, this.pendingLines.length - MAX_PENDING_LINES);
+      this.pushPending(lines);
+      if (this.state.combat) {
+        this.combatEvents.push(...events.filter((e) => !DM_SKIP_EVENTS.has(e.type)));
+        if (this.combatEvents.length > MAX_COMBAT_EVENTS) this.combatEvents.splice(0, this.combatEvents.length - MAX_COMBAT_EVENTS);
+        if (hasDramaticBeat(events, this.dramaLookup())) this.dramatic = true;
+      }
     }
     return lines;
+  }
+
+  /** Remember engine lines for the DM's next turn (bounded). */
+  private pushPending(lines: string[]): void {
+    this.pendingLines.push(...lines);
+    const over = this.pendingLines.length - MAX_PENDING_LINES;
+    if (over > 0) {
+      this.pendingLines.splice(0, over);
+      this.roundLineStart = Math.max(0, this.roundLineStart - over);
+    }
+  }
+
+  private dramaLookup(): DramaLookup {
+    const find = (id: string): Entity | undefined => this.state.entities[id] ?? this.lastPrev?.entities[id];
+    return {
+      role: (id) => {
+        const e = find(id);
+        return e?.kind === "enemy" ? this.state.archetypes[e.refId]?.role ?? this.lastPrev?.archetypes[e.refId]?.role : undefined;
+      },
+      isPc: (id) => find(id)?.kind === "pc",
+    };
   }
 
   // ---------- presence ----------
@@ -422,6 +462,15 @@ export class GameSession {
       this.handleDevCommand(player, text);
       return;
     }
+    if (this.cfg.intentRouter && channel === "ic") {
+      if (text.trim() === "") { this.promptForInput(); return; }
+      const ooc = /^\/ooc(?:\s+([\s\S]*))?$/i.exec(text.trim());
+      if (ooc) { // an explicit table-talk prefix: never reaches the DM
+        const rest = (ooc[1] ?? "").trim();
+        if (rest) this.handleSay(player, rest, "ooc");
+        return;
+      }
+    }
     const ch = this.characterOf(player);
     this.room.broadcast("chat", {
       from_id: player.id,
@@ -431,6 +480,12 @@ export class GameSession {
     });
     if (channel === "ooc" || !ch) return; // OOC never reaches the DM
     this.recordIntent(player, text);
+  }
+
+  /** An empty message makes no model call: offer the last suggestion chips, or a short fixed prompt. */
+  private promptForInput(): void {
+    if (this.lastChips.length >= 2) this.room.broadcast("chips", { chips: this.lastChips });
+    else this.sys("Say or do something and the DM will respond.");
   }
 
   private recordIntent(player: Player, text: string): void {
@@ -499,9 +554,105 @@ export class GameSession {
         for (const i of b.intents) this.recent.push({ speaker: i.characterName, text: i.text, kind: "player", channel: "ic" });
         return;
       }
-      await this.dmTurn({ intents: b.intents, engineLines: [], allowFollowup: true, tick: true });
+      let intents = b.intents;
+      let lines: string[] = [];
+      if (this.cfg.intentRouter) {
+        const routed = this.routeIntents(b.intents);
+        intents = routed.narrative;
+        lines = routed.lines;
+        for (const i of routed.mechanical) {
+          if (i.text.trim() !== "" && !/^\/ooc\b/i.test(i.text.trim())) this.recent.push({ speaker: i.characterName, text: i.text, kind: "player", channel: "ic" });
+        }
+        this.trimRecent();
+        if (intents.length === 0) {
+          // Every intent was mechanical: the engine already resolved them, so no model call. The lines wait for the next DM call.
+          this.pushPending(lines);
+          const r = advanceBeat(this.state, this.rng());
+          if (r.ok) {
+            this.commit(r.state);
+            this.publish(r.events);
+          }
+          return;
+        }
+      }
+      await this.dmTurn({ intents, engineLines: lines, allowFollowup: true, tick: true });
       if (this.state.combat) await this.advanceCombat();
     });
+  }
+
+  private intentContext(actorId: string): IntentContext {
+    const map = currentMap(this.state);
+    const objects = map ? getObjects(map) : [];
+    return {
+      actorId,
+      objects: objects.flatMap((o) => (o.type === "interactable" ? [{ id: o.id, kind: o.kind }] : [])),
+      exits: objects.flatMap((o) => (o.type === "exit" ? [{ name: o.name }] : [])),
+      entities: map ? entitiesOnMap(this.state, map.id).map((e) => ({ id: e.id, name: e.name, kind: e.kind })) : [],
+    };
+  }
+
+  /**
+   * Resolve the mechanical intents of a beat with existing engine calls (movement only; the engine has no
+   * open, pick-up or examine API, so those stay narrative). An intent whose engine call fails goes to the DM.
+   */
+  private routeIntents(all: Intent[]): { narrative: Intent[]; mechanical: Intent[]; lines: string[] } {
+    const narrative: Intent[] = [];
+    const mechanical: Intent[] = [];
+    const lines: string[] = [];
+    for (const i of all) {
+      const verdict = classifyIntent(i.text, this.intentContext(i.characterId));
+      if (verdict.kind === "narrative") { narrative.push(i); continue; }
+      if (verdict.action === "empty" || verdict.action === "ooc") { mechanical.push(i); continue; }
+      const ent = this.state.entities[i.characterId];
+      const map = currentMap(this.state);
+      if (!ent || !map || this.state.combat) { narrative.push(i); continue; }
+      const quote = `player intent: "${i.text.trim().slice(0, 80)}"`;
+      if (verdict.action === "move_dir") {
+        const [dx, dy] = DIRS[verdict.direction];
+        const from = { x: ent.x, y: ent.y };
+        this.walks.delete(ent.id);
+        const r = moveEntity(this.state, this.rng(), ent.id, { x: ent.x + dx, y: ent.y + dy });
+        if (!r.ok) { narrative.push(i); lines.push(`[engine: ${ent.name} could not step ${verdict.direction}: ${r.error ?? "blocked"} (${quote})]`); continue; }
+        this.commit(r.state);
+        this.publish(r.events, { toDm: false });
+        lines.push(`[engine: ${ent.name} steps from (${from.x},${from.y}) to (${from.x + dx},${from.y + dy}) (${quote})]`);
+        mechanical.push(i);
+        continue;
+      }
+      const dest = this.walkDestination(ent, map, verdict.target);
+      if (!dest) { narrative.push(i); lines.push(`[engine: ${ent.name} found no clear path to ${verdict.label} (${quote})]`); continue; }
+      if (dest.path.length > 0) this.startWalk(ent.id, dest.path.slice(0, 60));
+      lines.push(dest.path.length > 0
+        ? `[engine: ${ent.name} walks toward ${verdict.label} and ends at (${dest.at.x},${dest.at.y}) (${quote})]`
+        : `[engine: ${ent.name} is already beside ${verdict.label} at (${dest.at.x},${dest.at.y}) (${quote})]`);
+      mechanical.push(i);
+    }
+    return { narrative, mechanical, lines };
+  }
+
+  /** Where a walk to an object, exit or entity ends: the tile itself for an exit, else the nearest reachable neighbour. */
+  private walkDestination(ent: Entity, map: NonNullable<ReturnType<typeof currentMap>>, target: { type: "object" | "exit" | "entity"; id: string }): { path: { x: number; y: number }[]; at: { x: number; y: number } } | null {
+    const objs = getObjects(map);
+    let goal: { x: number; y: number } | undefined;
+    if (target.type === "entity") goal = this.state.entities[target.id];
+    else if (target.type === "exit") goal = objs.find((o) => o.type === "exit" && o.name === target.id);
+    else goal = objs.find((o) => o.type === "interactable" && o.id === target.id);
+    if (!goal) return null;
+    const g = goal;
+    const from = { x: ent.x, y: ent.y };
+    const occ = occupiedTiles(this.state, map.id, { exceptId: ent.id });
+    const cands = target.type === "exit"
+      ? [{ x: g.x, y: g.y }]
+      : [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy]) => ({ x: g.x + (dx as number), y: g.y + (dy as number) }));
+    if (target.type !== "exit" && cands.some((c) => c.x === from.x && c.y === from.y)) return { path: [], at: from };
+    let best: { x: number; y: number }[] | null = null;
+    for (const c of cands) {
+      if (!isWalkable(map, c.x, c.y) || occ.has(`${c.x},${c.y}`)) continue;
+      const path = findPath(map, from, c, occ);
+      if (path && path.length > 0 && (!best || path.length < best.length)) best = path;
+    }
+    if (!best) return null;
+    return { path: best, at: best[best.length - 1] as { x: number; y: number } };
   }
 
   // ---------- movement ----------
@@ -580,7 +731,7 @@ export class GameSession {
     this.commit(r.state);
     this.publish(r.events);
     reply("ok");
-    if (opts.endsTurn || combatOutcome(this.state) !== null) this.enqueue(() => this.advanceCombat());
+    if (opts.endsTurn || combatOutcome(this.state) !== null || this.dramatic) this.enqueue(() => this.advanceCombat());
   }
 
   handleBasicAttack(player: Player, targetId: string, reply: Reply): void {
@@ -801,9 +952,15 @@ export class GameSession {
       if (!c) { this.clearTurnTimer(); return; }
       const outcome = combatOutcome(st);
       if (outcome) { await this.finishCombat(outcome); continue; }
-      if (c.round > this.lastNarratedRound && this.pendingLines.length > 0) {
+      if (this.dramatic) {
+        // A boss or elite fell, or a hero dropped: this beat gets the real DM.
         this.lastNarratedRound = c.round;
         await this.dmTurn({ intents: [], engineLines: [], allowFollowup: false, tick: false });
+        continue;
+      }
+      if (c.round > this.lastNarratedRound) {
+        this.lastNarratedRound = c.round;
+        this.narrateRound(c.round - 1);
         continue;
       }
       const active = st.entities[c.active_id];
@@ -833,6 +990,25 @@ export class GameSession {
       if (this.turn?.entityId !== active.id) this.startTurnTimer(active.id);
       return;
     }
+  }
+
+  /** Ordinary round: the engine narrates from its own events (no model call) and compacts the round's lines for the DM. */
+  private narrateRound(finishedRound: number): void {
+    const events = this.combatEvents.splice(0);
+    if (events.length === 0) return;
+    const seed = Math.imul(this.state.seed | 0, 31) ^ Math.imul(finishedRound, 2654435761) ^ events.length;
+    const text = narrateEvents(events, createRng(seed));
+    if (text) {
+      this.room.broadcast("narration_chunk", { turn_id: `n${++this.turnN}`, text, done: true });
+      this.recent.push({ speaker: "DM", text, kind: "dm" });
+      this.trimRecent();
+    }
+    const start = Math.min(this.roundLineStart, this.pendingLines.length);
+    if (this.pendingLines.length - start > NARRATION.digestAtLines) {
+      const digest = digestEvents(events, finishedRound);
+      if (digest) this.pendingLines.splice(start, this.pendingLines.length - start, digest);
+    }
+    this.roundLineStart = this.pendingLines.length;
   }
 
   private async finishCombat(outcome: "victory" | "defeat"): Promise<void> {
@@ -981,6 +1157,9 @@ export class GameSession {
 
   private async dmTurn(opts: { intents: Intent[]; engineLines: string[]; allowFollowup: boolean; tick: boolean; note?: string }): Promise<void> {
     const lines = [...this.pendingLines.splice(0), ...opts.engineLines];
+    this.combatEvents = [];
+    this.roundLineStart = 0;
+    this.dramatic = false;
     const pack = buildContextPack({
       state: this.state,
       players: this.playersMap(),

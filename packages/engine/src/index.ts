@@ -15,5 +15,7 @@ export * from "./dm-actions.ts";
 export * from "./plot.ts";
 export * from "./sprites.ts";
 export * from "./pixel.ts";
-export { PIXEL_RULES, RULES, LEVELS, COSTS, ENEMY_DATA, CONDITION_META, PLOTS } from "./data.ts";
+export * from "./narrate.ts";
+export * from "./intents.ts";
+export { NARRATION, PIXEL_RULES, RULES, LEVELS, COSTS, ENEMY_DATA, CONDITION_META, PLOTS } from "./data.ts";
 export * from "./map/index.ts";
