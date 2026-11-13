@@ -174,7 +174,7 @@ describe("asset store", () => {
       expect(await s2.use("sprite", "nope")).toBeNull();
       expect(await s2.list("material")).toEqual([]);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -186,7 +186,7 @@ describe("asset store", () => {
       await writeFile(join(dir, "assets", "assets.json"), "{not json");
       expect(await new JsonAssetStore({ dir: join(dir, "assets") }).list()).toEqual([]);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
