@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { findPath, isWalkable, occupiedTiles, type GameState } from "@aedm/engine";
+import { findFreeTileNear, findPath, isWalkable, occupiedTiles, STARTER_BRIEFS, type EngineEvent, type GameState } from "@aedm/engine";
 import { WS_VERSION, type EntityView, type GameMap } from "@aedm/schemas";
 import {
   dmReply, scriptedProvider, sleep, startedTable, startHarness, type Harness, type Table, type TestClient,
@@ -157,6 +157,121 @@ describe("combat", () => {
     await owner.wait("turn_timer", (tt) => tt.entity_id !== undefined, { from: m2 });
     expect(t.a.invalid).toEqual([]);
     expect(t.b.invalid).toEqual([]);
+  });
+
+  /** The session's private reaction machinery, for driving it without waiting on dice. */
+  const internals = (harness: Harness) => gameOf(harness) as unknown as {
+    publish(events: EngineEvent[]): string[];
+    takeReaction(round: number): boolean;
+  };
+  const bloodied = (id: string): EngineEvent => ({ type: "bloodied", entityId: id, entityName: "Brute" });
+  const surrendered = (id: string): EngineEvent => ({ type: "surrendered", entityId: id, name: "Brute" });
+
+  it("speech during combat is answered mid-turn as player input, once, and the speaker keeps their turn", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider, random: constantRandom(0.5) });
+    const t = await startedTable(h);
+    const { p1, enemy, mark } = await startFight(t, provider);
+    const timer = await t.a.wait("turn_timer", () => true, { from: mark });
+    const activeId = timer.payload.entity_id;
+    const owner = clientFor(t, activeId, p1);
+    await gameOf(h).idle();
+    const before = provider.dmRequests().length;
+    provider.queueDm(dmReply([{ type: "npc_say", entity_id: enemy.id, text: "Your courage will drown with you." }]));
+    const m2 = owner.mark();
+    await say(owner, "Hold the line, I will draw them off!");
+    const chat = await t.a.wait("chat", (c) => c.from_id === enemy.id, { from: m2 });
+    expect(chat.payload.text).toBe("Your courage will drown with you.");
+    await gameOf(h).idle();
+    // still the speaker's turn, with a fresh timer
+    const restarted = await owner.wait("turn_timer", (tt) => tt.entity_id === activeId, { from: m2 });
+    expect(restarted.payload.seconds_left).toBeGreaterThan(0);
+    expect(gameOf(h).state.combat?.active_id).toBe(activeId);
+    const withSpeech = provider.dmRequests().slice(before).filter((r) => r.messages[0]!.content.includes("Hold the line, I will draw them off!"));
+    expect(withSpeech).toHaveLength(1);
+    expect(withSpeech[0]!.messages[0]!.content).toMatch(/<player_input character_id="[^"]+" character="[^"]+">\nHold the line/);
+  });
+
+  it("a reaction event earns one DM call per round; later triggers wait for the round narration", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider, random: constantRandom(0.5) });
+    const t = await startedTable(h);
+    const { enemy, mark } = await startFight(t, provider);
+    await t.a.wait("turn_timer", () => true, { from: mark });
+    const g = internals(h);
+    expect(g.takeReaction(1)).toBe(false); // nothing happened yet
+    g.publish([bloodied(enemy.id)]);
+    expect(g.takeReaction(1)).toBe(true);
+    g.publish([surrendered(enemy.id)]);
+    expect(g.takeReaction(1)).toBe(false); // the cap of one per round is spent
+    expect(gameOf(h).pendingEngineLines.join(" ")).toMatch(/bloodied[\s\S]*surrenders/); // both stay queued for the round narration
+    expect(g.takeReaction(2)).toBe(true); // the next round has its own allowance
+  });
+
+  it("a trigger since the last DM call runs a reaction before the next turn", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider, random: constantRandom(0.5) });
+    const t = await startedTable(h);
+    const { p1, enemy, mark } = await startFight(t, provider);
+    const timer = await t.a.wait("turn_timer", () => true, { from: mark });
+    const owner = clientFor(t, timer.payload.entity_id, p1);
+    await gameOf(h).idle();
+    internals(h).publish([surrendered(enemy.id)]);
+    const before = provider.dmRequests().length;
+    provider.queueDm(dmReply([{ type: "npc_say", entity_id: enemy.id, text: "Spare me and I will talk." }]));
+    const m2 = owner.mark();
+    await owner.request("end_turn", {});
+    await t.a.wait("chat", (c) => c.from_id === enemy.id, { from: m2 });
+    const reaction = provider.dmRequests().slice(before)[0]!;
+    expect(reaction.messages[0]!.content).toContain("Brute surrenders");
+    expect(reaction.messages[0]!.content).toContain("<combat round=");
+  });
+
+  it("refuses create_enemy and generate_map while a fight is on, without calling the builder", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider, random: constantRandom(0.5) });
+    const t = await startedTable(h);
+    const { p1, mark } = await startFight(t, provider);
+    const timer = await t.a.wait("turn_timer", () => true, { from: mark });
+    const owner = clientFor(t, timer.payload.entity_id, p1);
+    await gameOf(h).idle();
+    const maps = Object.keys(stateOf(h).maps);
+    const archetypes = Object.keys(stateOf(h).archetypes);
+    const requests = provider.requests.length;
+    provider.queueDm(dmReply([
+      { type: "create_enemy", concept: "A late arrival", role: "standard", setting_notes: "", ref: "en_late" },
+      { type: "generate_map", brief: STARTER_BRIEFS.town },
+    ]));
+    await say(owner, "I shout for the others!");
+    const m2 = owner.mark();
+    await owner.request("end_turn", {});
+    await t.a.wait("narration_chunk", (c) => c.done, { from: m2 });
+    await gameOf(h).idle();
+    expect(provider.dmRequests().some((r) => r.messages[0]!.content.includes("I shout for the others!"))).toBe(true); // the scripted reply was used
+    expect(Object.keys(stateOf(h).maps)).toEqual(maps);
+    expect(Object.keys(stateOf(h).archetypes)).toEqual(archetypes);
+    expect(provider.requests.slice(requests).filter((r) => r.purpose !== "dm")).toEqual([]);
+  });
+
+  it("allied NPCs on the map join start_combat and fight on the party's side", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const t = await startedTable(h);
+    const snap = t.a.lastSnapshot()!;
+    const [p1, p2] = snap.entities.filter((e) => e.kind === "pc") as [EntityView, EntityView];
+    const st = stateOf(h);
+    const spot = findFreeTileNear(st.maps[snap.map.id]!, p1.x + 2, p1.y, occupiedTiles(st, snap.map.id))!;
+    provider.queueDm(dmReply([
+      { type: "create_npc", name: "Edda", concept: "A ferrywoman with a boathook", role: "ally", map_id: snap.map.id, x: spot.x, y: spot.y, sprite_tags: [] },
+      { type: "create_enemy", concept: "A hollow-eyed marsh brute", role: "standard", setting_notes: "", ref: "en_marsh_brute" },
+      { type: "spawn_entity", archetype_id: "en_marsh_brute", map_id: snap.map.id, x: p1.x + 1, y: p1.y + 1, count: 1 },
+      { type: "start_combat", participants: [p1.id, p2.id, "en_marsh_brute"], difficulty: "standard" },
+    ]));
+    const mark = await beat(t, "I attack the brute!", "I draw my weapon.");
+    await t.a.wait("combat_state", () => true, { from: mark });
+    const ally = Object.values(stateOf(h).entities).find((e) => e.kind === "npc")!;
+    expect(stateOf(h).npcs[ally.id]!.stats).toBeTruthy();
+    expect(stateOf(h).combat!.order.map((o) => o.entity_id)).toContain(ally.id);
   });
 
   it("a vote to autopilot hands an away player's character to the AI", async () => {

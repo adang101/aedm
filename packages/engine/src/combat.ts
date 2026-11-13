@@ -5,7 +5,7 @@ import type { EngineEvent } from "./events.ts";
 import {
   abilitiesOf, applyCondition, applyDamage, applyHeal, archetypeOf, attackModifiers, basicAttackRange, breakMorale, canAct,
   canMove, defenseOf, dexScore, enemyTactics, enterTile, getEntity, hasCondition, isLeader, isStanding, leaveCombat,
-  removeCondition, removeEntity, reviveAt, saveModifier, speedOf, terrainAt, walkPath, weaknessMultiplied, weaponDamageDice,
+  removeCondition, removeEntity, reviveAt, saveModifier, speedOf, statsOf, terrainAt, walkPath, weaknessMultiplied, weaponDamageDice,
 } from "./mutate.ts";
 import type { Rng } from "./rng.ts";
 import { abilityModifier, proficiency, saveDc } from "./rules.ts";
@@ -308,7 +308,7 @@ function attackBonus(s: GameState, e: Entity): number {
     const c = s.characters[e.refId];
     return c ? abilityModifier(c.scores[c.key_ability]) + proficiency(c.level) : 0;
   }
-  return archetypeOf(s, e)?.stats.attack_bonus ?? 0;
+  return statsOf(s, e)?.attack_bonus ?? 0;
 }
 
 function casterSaveDc(s: GameState, e: Entity): number {
@@ -316,7 +316,7 @@ function casterSaveDc(s: GameState, e: Entity): number {
     const c = s.characters[e.refId];
     return c ? saveDc(c.level, c.scores[c.key_ability]) : RULES.saveDcBase;
   }
-  return RULES.enemySave.dcBase + (archetypeOf(s, e)?.stats.attack_bonus ?? 0);
+  return RULES.enemySave.dcBase + (statsOf(s, e)?.attack_bonus ?? 0);
 }
 
 interface AttackOutcome { hit: boolean; crit: boolean }

@@ -3,7 +3,7 @@ import {
   ContentRatingSchema, DispositionSchema, ItemKindSchema, NpcRoleSchema, PlotArcSchema, PlotPatternSchema, QuestStatusSchema,
 } from "./enums";
 import { AppearanceSchema } from "./sprite";
-import { EntityIdSchema, MapIdSchema, shortWord, text } from "./common";
+import { EnemyStatsSchema, EntityIdSchema, MapIdSchema, shortWord, text } from "./common";
 
 export { ContentRatingSchema };
 export type { ContentRating } from "./enums";
@@ -97,6 +97,8 @@ export const NpcRecordSchema = z.strictObject({
   notes: z.array(text(120)).max(20).optional(),
   /** Beat counter (`GameState.turn`) when the NPC last appeared, spoke or got a note. */
   last_seen_beat: z.number().int().min(0).optional(),
+  /** Combat stat block. Only `ally` NPCs have one; the engine derives it from the enemy table when the NPC is created. */
+  stats: EnemyStatsSchema.optional(),
 });
 export type NpcRecord = z.infer<typeof NpcRecordSchema>;
 

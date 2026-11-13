@@ -39,7 +39,7 @@ export interface Rules {
   attack: { meleeRange: number; rangedRange: number; critDiceMultiplier: number; rangedKeyAbilities: string[]; pcDamageType: DamageType; enemyDamageType: DamageType; minDamage: number };
   sprites: { shapes: string[]; palette: string[]; accents: string[] };
   exploration: { maxMoveTiles: number };
-  npc: { dispositionByRole: Record<string, Disposition>; maxQuests: number; maxQuestNotes: number; maxInventory: number; maxFacts: number; linesKept: number; notesKept: number; dossierMax: number; maxOpenThreads: number; maxThreads: number };
+  npc: { dispositionByRole: Record<string, Disposition>; maxQuests: number; maxQuestNotes: number; maxInventory: number; maxFacts: number; linesKept: number; notesKept: number; dossierMax: number; allyStatPct: number; combatSafeActions: string[]; maxCombatConditions: number; maxOpenThreads: number; maxThreads: number };
   draught: { name: string; dice: string; bonus: number; value: number; action: string };
   loot: { base: number; perLevel: number };
   damage: { types: DamageType[]; weaknessNum: number; weaknessDen: number; resistanceNum: number; resistanceDen: number };

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { FsKv, MemoryKv, type KvBackend } from "../src/kv";
 
 const dirs: string[] = [];
-afterEach(async () => { await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true }))); });
+afterEach(async () => { await Promise.all(dirs.splice(0).map((d) => rm(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }))); });
 
 async function backends(): Promise<[string, KvBackend][]> {
   const dir = await mkdtemp(join(tmpdir(), "aedm-kv-"));
