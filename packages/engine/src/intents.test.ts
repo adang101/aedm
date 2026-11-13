@@ -45,7 +45,6 @@ describe("classifyIntent: mechanical", () => {
 
 describe("classifyIntent: narrative (conservative)", () => {
   it.each([
-    "open the chest",
     "pick up the key",
     "I open the chest carefully while watching the priest",
     "go to the door and listen",

@@ -16,6 +16,34 @@ export interface SceneEntity {
   disposition?: string;
 }
 
+/** A chest, pile or remains on the map. Never NPC pockets. `items` only for what is open to look into (an opened chest). */
+export interface SceneContainer {
+  id: string;
+  kind: "chest" | "pile" | "remains";
+  /** Shown only when it says more than the kind does (the name on remains). */
+  label?: string | undefined;
+  x: number;
+  y: number;
+  /** The lock's DC when locked. */
+  locked?: number | undefined;
+  /** Chests: opened. Piles and remains are always open. */
+  open: boolean;
+  itemCount: number;
+  items?: string[] | undefined;
+}
+
+/** A door, lever, sign or altar on the map (chests are containers). */
+export interface SceneObject {
+  id: string;
+  kind: string;
+  x: number;
+  y: number;
+  /** open, closed or locked. */
+  state: string;
+  /** The lock's DC when locked. */
+  dc?: number | undefined;
+}
+
 export interface PartyMemberContext {
   id: string;
   name: string;
@@ -117,6 +145,10 @@ export interface DmContextPack {
     description: string;
     entities: SceneEntity[];
     exits: { label: string; side?: string; to?: string }[];
+    /** Containers on the map, nearest first (capped on render). */
+    containers?: SceneContainer[] | undefined;
+    /** Doors, levers, signs and altars on the map (capped on render). */
+    objects?: SceneObject[] | undefined;
   };
   /** The fight in progress, if any. */
   combat?: CombatContext | undefined;
@@ -206,6 +238,11 @@ export const CONTEXT_LIMITS = {
   oldNarrationWords: 40,
   /** Closed quests listed by title. */
   maxClosedQuests: 6,
+  /** Containers and map objects listed in the scene. */
+  maxContainers: 10,
+  maxObjects: 12,
+  /** Item names listed for one opened chest. */
+  maxContainerItems: 3,
 } as const;
 
 const wordClamp = (text: string, maxWords: number): string => {
@@ -283,6 +320,40 @@ function renderEntity(e: SceneEntity): string {
   const wounded = e.hp !== undefined && (e.hpMax === undefined || e.hp < e.hpMax);
   const hp = wounded ? ` hp ${e.hp}${e.hpMax !== undefined ? `/${e.hpMax}` : ""}` : "";
   return `- ${e.id} "${attr(e.name)}" ${e.kind}${place}${hp}${e.disposition ? ` ${e.disposition}` : ""}`;
+}
+
+const itemWord = (n: number) => `${n} item${n === 1 ? "" : "s"}`;
+
+function renderContainer(c: SceneContainer): string {
+  const label = c.label ? ` "${attr(c.label)}"` : "";
+  let state: string;
+  if (c.kind !== "chest") state = itemWord(c.itemCount);
+  else if (c.locked !== undefined) state = `locked dc${c.locked}`;
+  else if (!c.open) state = "closed";
+  else if (c.itemCount === 0) state = "open, empty";
+  else if (!c.items || c.items.length === 0) state = `open, ${itemWord(c.itemCount)}`;
+  else {
+    const shown = c.items.slice(0, CONTEXT_LIMITS.maxContainerItems).map((x) => attr(x).replace(/,/g, ";"));
+    const more = c.items.length - shown.length;
+    state = `open: ${shown.join(", ")}${more > 0 ? ` +${more} more` : ""}`;
+  }
+  return `- ${attr(c.id)} ${c.kind}${label} @${c.x},${c.y} ${state}`;
+}
+
+function renderObject(o: SceneObject): string {
+  const state = o.kind === "sign" || o.kind === "altar" ? "" : o.state === "locked" ? ` locked${o.dc !== undefined ? ` dc${o.dc}` : ""}` : o.kind === "lever" ? (o.state === "open" ? " pulled" : "") : ` ${o.state}`;
+  return `- ${attr(o.id)} ${attr(o.kind)} @${o.x},${o.y}${state}`;
+}
+
+function renderThings(sc: DmContextPack["scene"]): string[] {
+  const cs = sc.containers ?? [];
+  const os = sc.objects ?? [];
+  const lines = [...cs.slice(0, CONTEXT_LIMITS.maxContainers).map(renderContainer), ...os.slice(0, CONTEXT_LIMITS.maxObjects).map(renderObject)];
+  const extra = [
+    ...(cs.length > CONTEXT_LIMITS.maxContainers ? [`+${cs.length - CONTEXT_LIMITS.maxContainers} more containers`] : []),
+    ...(os.length > CONTEXT_LIMITS.maxObjects ? [`+${os.length - CONTEXT_LIMITS.maxObjects} more objects`] : []),
+  ];
+  return [...lines, ...(extra.length ? [`(${extra.join(", ")})`] : [])];
 }
 
 function renderParty(p: PartyMemberContext): string {
@@ -369,6 +440,7 @@ export function buildDmContext(pack: DmContextPack): { system: string; user: str
     `<scene map_id="${attr(sc.mapId)}" setting="${attr(sc.setting)}">`,
     sc.description,
     ...sc.entities.map(renderEntity),
+    ...renderThings(sc),
     ...(sc.exits.length ? [`Exits: ${sc.exits.map((x) => `${x.label}${x.side ? ` (${x.side})` : ""}${x.to ? ` -> ${x.to}` : ""}`).join("; ")}`] : []),
     "</scene>",
   );

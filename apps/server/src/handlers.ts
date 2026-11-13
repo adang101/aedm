@@ -73,6 +73,8 @@ export class Handlers {
         game.handleAct(player, p.verb, p.target_id, reply);
         return;
       }
+      case "container_action": game.handleContainerAction(player, (msg as Msg<"container_action">).payload, reply); return;
+      case "inventory_action": game.handleInventoryAction(player, (msg as Msg<"inventory_action">).payload, reply); return;
       case "basic_attack": game.handleBasicAttack(player, (msg as Msg<"basic_attack">).payload.target_id, reply); return;
       case "use_ability": {
         const p = (msg as Msg<"use_ability">).payload;
