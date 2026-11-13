@@ -55,6 +55,69 @@ describe("checks", () => {
   });
 });
 
+describe("checks with branch text", () => {
+  const check = (pc: string, extra: Record<string, unknown> = {}) => ({
+    type: "request_check", target: pc, ability: "dex", dc: 12, tags: ["stealth"], advantage: "none", reason: "Slipping past the watch",
+    on_success: "You slip past the watchman unseen.", on_failure: "A board creaks and the watchman turns.", ...extra,
+  });
+
+  it("resolves in the same beat with exactly one provider call, and the next turn sees the result", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const t = await startedTable(h);
+    const pc = t.a.lastSnapshot()!.party[0]!.id;
+    provider.queueDm(dmReply([check(pc)]));
+    const before = provider.dmRequests().length;
+    const mark = await beat(t);
+    await t.b.wait("roll_result", () => true, { from: mark });
+    for (let i = 0; i < 100 && t.a.all("narration_chunk", mark).filter((c) => c.payload.done).length < 2; i++) await sleep(20);
+    const text = t.a.all("narration_chunk", mark).map((c) => c.payload.text).join("");
+    expect(text).toMatch(/slip past the watchman unseen|A board creaks and the watchman turns/);
+    await sleep(100);
+    expect(provider.dmRequests().length).toBe(before + 1);
+    expect(gameOf(h).pendingEngineLines.join("\n")).toMatch(/rolled \d+ against DC 12|overall result/);
+    expect(t.a.invalid).toEqual([]);
+  });
+
+  it("strips markup and clamps branch text it shows", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const t = await startedTable(h);
+    const pc = t.a.lastSnapshot()!.party[0]!.id;
+    provider.queueDm(dmReply([check(pc, { on_success: "<b>You</b> win.", on_failure: "<i>You</i> lose." })]));
+    const mark = await beat(t);
+    for (let i = 0; i < 100 && t.a.all("narration_chunk", mark).filter((c) => c.payload.done).length < 2; i++) await sleep(20);
+    const text = t.a.all("narration_chunk", mark).map((c) => c.payload.text).join("");
+    expect(text).not.toContain("<");
+    expect(text).toMatch(/You (win|lose)\./);
+  });
+
+  it("a check without branch text still makes the follow-up call", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const t = await startedTable(h);
+    const pc = t.a.lastSnapshot()!.party[0]!.id;
+    provider.queueDm(dmReply([check(pc, { on_success: undefined, on_failure: undefined })]), dmReply([]));
+    const before = provider.dmRequests().length;
+    await beat(t);
+    for (let i = 0; i < 100 && provider.dmRequests().length < before + 2; i++) await sleep(20);
+    expect(provider.dmRequests().length).toBe(before + 2);
+    expect(provider.dmRequests().at(-1)!.messages[0]!.content).toMatch(/rolled \d+ against DC 12/);
+  });
+
+  it("a high-stakes response keeps the follow-up call even with branch text", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const t = await startedTable(h);
+    const pc = t.a.lastSnapshot()!.party[0]!.id;
+    provider.queueDm(dmReply([check(pc)], { high_stakes: true }), dmReply([]));
+    const before = provider.dmRequests().length;
+    await beat(t);
+    for (let i = 0; i < 100 && provider.dmRequests().length < before + 2; i++) await sleep(20);
+    expect(provider.dmRequests().length).toBe(before + 2);
+  });
+});
+
 describe("combat", () => {
   async function startFight(t: Table, provider: ReturnType<typeof scriptedProvider>) {
     const snap = t.a.lastSnapshot()!;

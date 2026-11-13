@@ -19,6 +19,9 @@ export const RequestCheckActionSchema = z.strictObject({
   tags: z.array(CheckTagSchema).max(2),
   advantage: AdvantageSchema.default("none"),
   reason: text(120),
+  /** Pre-written outcome per branch (1 to 60 words, flavor only). Optional so old replies parse. */
+  on_success: wordRange(1, 60).optional(),
+  on_failure: wordRange(1, 60).optional(),
 });
 
 export const CreateNpcActionSchema = z.strictObject({
