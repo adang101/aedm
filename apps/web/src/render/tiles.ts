@@ -257,22 +257,144 @@ export function createMapStyle(tiles: readonly TileDef[], ground: readonly numbe
 // ---------- interactables and exits (not part of the tileset) ----------
 
 const KIND_COLOR: Record<string, string> = {
-  chest: "#9a6a3f", door: "#c99a63", lever: "#8b93b0", sign: "#c99a3a", altar: "#9b72d8",
+  chest: "#9a6a3f", door: "#9a6a3f", lever: "#8b93b0", sign: "#c99a3a", altar: "#9b72d8",
 };
+const LOCK_RED = "#c0392b";
+const BRASS = "#e8c95a";
+
+/** A small padlock at (x, y), 8 x 9. Red when it still holds, brass when it is a spent latch. */
+function padlock(p: Pen, x: number, y: number): void {
+  p.rect(x + 1, y, 6, 5, OUTLINE);
+  p.rect(x + 2, y + 1, 1, 4, BRASS); p.rect(x + 5, y + 1, 1, 4, BRASS);
+  p.rect(x, y + 4, 8, 6, OUTLINE);
+  p.rect(x + 1, y + 5, 6, 4, LOCK_RED);
+  p.rect(x + 1, y + 5, 6, 1, "#e8683a");
+  p.rect(x + 3, y + 6, 2, 2, OUTLINE);
+}
+
+function drawChest(p: Pen, state: string): void {
+  const t = tones(KIND_COLOR.chest!);
+  const brass = tones(BRASS);
+  p.rrect(9, 18, 30, 21, 3, OUTLINE);
+  p.rect(10, 26, 28, 12, t.base);
+  p.rect(10, 34, 28, 4, t.sh);
+  p.rect(10, 29, 28, 1, t.dk);
+  if (state === "open") {
+    // lid thrown back, dark inside, a glint of contents
+    p.rrect(9, 8, 30, 12, 3, OUTLINE);
+    p.rect(11, 10, 26, 8, t.sh);
+    p.rect(11, 10, 26, 2, t.base);
+    p.rect(11, 20, 26, 6, OUTLINE);
+    p.rect(13, 21, 22, 4, "#2b2030");
+    p.rect(17, 22, 3, 2, brass.base); p.rect(24, 22, 4, 2, brass.hi);
+  } else {
+    p.rect(10, 19, 28, 8, t.base);
+    p.rect(10, 19, 28, 2, t.hi);
+    p.rect(10, 25, 28, 2, t.dk);
+  }
+  p.rect(10, 18, 3, 20, brass.sh); p.rect(35, 18, 3, 20, brass.sh);
+  if (state === "locked") padlock(p, 20, 23);
+  else if (state !== "open") { p.rect(21, 24, 6, 5, OUTLINE); p.rect(22, 25, 4, 3, brass.base); }
+}
+
+function drawDoorObject(p: Pen, state: string): void {
+  const t = tones(KIND_COLOR.door!);
+  const frame = tones("#8b93b0");
+  p.rect(7, 2, 34, 44, OUTLINE);
+  p.rect(8, 2, 32, 4, frame.base); p.rect(8, 2, 32, 1, frame.hi);
+  p.rect(8, 2, 5, 44, frame.base); p.rect(35, 2, 5, 44, frame.sh);
+  p.rect(13, 6, 22, 40, state === "open" ? "#2b2030" : OUTLINE);
+  if (state === "open") {
+    // leaf swung against the left jamb, a lit floor strip through the gap
+    p.rect(13, 6, 5, 40, t.dk); p.rect(14, 7, 3, 38, t.base);
+    p.rect(19, 42, 16, 4, "rgba(246,232,160,0.22)");
+    return;
+  }
+  p.rect(13, 6, 22, 40, t.dk);
+  for (let k = 0; k < 4; k++) { p.rect(14 + k * 5, 7, 4, 38, k % 2 ? t.base : t.hi); p.rect(14 + k * 5, 7, 1, 38, t.dk); }
+  p.rect(13, 14, 22, 3, "#5c6380"); p.rect(13, 34, 22, 3, "#5c6380");
+  if (state === "locked") {
+    p.rect(13, 6, 22, 40, "rgba(27,22,38,0.18)");
+    padlock(p, 20, 21);
+  } else {
+    p.rect(30, 25, 3, 4, BRASS);
+  }
+}
+
+function drawLever(p: Pen, state: string): void {
+  const t = tones(KIND_COLOR.lever!);
+  p.rrect(11, 31, 26, 9, 2, OUTLINE);
+  p.rect(12, 32, 24, 7, t.base); p.rect(12, 32, 24, 2, t.hi); p.rect(12, 37, 24, 2, t.sh);
+  p.rect(21, 27, 6, 6, OUTLINE); p.rect(22, 28, 4, 4, t.dk);
+  const pulled = state === "open";
+  // handle: up when pushed, thrown to the side when pulled
+  if (pulled) { p.line(24, 30, 36, 24, OUTLINE, 4); p.line(24, 30, 36, 24, "#c99a63", 2); p.ell(37, 23, 4, 4, OUTLINE); p.ell(37, 23, 3, 3, "#e8683a"); }
+  else { p.line(24, 30, 24, 12, OUTLINE, 4); p.line(24, 30, 24, 12, "#c99a63", 2); p.ell(24, 10, 4, 4, OUTLINE); p.ell(24, 10, 3, 3, "#c0392b"); }
+}
+
+function drawSign(p: Pen): void {
+  const t = tones(KIND_COLOR.sign!);
+  const wood = tones("#70472f");
+  p.rect(22, 28, 5, 13, OUTLINE); p.rect(23, 28, 3, 12, wood.base);
+  p.rrect(9, 11, 30, 19, 2, OUTLINE);
+  p.rect(10, 12, 28, 17, t.base); p.rect(10, 12, 28, 2, t.hi); p.rect(10, 27, 28, 2, t.sh);
+  for (const y of [16, 20, 24]) p.rect(13, y, y === 24 ? 14 : 22, 2, wood.dk);
+}
+
+function drawAltar(p: Pen, state: string): void {
+  const t = tones(KIND_COLOR.altar!);
+  p.rrect(8, 22, 32, 18, 2, OUTLINE);
+  p.rect(9, 23, 30, 16, t.base); p.rect(9, 23, 30, 3, t.hi); p.rect(9, 35, 30, 4, t.sh);
+  p.rect(14, 27, 20, 2, t.dk);
+  p.rect(20, 14, 8, 9, OUTLINE); p.rect(21, 15, 6, 7, t.hi);
+  p.ell(24, 10, 4, 4, state === "open" ? "#f6e8a0" : "#cbb0f0");
+}
 
 export function drawInteractable(ctx: Ctx, kind: string, state: string, px: number, py: number): void {
-  const t = tones(KIND_COLOR[kind] ?? "#c4c9dc");
   const p = new Pen(ctx);
   ctx.save();
   ctx.translate(px, py);
-  p.ell(24, 40, 13, 4, "rgba(27,22,38,0.34)");
-  p.rrect(10, 14, 28, 25, 3, OUTLINE);
-  p.rrect(11, 15, 26, 23, 2, t.base);
-  p.rect(11, 15, 26, 3, t.hi);
-  p.rect(11, 34, 26, 4, t.sh);
-  p.rect(11, 24, 26, 2, t.dk);
-  p.rect(21, 22, 6, 7, OUTLINE);
-  p.rect(22, 23, 4, 5, state === "locked" ? "#c0392b" : "#f6e8a0");
+  p.ell(24, 41, 14, 4, "rgba(27,22,38,0.34)");
+  switch (kind) {
+    case "chest": drawChest(p, state); break;
+    case "door": drawDoorObject(p, state); break;
+    case "lever": drawLever(p, state); break;
+    case "sign": drawSign(p); break;
+    case "altar": drawAltar(p, state); break;
+    default: {
+      const t = tones(KIND_COLOR[kind] ?? "#c4c9dc");
+      p.rrect(10, 14, 28, 25, 3, OUTLINE);
+      p.rrect(11, 15, 26, 23, 2, t.base);
+    }
+  }
+  ctx.restore();
+}
+
+/** A pile of dropped items or the remains of a creature: a small flat marker on its tile. */
+export function drawContainerMarker(ctx: Ctx, kind: string, px: number, py: number, time: number): void {
+  const p = new Pen(ctx);
+  ctx.save();
+  ctx.translate(px, py);
+  p.ell(24, 36, 13, 5, "rgba(27,22,38,0.34)");
+  if (kind === "remains") {
+    const bone = tones("#c4c9dc");
+    p.ell(24, 34, 11, 4, OUTLINE); p.ell(24, 34, 10, 3, "#5c3a2e");
+    p.rrect(14, 29, 20, 3, 1, OUTLINE); p.rect(15, 30, 18, 1, bone.base);
+    p.ell(30, 33, 3, 3, OUTLINE); p.ell(30, 33, 2, 2, bone.hi);
+    p.rect(17, 34, 6, 2, bone.sh);
+  } else {
+    // a little heap: sack, coin and a small flask
+    const sack = tones("#c99a63");
+    p.ell(22, 33, 8, 6, OUTLINE); p.blob(22, 32, 7, 5, sack);
+    p.rect(21, 25, 3, 3, OUTLINE); p.rect(21, 26, 3, 2, sack.hi);
+    p.ell(33, 36, 4, 3, OUTLINE); p.ell(33, 36, 3, 2, BRASS);
+    p.rect(13, 31, 4, 6, OUTLINE); p.rect(14, 32, 2, 4, "#4f9fe0");
+  }
+  // a glint so the marker reads as something to take
+  const a = 0.35 + Math.sin(time / 380 + px) * 0.25;
+  ctx.globalAlpha = a;
+  p.rect(27, 24, 2, 2, "#fff6c8"); p.rect(26, 25, 4, 1, "#fff6c8");
+  ctx.globalAlpha = 1;
   ctx.restore();
 }
 

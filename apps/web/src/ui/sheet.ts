@@ -2,8 +2,10 @@ import { spriteSwatch } from "@aedm/schemas";
 import { modifier, SCORE_KEYS, SCORE_NAMES, signed } from "../util/describe";
 import { h, replaceChildren } from "../util/dom";
 import { armorName, defenseOf, growthProgress } from "../util/sheet";
-import type { AppState } from "../state/store";
+import { myEntity, type AppState } from "../state/store";
+import { itemActions } from "../util/interact";
 import { abilityCard } from "./ability-card";
+import { openMenu } from "./menu";
 import type { Ctx } from "./types";
 
 export interface SheetModal {
@@ -57,7 +59,26 @@ export function createSheetModal(ctx: Ctx): SheetModal {
       ...c.abilities.map((a) => abilityCard(a)),
       h("h3", null, "Inventory"),
       c.inventory && c.inventory.length > 0
-        ? h("ul", { class: "inv" }, ...c.inventory.map((i) => h("li", null, h("span", null, i.name), h("small", { class: "muted" }, `${i.kind}${i.tier ? ` T${i.tier}` : ""}, ${i.value} gp`))))
+        ? h("ul", { class: "inv" }, ...c.inventory.map((i) => {
+          const info = h("div", { class: "loot-name" }, h("span", null, i.name), h("small", { class: "muted" }, `${i.kind}${i.tier ? ` T${i.tier}` : ""}, ${i.value} gp`));
+          if (!mine) return h("li", null, info);
+          const me = myEntity(s);
+          const act = itemActions(i, me, c.id, s.party, s.entities);
+          const drop = h("button", {
+            type: "button", class: "btn tiny", disabled: !act.canDrop, title: act.dropReason ?? "Drop it on your tile", "aria-label": `Drop ${i.name}`,
+            onClick: () => { ctx.client.send("inventory_action", { verb: "drop", item_id: i.id }); },
+          }, "Drop");
+          const give = h("button", {
+            type: "button", class: "btn tiny", disabled: !act.canGive, title: act.giveReason ?? "Give it to a party member next to you", "aria-label": `Give ${i.name}`,
+            onClick: (ev: Event) => {
+              const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+              openMenu(`Give ${i.name} to`, act.recipients.map((to) => ({
+                label: to.name, run: () => { ctx.client.send("inventory_action", { verb: "give", item_id: i.id, to_character_id: to.id }); },
+              })), r.left, r.bottom);
+            },
+          }, "Give");
+          return h("li", null, info, h("div", { class: "row inv-actions" }, drop, give));
+        }))
         : h("p", { class: "muted" }, c.inventory ? "Empty." : "Not shown."),
       mine ? null : h("p", { class: "muted" }, "You are viewing another player's character."));
   }

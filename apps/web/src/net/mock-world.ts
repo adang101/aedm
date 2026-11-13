@@ -88,9 +88,19 @@ function finish(id: string, p: Painter, book: Book, objects: MapObject[], settin
   };
 }
 
-/** True when a tile in any layer is not walkable (walls, trees, deep water) or the tile is off the map. */
+/** A closed or locked door at a tile, if there is one. */
+export function closedDoorAt(map: GameMap, x: number, y: number): boolean {
+  for (const l of map.layers) {
+    if (l.type !== "objectgroup") continue;
+    for (const o of l.objects) if (o.type === "interactable" && o.kind === "door" && o.x === x && o.y === y && o.state !== "open") return true;
+  }
+  return false;
+}
+
+/** True when a tile in any layer is not walkable (walls, trees, deep water, a closed door) or the tile is off the map. */
 export function blockedAt(map: GameMap, x: number, y: number): boolean {
   if (x < 0 || y < 0 || x >= map.width || y >= map.height) return true;
+  if (closedDoorAt(map, x, y)) return true;
   const walk = new Map(map.tileset.tiles.map((t) => [t.gid, t.walkable]));
   for (const l of map.layers) {
     if (l.type !== "tilelayer") continue;
@@ -179,9 +189,13 @@ function buildTown(): MockScene {
     { type: "exit", name: "crypt_stairs", to: "m_crypt", target_entry: "party_start", x: 0, y: 10 },
     { type: "exit", name: "snowy_trail", to: "m_trail", target_entry: "party_start", x: W - 1, y: 10 },
     { type: "entity_slot", id: "slot_choir", role: "enemy", count: 2, x: 22, y: 11 },
-    { type: "interactable", id: "chest_plaza", kind: "chest", state: "locked", x: 19, y: 13 },
-    { type: "interactable", id: "sign_square", kind: "sign", state: "closed", x: 15, y: 7 },
+    { type: "interactable", id: "chest_plaza", kind: "chest", state: "locked", lock: { dc: 10 }, x: 19, y: 13 },
+    { type: "interactable", id: "chest_stall", kind: "chest", state: "closed", x: 16, y: 12 },
+    { type: "interactable", id: "chest_tower", kind: "chest", state: "closed", x: 26, y: 3 },
+    { type: "interactable", id: "sign_square", kind: "sign", state: "closed", text: "Lanterns lit at dusk. The marsh road is closed after the last bell.", x: 15, y: 7 },
     { type: "interactable", id: "door_inn", kind: "door", state: "open", x: 5, y: 7 },
+    { type: "interactable", id: "door_tower", kind: "door", state: "locked", lock: { dc: 12, key_item_name: "Tower key" }, x: 25, y: 5 },
+    { type: "interactable", id: "lever_tower", kind: "lever", state: "closed", links: ["door_tower"], x: 21, y: 6 },
     { type: "trigger", id: "trg_marsh", radius: 2, on_enter: "marsh_whispers", x: 24, y: 14 },
   ];
   const map = finish("m_hollowmere", p, b, objects,
