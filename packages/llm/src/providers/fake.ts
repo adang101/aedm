@@ -1,4 +1,5 @@
 import type { ModelProvider, ModelRequest, ModelResponse } from "../provider";
+import { estimateRequestTokens, estimateTokens } from "../tokens";
 import { improvFor } from "./fake-improv";
 
 export type FakeReply = string | Error | ModelResponse;
@@ -51,7 +52,7 @@ export function createFakeProvider(script?: FakeScript, options: FakeOptions = {
         typeof reply === "string"
           ? {
               text: reply, model: `fake-${req.tier}`, stopReason: "end_turn",
-              usage: { inputTokens: Math.ceil((req.system.length + req.messages.reduce((n, m) => n + m.content.length, 0)) / 4), outputTokens: Math.ceil(reply.length / 4) },
+              usage: { inputTokens: estimateRequestTokens(req), outputTokens: estimateTokens(reply) },
             }
           : reply;
       if (opts.onText) for (let i = 0; i < res.text.length; i += chunk) opts.onText(res.text.slice(i, i + chunk));

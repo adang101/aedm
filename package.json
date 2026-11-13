@@ -15,7 +15,8 @@
     "eval": "pnpm --filter @aedm/evals eval",
     "build:web": "pnpm --filter @aedm/web build",
     "dev:edge": "pnpm build:web && pnpm --filter @aedm/edge dev",
-    "deploy:edge": "pnpm build:web && pnpm --filter @aedm/edge deploy"
+    "deploy:edge": "pnpm build:web && pnpm --filter @aedm/edge deploy",
+    "tokens": "AEDM_TOKEN_REPORT=1 vitest run packages/llm/src/token-budget.test.ts --disableConsoleIntercept"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
