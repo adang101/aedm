@@ -1,6 +1,8 @@
 import { CHECK_TAGS, DIFFICULTIES, type Difficulty, type DmAction, type Item, type MapBrief, type NpcRecord, type SpriteRecipe } from "@aedm/schemas";
 import { clampDc, type CheckRequest } from "./checks.ts";
 import { endCombatM, startCombatM } from "./combat.ts";
+import { dropRemainsM } from "./containers.ts";
+import { equipIfBetter } from "./inventory.ts";
 import { PLOTS, RULES } from "./data.ts";
 import type { EngineEvent } from "./events.ts";
 import { addGrowthM } from "./growth.ts";
@@ -16,7 +18,8 @@ import { designSpriteOffline, spriteSeed } from "./sprites.ts";
 import { allyStats, bossThreatCap, encounterBudget, enemyThreat } from "./threat.ts";
 import { findFreeTileNear, getObjects, isWalkable } from "./map/index.ts";
 
-export { addMap, placePartyOnMap, registerArchetype } from "./state.ts";
+export { placePartyOnMap, registerArchetype } from "./state.ts";
+export { addMap } from "./map-state.ts";
 
 export type CreateEnemyAction = Extract<DmAction, { type: "create_enemy" }>;
 
@@ -276,12 +279,7 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       const item: Item = { id: newId(s, "it"), name: a.item.name, kind: a.item.kind, value, ...(tier !== undefined ? { tier } : {}) };
       c.inventory.push(item);
       s.session.lootValueThisEncounter += value;
-      let equipped = false;
-      if (a.item.kind === "weapon" && tier !== undefined && tier > c.weapon_tier) { c.weapon_tier = tier; equipped = true; }
-      if (a.item.kind === "armor" && tier !== undefined) {
-        const bonus = RULES.armorTierBonus[String(tier)] ?? 0;
-        if (bonus > c.armor_bonus) { c.armor_bonus = bonus; equipped = true; }
-      }
+      const equipped = equipIfBetter(c, item);
       emit(m, { type: "item_granted", recipient: c.id, recipientName: c.name, itemId: item.id, name: item.name, kind: item.kind, value, ...(tier !== undefined ? { tier } : {}), ...(equipped ? { equipped } : {}) });
       return undefined;
     }
@@ -321,7 +319,10 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
         if (!wantAlive && npc) {
           npc.alive = false;
           const ent = s.entities[npc.id];
-          if (ent) removeEntity(m, ent.id);
+          if (ent) {
+            dropRemainsM(m, ent);
+            removeEntity(m, ent.id);
+          }
           emit(m, { type: "npc_died", entityId: npc.id, name: npc.name });
         }
         record();

@@ -6,6 +6,7 @@ import {
   PlotArcSettingSchema, PlotPatternSettingSchema,
 } from "./enums";
 import { EntityIdSchema, MapIdSchema, text } from "./common";
+import { ContainerSummarySchema, ContainerViewPayload, InteractableViewSchema } from "./container";
 import { MapSchema } from "./map";
 import { SpriteSpecSchema } from "./sprite";
 import {
@@ -15,6 +16,10 @@ import {
 import { QuestSchema } from "./world";
 
 /**
+ * 7: containers, locks and doors: container_action, inventory_action (client), container_view (server); `act` gained the
+ *    verbs open, close, unlock, pick_lock, force, pull and read; state_snapshot gained `containers`, state_diff gained
+ *    `containers_changed`, `containers_removed` and `interactables_changed`. The map payload carries current interactable
+ *    states (and optional lock, links, text on interactables); the Map schema itself stays v2 because those fields are additive.
  * 6: Workshop and campaign cast: save_sprite_asset, delete_sprite_asset, list_sprite_assets, offer_to_cast, cast_decision (client),
  *    sprite_assets_list, cast_state (server); room settings gained custom_cast and custom_paintings.
  * 5: sprite recipes gained the `pixel` kind (CharacterCreate); new error code invalid_sprite.
@@ -22,7 +27,7 @@ import { QuestSchema } from "./world";
  * 3: room settings gained plot_pattern and plot_arc.
  * 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged.
  */
-export const WS_VERSION = 6;
+export const WS_VERSION = 7;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
@@ -105,7 +110,32 @@ export const MoveIntentPayload = z.union([
   z.strictObject({ x: tile, y: tile }),
   z.strictObject({ direction: DirectionSchema }),
 ]);
-export const ActPayload = z.strictObject({ verb: z.enum(["interact", "examine", "talk"]), target_id: EntityIdSchema });
+/**
+ * Verbs on creatures and map objects. `interact` does the natural thing for the target (door: open or close, lever: pull,
+ * sign: read, chest: open, altar or creature: left to the DM); the others are explicit. `target_id` is an entity id or an
+ * interactable id on the current map (a container id also works for `open`).
+ */
+export const ACT_VERBS = ["interact", "examine", "talk", "open", "close", "unlock", "pick_lock", "force", "pull", "read"] as const;
+export type ActVerb = (typeof ACT_VERBS)[number];
+export const ActPayload = z.strictObject({ verb: z.enum(ACT_VERBS), target_id: EntityIdSchema });
+
+/** Moving items between a container and the sender's pack. `open` replies with `container_view`; `take` needs `item_id`. */
+export const CONTAINER_VERBS = ["open", "close", "take", "take_all"] as const;
+export const ContainerActionPayload = z
+  .strictObject({ verb: z.enum(CONTAINER_VERBS), container_id: EntityIdSchema, item_id: EntityIdSchema.optional() })
+  .superRefine((p, ctx) => {
+    if (p.verb === "take" && p.item_id === undefined) ctx.addIssue({ code: "custom", message: "take needs an item_id", path: ["item_id"] });
+    if (p.verb !== "take" && p.item_id !== undefined) ctx.addIssue({ code: "custom", message: `${p.verb} takes no item_id`, path: ["item_id"] });
+  });
+
+/** Dropping an item on the sender's tile, or giving it to an adjacent party member (`to_character_id`, required for give). */
+export const INVENTORY_VERBS = ["drop", "give"] as const;
+export const InventoryActionPayload = z
+  .strictObject({ verb: z.enum(INVENTORY_VERBS), item_id: EntityIdSchema, to_character_id: EntityIdSchema.optional() })
+  .superRefine((p, ctx) => {
+    if (p.verb === "give" && p.to_character_id === undefined) ctx.addIssue({ code: "custom", message: "give needs a to_character_id", path: ["to_character_id"] });
+    if (p.verb === "drop" && p.to_character_id !== undefined) ctx.addIssue({ code: "custom", message: "drop takes no to_character_id", path: ["to_character_id"] });
+  });
 export const UseAbilityPayload = z.strictObject({
   ability_id: id,
   target: z.union([EntityIdSchema, z.strictObject({ x: tile, y: tile })]),
@@ -155,6 +185,8 @@ export const StateSnapshotPayload = z.strictObject({
   party: z.array(CharacterViewSchema).max(6),
   quests: z.array(QuestSchema),
   combat: CombatStateSchema.optional(),
+  /** Every container on the current map (chests, piles, remains). Contents are only sent by `container_view`. */
+  containers: z.array(ContainerSummarySchema).max(200).optional(),
 });
 export const StateDiffPayload = z.strictObject({
   seq: z.number().int().min(0),
@@ -163,6 +195,9 @@ export const StateDiffPayload = z.strictObject({
   removed: z.array(EntityIdSchema),
   mode: mode.optional(),
   combat: CombatStateSchema.optional(),
+  containers_changed: z.array(ContainerSummarySchema).max(200).optional(),
+  containers_removed: z.array(EntityIdSchema).max(200).optional(),
+  interactables_changed: z.array(InteractableViewSchema).max(100).optional(),
 });
 export const NarrationChunkPayload = z.strictObject({ turn_id: id, text: z.string().max(4000), done: z.boolean() });
 export const RollResultPayload = z.strictObject({
@@ -384,6 +419,8 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   client("load_save", LoadSavePayload),
   client("ping", PingPayload),
   client("level_up_choice", LevelUpChoicePayload),
+  client("container_action", ContainerActionPayload),
+  client("inventory_action", InventoryActionPayload),
   client("design_sprite", DesignSpritePayload),
   client("save_sprite_asset", SaveSpriteAssetPayload),
   client("delete_sprite_asset", DeleteSpriteAssetPayload),
@@ -417,6 +454,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   server("pong", PongPayload),
   server("level_up_state", LevelUpStatePayload),
   server("level_up_result", LevelUpResultPayload),
+  server("container_view", ContainerViewPayload),
   server("sprite_designed", SpriteDesignedPayload),
   server("sprite_assets_list", SpriteAssetsListPayload),
   server("cast_state", CastStatePayload),

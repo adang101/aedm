@@ -11,7 +11,7 @@ import {
   buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
   type DmTurnResult,
 } from "@aedm/llm";
-import type { Ability, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
+import type { Ability, ActVerb, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
 import { bibleCampaign, ForgeError, forgeOneAbility, partyAbilities } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import { absorbTurns, EMPTY_MEMORY, type StoryMemory } from "./memory";
@@ -468,7 +468,7 @@ export class GameSession {
     this.checkBeatComplete();
   }
 
-  handleAct(player: Player, verb: "interact" | "examine" | "talk", targetId: string, reply: Reply): void {
+  handleAct(player: Player, verb: ActVerb, targetId: string, reply: Reply): void {
     const ch = this.characterOf(player);
     if (!ch) return reply("error", "forbidden", "You have no character in this game.");
     if (this.state.combat) return reply("error", "invalid_state", "Actions like that wait until the fight is over.");
@@ -481,7 +481,8 @@ export class GameSession {
       if (obj && "kind" in obj) name = `the ${obj.kind}`;
     }
     if (!name) return reply("error", "not_found", "There is nothing like that here.");
-    const phrase = verb === "talk" ? `I talk to ${name}` : verb === "examine" ? `I examine ${name}` : `I interact with ${name}`;
+    // The object verbs (open, unlock, pull, read...) are still a plain intent for the DM here; the engine's `performAct` replaces this.
+    const phrase = verb === "talk" ? `I talk to ${name}` : verb === "examine" ? `I examine ${name}` : verb === "interact" ? `I interact with ${name}` : `I ${verb.replace("_", " ")} ${name}`;
     reply("ok");
     this.recordIntent(player, `${phrase} (${targetId}).`);
   }
