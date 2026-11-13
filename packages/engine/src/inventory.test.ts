@@ -314,6 +314,20 @@ describe("in combat", () => {
     expect(r.state.combat!.turn.actionUsed).toBe(true);
     expect(takeItem(r.state, rng(), f.active, id, "it_b").error).toMatch(/action/);
   });
+  it("looking into an already open container again is free (clients refresh their view with it)", () => {
+    const f = fighting();
+    const s = placeAt(stockedFor(f.state), f.active, 11, 12);
+    const id = chestOf(s, "chest_1").id;
+    const opened = withState(s, (x) => { x.containers[id]!.opened = true; });
+    const r = openContainer(opened, rng(), f.active, id);
+    expect(r.ok).toBe(true);
+    expect(r.state.combat!.turn.actionUsed).toBe(false);
+    const first = openContainer(s, rng(), f.active, id);
+    expect(first.state.combat!.turn.actionUsed).toBe(true); // lifting the lid still costs the action
+    const pile = chestOf(s, "slot_9");
+    const atPile = placeAt(s, f.active, 15, 16);
+    expect(openContainer(atPile, rng(), f.active, pile.id).state.combat!.turn.actionUsed).toBe(false);
+  });
   it("dropping and giving cost the quick action", () => {
     const f = fighting();
     const s = withState(placeAt(f.state, f.active, 11, 12), (x) => { x.characters[f.active]!.inventory = [item("it_1"), item("it_2")]; });

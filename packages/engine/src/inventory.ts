@@ -73,7 +73,9 @@ export function openContainer(state: GameState, rng: Rng, actorId: string, conta
     if (typeof actor === "string") return actor;
     const c = reachableContainer(m, actor, containerId);
     if (typeof c === "string") return c;
-    const err = chargeM(m, actor, "open");
+    // Looking into a container with nothing to open (an open chest, a pile, remains) is free; clients re-open to refresh their view.
+    const free = !c.locked && (c.kind !== "chest" || c.opened === true);
+    const err = free ? undefined : chargeM(m, actor, "open");
     if (err) return err;
     const was = c.opened === true;
     const locked = openM(m, actor, c);
