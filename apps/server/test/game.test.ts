@@ -55,6 +55,34 @@ describe("checks", () => {
   });
 });
 
+describe("memory", () => {
+  it("the DM's own notes and open threads come back in the next beat's context and are saved", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const t = await startedTable(h);
+    provider.queueDm(dmReply([{ type: "open_thread", text: "Who lit the beacon on the drowned lighthouse?" }], { dm_notes: "The ferryman is the cult's courier." }));
+    const mark = await beat(t);
+    await t.a.wait("narration_chunk", (c) => c.done, { from: mark });
+    await gameOf(h).idle();
+    expect(gameOf(h).dmNotesPrivate).toContain("The ferryman is the cult's courier.");
+    expect(stateOf(h).threads).toMatchObject([{ status: "open", text: "Who lit the beacon on the drowned lighthouse?" }]);
+
+    const m2 = await beat(t);
+    await t.a.wait("narration_chunk", (c) => c.done, { from: m2 });
+    await gameOf(h).idle();
+    const next = provider.dmRequests().at(-1)!.messages[0]!.content;
+    expect(next).toContain("<dm_notebook>");
+    expect(next).toContain("- The ferryman is the cult's courier.");
+    expect(next).toContain("Who lit the beacon on the drowned lighthouse?");
+
+    const roomId = h.server.rooms.all()[0]!.id;
+    const file = JSON.parse(await readFile(join(h.saveDir, roomId, "autosave.json"), "utf8"));
+    expect(file.dm_notes).toContain("The ferryman is the cult's courier.");
+    expect(file).toMatchObject({ story_so_far: "", chapters: [] });
+    expect(file.state.threads).toHaveLength(1);
+  });
+});
+
 describe("combat", () => {
   async function startFight(t: Table, provider: ReturnType<typeof scriptedProvider>) {
     const snap = t.a.lastSnapshot()!;

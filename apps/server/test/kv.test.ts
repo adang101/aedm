@@ -55,7 +55,7 @@ describe("KvSaveStore", () => {
   const save = (owner: string | null, name = "x") => ({
     v: 1 as const, name, saved_at: "2026-01-01T00:00:00.000Z", owner_user_id: owner,
     room: { room_id: "r", invite_code: "ABCDEF", settings: {} as never, players: [{ player_id: "p", display_name: "Ana", character_id: null }] },
-    state: { campaignId: "c1", bible: { title: "T" } } as never, turns: [], summaries: [], scene_note: "", dm_notes: [],
+    state: { campaignId: "c1", bible: { title: "T" } } as never, turns: [], story_so_far: "", chapters: [], scene_note: "", dm_notes: [],
   });
 
   it("writes, reads exactly, falls back to another room's folder, and lists only the owner's saves", async () => {
@@ -69,5 +69,28 @@ describe("KvSaveStore", () => {
     expect((await store.listOwned("u1")).map((c) => c.save_id)).toEqual(["autosave"]);
     expect(await store.listOwned("nobody")).toEqual([]);
     await expect(store.write("../x", "a", save(null))).rejects.toThrow(/unsafe/);
+  });
+
+  it("loads a save from before tiered memory: the last summary becomes the story so far, threads start empty", async () => {
+    const { KvSaveStore } = await import("../src/saves");
+    const kv = new MemoryKv();
+    const { story_so_far: _s, chapters: _c, ...rest } = save("u1");
+    await kv.put("room_1/autosave.json", JSON.stringify({ ...rest, summaries: ["first", "second, cumulative"], dm_notes: ["note"] }));
+    const loaded = (await new KvSaveStore(kv).readExact("room_1", "autosave"))!;
+    expect(loaded.story_so_far).toBe("second, cumulative");
+    expect(loaded.chapters).toEqual([]);
+    expect(loaded.dm_notes).toEqual(["note"]);
+    expect(loaded.state.threads).toEqual([]);
+    expect(loaded).not.toHaveProperty("summaries");
+  });
+
+  it("keeps the new memory fields and threads of a current save", async () => {
+    const { KvSaveStore } = await import("../src/saves");
+    const store = new KvSaveStore(new MemoryKv());
+    const threads = [{ id: "th_1", text: "Who lit the beacon?", status: "open" as const }];
+    await store.write("room_1", "autosave", { ...save("u1"), story_so_far: "older", chapters: ["c1"], state: { campaignId: "c1", bible: { title: "T" }, threads } as never });
+    const loaded = (await store.readExact("room_1", "autosave"))!;
+    expect(loaded).toMatchObject({ story_so_far: "older", chapters: ["c1"] });
+    expect(loaded.state.threads).toEqual(threads);
   });
 });

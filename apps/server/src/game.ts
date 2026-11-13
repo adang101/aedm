@@ -8,12 +8,13 @@ import {
   type CheckRequest, type CreateEnemyAction, type EngineEvent, type Entity, type GameState,
 } from "@aedm/engine";
 import {
-  buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn, summarizeTurns,
+  buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
   type DmTurnResult,
 } from "@aedm/llm";
 import type { Ability, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
 import { ForgeError, forgeOneAbility } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
+import { absorbTurns, EMPTY_MEMORY, type StoryMemory } from "./memory";
 import type { Player, Room } from "./rooms";
 import { isSafeId, type SaveFile, SAVE_VERSION } from "./saves";
 import type { Deps } from "./types";
@@ -67,7 +68,7 @@ export class GameSession {
   private saveChain: Promise<void> = Promise.resolve();
   private beat: Beat | null = null;
   private recent: RecentTurn[] = [];
-  private summaries: string[] = [];
+  private memory: StoryMemory = EMPTY_MEMORY;
   private dmNotes: string[] = [];
   private pendingLines: string[] = [];
   private sceneNote = "";
@@ -219,7 +220,7 @@ export class GameSession {
     this.cancelTimers();
     this.state = save.state;
     this.recent = save.turns ?? [];
-    this.summaries = save.summaries ?? [];
+    this.memory = { storySoFar: save.story_so_far, chapters: [...save.chapters] };
     this.sceneNote = save.scene_note ?? "";
     this.dmNotes = save.dm_notes ?? [];
     this.pendingLines = [];
@@ -988,7 +989,9 @@ export class GameSession {
       intents: opts.intents,
       engineLines: lines,
       recentTurns: this.recent,
-      summaries: opts.note ? [...this.summaries, opts.note] : this.summaries,
+      storySoFar: this.memory.storySoFar,
+      chapters: opts.note ? [...this.memory.chapters, opts.note] : this.memory.chapters,
+      dmNotes: this.dmNotes.slice(-this.cfg.dmNotebookLimit),
       sceneNote: this.sceneNote,
       recentLimit: this.cfg.recentTurnLimit,
       cast: this.room.usableCast().map((c) => ({ assetId: c.assetId, name: c.name, roleHint: c.roleHint, concept: c.concept })),
@@ -1246,18 +1249,9 @@ export class GameSession {
   private async maybeSummarize(): Promise<void> {
     if (this.recent.length < SUMMARIZE_AT) return;
     const old = this.recent.splice(0, SUMMARIZE_COUNT);
-    try {
-      const text = await summarizeTurns(this.deps.provider, {
-        previousSummary: this.summaries[this.summaries.length - 1] ?? "",
-        turns: old.map((t) => ({ speaker: t.speaker, text: t.text })),
-      });
-      if (text) {
-        this.summaries.push(text);
-        if (this.summaries.length > 6) this.summaries.splice(0, this.summaries.length - 6);
-      }
-    } catch {
-      this.recent.unshift(...old);
-    }
+    const next = await absorbTurns(this.deps.provider, this.memory, old.map((t) => ({ speaker: t.speaker, text: t.text })));
+    if (next) this.memory = next;
+    else this.recent.unshift(...old);
   }
 
   private toSaveFile(name: string): SaveFile {
@@ -1276,7 +1270,8 @@ export class GameSession {
       campaign_title: this.state.bible.title,
       state: this.state,
       turns: this.recent,
-      summaries: this.summaries,
+      story_so_far: this.memory.storySoFar,
+      chapters: this.memory.chapters,
       scene_note: this.sceneNote,
       dm_notes: this.dmNotes,
     };

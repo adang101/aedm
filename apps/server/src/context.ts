@@ -1,6 +1,7 @@
-import type { DmContextPack, SceneEntity } from "@aedm/llm";
+import type { DmContextPack, NpcDossierEntry, SceneEntity } from "@aedm/llm";
+import type { NpcRecord } from "@aedm/schemas";
 import {
-  MATERIAL_IDS, RULES, computePartyLevel, currentMap, entitiesOnMap, getObjects, lootCap, pacingBlock, type GameState,
+  MATERIAL_IDS, RULES, computePartyLevel, currentAct, currentMap, entitiesOnMap, getObjects, lootCap, pacingBlock, type GameState,
 } from "@aedm/engine";
 
 export interface RecentTurn {
@@ -17,7 +18,12 @@ export interface ContextInput {
   intents: { characterId: string; characterName: string; text: string }[];
   engineLines?: string[];
   recentTurns?: RecentTurn[];
-  summaries?: string[];
+  /** Compact summary of everything older than the chapters. */
+  storySoFar?: string;
+  /** Summaries of the most recent stretches of play, oldest first. */
+  chapters?: string[];
+  /** The DM's recent private notes, oldest first. */
+  dmNotes?: string[];
   linesAndVeils?: string;
   sceneNote?: string;
   /** Max recent turns handed to the DM (default 12). */
@@ -43,6 +49,19 @@ function sideOf(map: { width: number; height: number }, x: number, y: number): s
   if (x === 0) return "west";
   if (x === map.width - 1) return "east";
   return undefined;
+}
+
+/** The NPC dossier: those on the current map first, then the most recently seen; the living before the dead; at most `dossierMax`. */
+function npcDossier(state: GameState): NpcDossierEntry[] {
+  const here = (n: NpcRecord) => n.alive !== false && n.map_id === state.currentMapId;
+  const group = (n: NpcRecord) => (n.alive === false ? 2 : here(n) ? 0 : 1);
+  return Object.values(state.npcs)
+    .sort((a, b) => group(a) - group(b) || (b.last_seen_beat ?? -1) - (a.last_seen_beat ?? -1))
+    .slice(0, RULES.npc.dossierMax)
+    .map((n) => ({
+      id: n.id, name: n.name, role: n.role, disposition: n.disposition, alive: n.alive !== false, mapId: n.map_id, here: here(n),
+      concept: n.concept, voice: n.voice, lines: n.lines ?? [], notes: n.notes ?? [],
+    }));
 }
 
 /** Pure: game state plus this beat's inputs become the DM's context pack. */
@@ -100,6 +119,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     growthRemaining[id] = rec.count >= RULES.growth.sessionAwardCap ? 0 : Math.max(0, RULES.growth.sessionPointCap - rec.points);
   }
 
+  const pacing = pacingBlock(state.bible) ?? undefined;
   const limit = input.recentLimit ?? 12;
   const recent = (input.recentTurns ?? []).filter((t) => t.channel !== "ooc").slice(-limit);
 
@@ -108,7 +128,12 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     storyDigest: `${state.bible.digest} Tone: ${state.bible.tone}`,
     contentRating: state.contentRating,
     linesAndVeils: input.linesAndVeils ?? "",
-    summaries: input.summaries ?? [],
+    storySoFar: input.storySoFar ?? "",
+    chapters: input.chapters ?? [],
+    dmNotes: input.dmNotes ?? [],
+    act: pacing ? undefined : currentAct(state.bible) ?? undefined,
+    npcs: npcDossier(state),
+    threads: state.threads.filter((t) => t.status === "open").map((t) => ({ id: t.id, text: t.text })),
     facts: state.facts.map((f) => ({ ...f })),
     scene: {
       mapId: map?.id ?? "none",
@@ -120,7 +145,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     party,
     quests: state.bible.quests.map((q) => ({ id: q.id, title: q.title, status: q.status, notes: [...q.notes] })),
     milestones: state.bible.milestones.map((m) => ({ id: m.id, description: m.description, completed: m.completed, ...(m.stage ? { stage: m.stage } : {}) })),
-    pacing: pacingBlock(state.bible) ?? undefined,
+    pacing,
     recentTurns: recent.map((t) => ({ speaker: t.speaker, text: t.text, kind: t.kind, channel: t.channel ?? "ic" })),
     engineLines: [...(input.engineLines ?? [])],
     intents: input.intents.map((i) => ({ ...i })),
