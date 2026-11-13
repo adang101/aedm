@@ -1,5 +1,5 @@
 import {
-  addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, basicAttack, clampEnemy, cloneState, combatOutcome,
+  addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
   computePartyLevel, createGameState, currentMap, describeEvent, endCombat, endTurn, enemyRangesForLevel,
   enemyTakeTurn, entitiesOnMap, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
   pickPlot, placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
@@ -49,6 +49,14 @@ const DM_SKIP_EVENTS = new Set<EngineEvent["type"]>([
   "moved", "map_added", "map_requested", "check_requested", "chips", "turn_ended", "round_started", "fact_set", "npc_said",
 ]);
 
+/** Engine events that earn a DM reaction at the next turn boundary of a fight. */
+const REACTION_EVENTS = new Set<EngineEvent["type"]>(["morale_broken", "surrendered", "fled", "bloodied", "downed"]);
+
+/** A dramatic beat: morale, surrender, a bloodied leader, a hero downed or an allied NPC defeated. Call after the state is committed. */
+function isReactionEvent(state: GameState, e: EngineEvent): boolean {
+  return REACTION_EVENTS.has(e.type) || (e.type === "defeated" && state.npcs[e.entityId]?.role === "ally");
+}
+
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 function humanLine(e: EngineEvent): string {
@@ -68,6 +76,12 @@ export class GameSession {
   private chain: Promise<void> = Promise.resolve();
   private saveChain: Promise<void> = Promise.resolve();
   private beat: Beat | null = null;
+  /** In-character lines said during combat, handed to the next DM call. */
+  private combatIntents: Intent[] = [];
+  /** A reaction trigger happened since the last DM call. */
+  private reactionDue = false;
+  /** DM reactions used in this combat round. */
+  private reactions = { round: 0, n: 0 };
   private recent: RecentTurn[] = [];
   private memory: StoryMemory = EMPTY_MEMORY;
   private dmNotes: string[] = [];
@@ -352,6 +366,7 @@ export class GameSession {
     if (!prev.combat && next.combat) {
       this.walkEpoch++;
       this.lastNarratedRound = next.combat.round;
+      this.reactions = { round: 0, n: 0 };
       this.room.broadcast("combat_state", toWsCombat(next.combat));
     } else if (prev.combat && !next.combat) {
       this.clearTurnTimer();
@@ -396,6 +411,7 @@ export class GameSession {
       if (!DM_SKIP_EVENTS.has(e.type)) lines.push(describeEvent(e));
     }
     if (opts.toDm !== false) {
+      if (this.state.combat && events.some((e) => isReactionEvent(this.state, e))) this.reactionDue = true;
       this.pendingLines.push(...lines);
       if (this.pendingLines.length > MAX_PENDING_LINES) this.pendingLines.splice(0, this.pendingLines.length - MAX_PENDING_LINES);
     }
@@ -439,8 +455,8 @@ export class GameSession {
     const ch = this.characterOf(player);
     if (!ch) return;
     if (this.state.combat) {
-      this.recent.push({ speaker: ch.name, text, kind: "player", channel: "ic" });
-      this.trimRecent();
+      this.combatIntents.push({ characterId: ch.id, characterName: ch.name, text });
+      if (this.combatIntents.length > MAX_PENDING_LINES) this.combatIntents.shift();
       return;
     }
     if (!this.beat) this.beat = { intents: [], speakers: new Set(), timer: null };
@@ -498,7 +514,7 @@ export class GameSession {
     this.clearLater(b.timer);
     this.enqueue(async () => {
       if (this.state.combat) {
-        for (const i of b.intents) this.recent.push({ speaker: i.characterName, text: i.text, kind: "player", channel: "ic" });
+        this.combatIntents.push(...b.intents);
         return;
       }
       await this.dmTurn({ intents: b.intents, engineLines: [], allowFollowup: true, tick: true });
@@ -808,9 +824,13 @@ export class GameSession {
       if (!c) { this.clearTurnTimer(); return; }
       const outcome = combatOutcome(st);
       if (outcome) { await this.finishCombat(outcome); continue; }
-      if (c.round > this.lastNarratedRound && this.pendingLines.length > 0) {
+      if (c.round > this.lastNarratedRound && (this.pendingLines.length > 0 || this.combatIntents.length > 0)) {
         this.lastNarratedRound = c.round;
         await this.dmTurn({ intents: [], engineLines: [], allowFollowup: false, tick: false });
+        continue;
+      }
+      if (this.takeReaction(c.round)) {
+        await this.dmTurn({ intents: [], engineLines: [], allowFollowup: true, tick: false });
         continue;
       }
       const active = st.entities[c.active_id];
@@ -840,6 +860,18 @@ export class GameSession {
       if (this.turn?.entityId !== active.id) this.startTurnTimer(active.id);
       return;
     }
+  }
+
+  /**
+   * True when something worth a DM line happened since the last DM call (a reaction event or queued player speech) and this
+   * round's cap allows another reaction. Otherwise the triggers stay pending and flow into the round narration.
+   */
+  private takeReaction(round: number): boolean {
+    if (!this.reactionDue && this.combatIntents.length === 0) return false;
+    if (this.reactions.round !== round) this.reactions = { round, n: 0 };
+    if (this.reactions.n >= this.cfg.combatReactionsPerRound) return false;
+    this.reactions.n++;
+    return true;
   }
 
   private async finishCombat(outcome: "victory" | "defeat"): Promise<void> {
@@ -988,10 +1020,12 @@ export class GameSession {
 
   private async dmTurn(opts: { intents: Intent[]; engineLines: string[]; allowFollowup: boolean; tick: boolean; note?: string }): Promise<void> {
     const lines = [...this.pendingLines.splice(0), ...opts.engineLines];
+    const intents = [...this.combatIntents.splice(0), ...opts.intents];
+    this.reactionDue = false;
     const pack = buildContextPack({
       state: this.state,
       players: this.playersMap(),
-      intents: opts.intents,
+      intents,
       engineLines: lines,
       recentTurns: this.recent,
       storySoFar: this.memory.storySoFar,
@@ -1001,7 +1035,7 @@ export class GameSession {
       recentLimit: this.cfg.recentTurnLimit,
       cast: this.room.usableCast().map((c) => ({ assetId: c.assetId, name: c.name, roleHint: c.roleHint, concept: c.concept })),
     });
-    for (const i of opts.intents) this.recent.push({ speaker: i.characterName, text: i.text, kind: "player", channel: "ic" });
+    for (const i of intents) this.recent.push({ speaker: i.characterName, text: i.text, kind: "player", channel: "ic" });
 
     const out = await this.callDm(pack);
     if (!out) {
@@ -1046,25 +1080,29 @@ export class GameSession {
     let newMapId: string | null = null;
     let sceneChanged = false;
 
+    let conditionsApplied = 0;
     for (const action of resp.actions) {
       try {
-        if (action.type === "create_enemy") {
+        // A refused action skips the server pre-passes (they cost model calls) and falls through to the engine, which rejects it.
+        const refused = combatRefusal(this.state, action, conditionsApplied) !== undefined;
+        if (!refused && action.type === "create_enemy") {
           const id = await this.createEnemy(action);
           if (id && !action.ref) unreferenced.push(id);
           continue;
         }
-        if (action.type === "generate_map") {
+        if (!refused && action.type === "generate_map") {
           const id = this.addGeneratedMap(action.brief);
           if (id) newMapId = id;
           continue;
         }
         let a: DmAction = action;
         let sprites: Record<string, SpriteRecipe> | undefined;
-        if (a.type === "create_npc") sprites = await this.designNpcSprite(a);
-        if (a.type === "spawn_entity") a = this.prepareSpawn(a, unreferenced);
-        if (a.type === "start_combat") a = this.prepareCombat(a);
-        const ctx = { ...this.dmContext(), ...(sprites ? { sprites } : {}) };
+        if (!refused && a.type === "create_npc") sprites = await this.designNpcSprite(a);
+        if (!refused && a.type === "spawn_entity") a = this.prepareSpawn(a, unreferenced);
+        if (!refused && a.type === "start_combat") a = this.prepareCombat(a);
+        const ctx = { ...this.dmContext(), conditionsApplied, ...(sprites ? { sprites } : {}) };
         const r = applyDmActions(this.state, this.rng(), [a], ctx);
+        conditionsApplied += r.applied.filter((x) => x.type === "apply_condition").length;
         this.commit(r.state);
         this.publish(r.events);
         checks.push(...r.pendingChecks);
@@ -1234,7 +1272,7 @@ export class GameSession {
     return out;
   }
 
-  /** The DM names archetypes it just spawned; combat needs the spawned entity ids. */
+  /** The DM names archetypes it just spawned; combat needs the spawned entity ids. Living ally NPCs on the map join automatically. */
   private prepareCombat(a: Extract<DmAction, { type: "start_combat" }>): DmAction {
     const ids: string[] = [];
     const unknown: string[] = [];
@@ -1246,6 +1284,11 @@ export class GameSession {
       else unknown.push(id);
     }
     if (ids.length < 2) return { ...a, participants: [...ids, ...unknown].slice(0, 24) };
+    // allied NPCs on the same map fight beside the party
+    const mapId = this.state.entities[ids[0] as string]?.mapId;
+    for (const e of Object.values(this.state.entities)) {
+      if (e.kind === "npc" && e.mapId === mapId && e.hp > 0 && this.state.npcs[e.refId]?.role === "ally") add(e.id);
+    }
     return { ...a, participants: ids.slice(0, 24) };
   }
 

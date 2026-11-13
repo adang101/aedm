@@ -63,6 +63,8 @@ export interface ServerConfig {
   recentTurnLimit: number;
   /** How many of the DM's latest private notes are handed back to it. */
   dmNotebookLimit: number;
+  /** DM reaction calls allowed per combat round (on top of the end-of-round narration). Extra triggers wait for the round narration. */
+  combatReactionsPerRound: number;
 }
 
 export const DEFAULT_CONFIG: ServerConfig = {
@@ -80,6 +82,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   devLog: false,
   recentTurnLimit: 12,
   dmNotebookLimit: 8,
+  combatReactionsPerRound: 1,
 };
 
 /** Everything injected into rooms and games. */
