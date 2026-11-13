@@ -144,7 +144,7 @@ Every campaign follows one of seven classic **plot patterns** and one of six **e
 
 **Built.** `plots.json` holds each stage's id, name, purpose, tension target and suggested difficulty, each arc's fortune per stage, and per pattern keywords and recommended arcs; scene kinds and milestone templates are not in the data yet. Engine: `pickPlot`, `plotOutline`, `validateBiblePlot`, `currentStage`, `pacingBlock`, and `adjust_plot` and stage-order checks in `applyDmActions`. The server resolves the room settings before bible generation and the bible prompt receives a `<plot_plan>`. Divergences from the plan above: the lobby option is called "Auto" (setting value `auto`); the engine also rejects `complete_milestone` for a stage later than the current one, so stages complete in order.
 
-**Evals (not yet written).** New scenarios should check that the DM respects the current stage and fortune trend (rated), never completes a milestone out of stage order, and keeps "tragedy" within the content rating.
+**Evals.** `packages/evals` (`pnpm eval`) holds the spike kit's E01 to E20, memory and continuity scenarios E21 to E26 (notebook payoff, NPC dossier promise, dead NPC in the dossier, thread payoff, thread cap, stage order) and forge scenarios F01 to F18. E26 checks that no milestone of a later stage is proposed. Still unwritten: rating the DM's use of the fortune trend, and keeping "tragedy" within the content rating.
 
 ## Capability check (as of this branch)
 
