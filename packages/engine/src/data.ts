@@ -11,6 +11,8 @@ import enemiesJson from "../data/enemies.json" with { type: "json" };
 import plotsJson from "../data/plots.json" with { type: "json" };
 import pixelJson from "../data/pixel.json" with { type: "json" };
 import narrationJson from "../data/narration.json" with { type: "json" };
+import lootJson from "../data/loot.json" with { type: "json" };
+import interactJson from "../data/interact.json" with { type: "json" };
 
 export interface ArmorInfo { name: string; dexCap: number | null; speedPenalty: number }
 
@@ -165,3 +167,60 @@ export interface NarrationData {
   templates: Record<string, string[]>;
 }
 export const NARRATION = narrationJson as unknown as NarrationData;
+
+// ---------- containers, locks, doors and loot (data/interact.json, data/loot.json) ----------
+
+export type ActionCost = "action" | "quick" | "free" | "refuse";
+
+export interface LootTemplate {
+  name: string;
+  kind: "consumable" | "weapon" | "armor" | "trinket";
+  /** Gold-equivalent value. Omitted for the healing draught, which takes `RULES.draught.value` and name. */
+  value?: number;
+  weight: number;
+  /** Gear tier (weapon and armor): only rolled when the tier allowance reaches it. */
+  tier?: number;
+  /** Non-gear items: only rolled when the tier allowance reaches it. Default 1. */
+  minTier?: number;
+  draught?: true;
+}
+export interface LootData {
+  version: number;
+  kindWeights: Record<string, number>;
+  roll: { minItems: number; maxItems: number };
+  templates: LootTemplate[];
+}
+
+export interface InteractData {
+  version: number;
+  /** Chebyshev distance an actor may be from a container, door, lever or sign. */
+  reach: number;
+  examineReach: number;
+  /** Items one character may carry through taking, receiving or picking up (the schema ceiling is 100). */
+  inventoryCap: number;
+  pileCap: number;
+  noTransferKinds: string[];
+  combatCost: Record<string, ActionCost>;
+  locks: {
+    dcByTier: Record<string, number>;
+    variance: number;
+    defaultTier: number;
+    pick: { ability: "str" | "dex"; tag: string; dcBonus: number };
+    force: { ability: "str" | "dex"; tag: string; dcBonus: number; noiseRadius: number };
+    consumeKey: boolean;
+  };
+  doors: { blockWhenClosed: boolean; generated: { enabled: boolean; closedPct: number; lockedPct: Record<string, number> } };
+  levers: { maxLinks: number };
+  chest: { budgetPct: number; maxItems: number };
+  slot: { budgetPct: number; itemsPerCount: number };
+  remains: {
+    dropWeights: Record<string, { nothing: number; loot: number }>;
+    budgetPct: Record<string, number>;
+    maxItems: Record<string, number>;
+  };
+  signs: { templates: Record<string, string[]> };
+  texts: Record<string, Record<string, string>>;
+}
+
+export const LOOT = lootJson as unknown as LootData;
+export const INTERACT = interactJson as unknown as InteractData;

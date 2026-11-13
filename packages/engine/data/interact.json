@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "reach": 1,
+  "examineReach": 4,
+  "inventoryCap": 24,
+  "pileCap": 30,
+  "noTransferKinds": ["weapon", "armor"],
+  "combatCost": {
+    "open": "action", "close": "action", "take": "action", "take_all": "action",
+    "drop": "quick", "give": "quick",
+    "door": "action", "lever": "action", "lock": "action",
+    "read": "free", "examine": "free"
+  },
+  "locks": {
+    "dcByTier": { "1": 10, "2": 12, "3": 15, "4": 18, "5": 20 },
+    "variance": 2,
+    "defaultTier": 1,
+    "pick": { "ability": "dex", "tag": "lockpicking", "dcBonus": 0 },
+    "force": { "ability": "str", "tag": "athletics", "dcBonus": 2, "noiseRadius": 6 },
+    "consumeKey": false
+  },
+  "doors": {
+    "blockWhenClosed": true,
+    "generated": { "enabled": false, "closedPct": 50, "lockedPct": { "1": 5, "2": 10, "3": 15, "4": 20, "5": 25 } }
+  },
+  "levers": { "maxLinks": 1 },
+  "chest": { "budgetPct": 40, "maxItems": 3 },
+  "slot": { "budgetPct": 30, "itemsPerCount": 2 },
+  "remains": {
+    "dropWeights": {
+      "minion": { "nothing": 70, "loot": 30 },
+      "standard": { "nothing": 35, "loot": 65 },
+      "elite": { "nothing": 10, "loot": 90 },
+      "boss": { "nothing": 0, "loot": 100 }
+    },
+    "budgetPct": { "minion": 15, "standard": 30, "elite": 50, "boss": 80 },
+    "maxItems": { "minion": 1, "standard": 2, "elite": 3, "boss": 4 }
+  },
+  "signs": {
+    "templates": {
+      "default": [
+        "Mind your step in the {setting}.",
+        "Travellers, keep to the marked way.",
+        "Whoever reads this has come far. Rest if you must, but do not linger.",
+        "Property of those who still keep watch here. Touch nothing you cannot carry.",
+        "The way back is the way you came. Remember it.",
+        "Lights out at dusk. The {setting} is not kind to the careless."
+      ],
+      "hall": ["All who pass through this hall pay respect to the dust of ages.", "Speak softly in the hall; the walls remember."],
+      "chamber": ["This chamber is closed to visitors. Knock twice, then leave.", "Whatever sleeps in this chamber was left that way on purpose."],
+      "corridor": ["Narrow ahead. Single file.", "The corridor bends twice. The second bend is the dangerous one."],
+      "courtyard": ["Gather in the courtyard at first bell.", "Water is shared here. Draw only what you need."],
+      "cave": ["The air thins further in. Carry a light.", "Marks on the stone show where others turned back."],
+      "outdoor": ["Fair weather holds only until the road bends.", "Fork ahead: the lesser path is the shorter one."],
+      "street": ["Quiet hours begin at the last bell.", "Merchants to the left, mourners to the right."],
+      "deck": ["Hold fast when the swell rises.", "Cargo below. Passengers stay clear of the hatch."],
+      "vault": ["What is kept here was kept for a reason.", "Keys are counted at every change of the watch."],
+      "garden": ["Please stay on the paths; the beds are tended.", "Whatever grows here, grows with care."],
+      "shore": ["The tide comes in faster than you think.", "Nothing washed ashore here is free to keep."]
+    }
+  },
+  "texts": {
+    "chest": {
+      "locked": "A chest, shut tight and locked.",
+      "closed": "A chest, closed but not locked.",
+      "open": "An open chest holding {items}.",
+      "empty": "An open chest, empty."
+    },
+    "door": {
+      "open": "A door, standing open.",
+      "closed": "A door, closed.",
+      "locked": "A door, closed and locked."
+    },
+    "lever": {
+      "open": "A lever, pulled down.",
+      "closed": "A lever, pushed up."
+    },
+    "sign": { "any": "A sign with writing on it." },
+    "pile": { "any": "A pile of dropped items ({items}).", "empty": "A bare patch where items were dropped." },
+    "remains": { "any": "The remains of {name} ({items}).", "empty": "The remains of {name}, picked clean." }
+  }
+}

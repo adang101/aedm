@@ -6,7 +6,8 @@ import { describeEvent } from "./events.ts";
 import { createRng } from "./rng.ts";
 import { validateBiblePlot } from "./plot.ts";
 import { designSpriteOffline } from "./sprites.ts";
-import { addMap, type GameState } from "./state.ts";
+import { addMap } from "./map-state.ts";
+import type { GameState } from "./state.ts";
 import { PARTY_IDS, PLOT_BIBLE, chorister, makeTestMap, makeWorld, withArchetype } from "./testkit.ts";
 
 const CTX: DmContext = { presentCharacterIds: PARTY_IDS, partyLevel: 1 };

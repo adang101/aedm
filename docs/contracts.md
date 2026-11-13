@@ -225,7 +225,7 @@ Every effect may also carry `affects` (enemies, allies or all). Anything not in 
 
 **WebSocket messages**
 
-Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 6 (Workshop and cast messages, `custom_cast` and `custom_paintings` settings); it was 5 for the following: the envelopes are unchanged, but the Map payload changed shape (v2 map), room settings gained `plot_pattern` and `plot_arc`, `design_sprite` and `sprite_designed` were added, and sprite recipes gained the `pixel` kind with the `invalid_sprite` error code, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second; `design_sprite` is also limited per account (see Sprite designer).
+Every message is an object with `v`, `type`, `id` (client-generated and unique per session, used for idempotency), `ts` and `payload`. Server replies carry `ack_id`. Messages over 8 KB are rejected. A `v` mismatch returns `version_mismatch` and the client prompts a reload. `WS_VERSION` is 7 (containers, locks and doors: the `container_action` and `inventory_action` client messages, the `container_view` server message, more `act` verbs, and `containers` in `state_snapshot` and the container and interactable fields of `state_diff`; the Map schema stays v2 because its new fields are optional, but old clients would ignore door state and containers, so they reload); it was 6 for Workshop and cast messages (`custom_cast` and `custom_paintings` settings) and 5 for the following: the envelopes are unchanged, but the Map payload changed shape (v2 map), room settings gained `plot_pattern` and `plot_arc`, `design_sprite` and `sprite_designed` were added, and sprite recipes gained the `pixel` kind with the `invalid_sprite` error code, so old clients reload. Starting rate limits: `move_intent` 10 per second, `say` 1 per 2 seconds, everything else 5 per second; `design_sprite` is also limited per account (see Sprite designer).
 
 | `type` | Direction | Payload |
 | --- | --- | --- |
@@ -239,7 +239,9 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `start_game` | Client to server | Host only. None |
 | `claim_character` | Client to server | character_id, or "new" plus a character object, or `"template"` plus `template_id` (accounts only: a saved character; the normal forge path runs) |
 | `move_intent` | Client to server | target tile (x, y) or direction (n, s, e, w) |
-| `act` | Client to server | verb (interact, examine, talk), target_id |
+| `act` | Client to server | verb (interact, examine, talk, open, close, unlock, pick_lock, force, pull, read), target_id (an entity id, an interactable id on the current map, or a container id). `interact` does the natural thing for the target: door open or close, lever pull, sign read, chest or pile open, a locked door or chest unlocked first if the actor carries its key; an altar or a creature is left to the DM. The engine answers it with no DM call except `narrative` results (see Containers, locks and doors). |
+| `container_action` | Client to server | verb (open, close, take, take_all), container_id (or the id of a chest object), item_id (take only: required for `take`, rejected for the others). `open` is answered with `container_view`. |
+| `inventory_action` | Client to server | verb (drop, give), item_id, to_character_id (give only: required for `give`, rejected for `drop`). Drop puts the item on the sender's own tile; give needs an adjacent party member. |
 | `use_ability` | Client to server | ability_id, target (entity ID or tile) |
 | `basic_attack` | Client to server | target_id |
 | `use_item` | Client to server | item_id, target |
@@ -250,8 +252,9 @@ Every message is an object with `v`, `type`, `id` (client-generated and unique p
 | `load_save` | Client to server | save_id (host only; a save owned by an account loads only for that account) |
 | `ping` | Client to server | none |
 | `level_up_choice` | Client to server | Discriminated on `kind`: `score` (ability: str, dex, con, int, wis or cha), `new_ability` (text, 1 to 300 characters), `reforge` (ability_id, text 1 to 300), `skip_ability` (none). Applies to the sender's own character only; out of combat only. |
-| `state_snapshot` | Server to client | seq, mode (exploration, combat), map (Map JSON), entities (EntityView), party (CharacterView), quests, combat (optional CombatState) |
-| `state_diff` | Server to client | seq, ack_seq (optional), changed (EntityView list), removed (entity IDs), mode (optional), combat (optional CombatState) |
+| `state_snapshot` | Server to client | seq, mode (exploration, combat), map (Map JSON, with each interactable's current state, lock and sign text), entities (EntityView), party (CharacterView), quests, combat (optional CombatState), containers (optional: a ContainerSummary for every chest on the map and every pile or remains that still holds something) |
+| `state_diff` | Server to client | seq, ack_seq (optional), changed (EntityView list), removed (entity IDs), mode (optional), combat (optional CombatState), containers_changed (optional ContainerSummary list), containers_removed (optional container ids), interactables_changed (optional list of `map_id`, `id`, `state` for doors, levers and chests that changed) |
+| `container_view` | Server to client | container_id, kind (chest, pile, remains, pockets), label (optional), items (Item list; empty while the container is locked), locked. Sent to the player who opened the container. |
 | `narration_chunk` | Server to client | turn_id, text, done |
 | `roll_result` | Server to client | who, label, dice (list of rolled die values), modifier, total, target (DC or Defense), outcome (success, failure, crit, fumble) |
 | `combat_state` | Server to client | CombatState: round, order (entity_id and initiative, in turn order), active_id |
@@ -275,6 +278,34 @@ Shared payload types: `EntityView` is id, kind (pc, npc, enemy), name, x, y, hp,
 
 The 8 KB limit applies to client-to-server messages. A `state_snapshot` carries a whole map and may be larger.
 
+**Containers, locks and doors (engine-handled, no DM call)**
+
+Chests, ground piles, defeated-enemy remains and NPC pockets are containers. They are engine state (`GameState.containers`, keyed by container id `cn_` plus a number) and are saved with the game. Doors, levers and signs keep what changed in `GameState.interactables`, keyed by `<map id>/<object id>`, because a map is shared and never mutated. The map object says how a thing was built; the game state says what it is now.
+
+| Record | Fields |
+| --- | --- |
+| Container (`v` 1) | id, kind (chest, pile, remains, pockets), map_id, x, y, items (Item list, at most 100), label (optional, at most 60), locked and lock (optional, chests), opened (optional, chests), object_id (optional: the chest interactable or loot entity slot it was made from), owner_entity_id (optional: whose pockets or remains) |
+| ContainerSummary | id, kind, x, y, item_count, locked, open, object_id (optional). What the whole table sees; never the items. |
+| InteractableView | map_id, id, state (open, closed, locked). A door, lever or chest whose state changed. |
+| Interactable override (`GameState.interactables`) | state (optional), lock (optional; `null` means the lock is gone), text (optional sign text) |
+
+Where things live: a **chest** is both a map interactable and a container (`object_id` links them; its state is derived from the container: locked, open or closed). A **loot** entity slot becomes a `pile` container at the slot. A **pile** is created by `dropItem` on the dropper's tile and joined by later drops (at most `pileCap` items each). **Remains** appear where an enemy was defeated. **Pockets** belong to an NPC (`stashPocketsM`), cannot be opened while the NPC lives, and become remains when it dies. Containers are stocked when a map is added (`addMap`), from a stream seeded by the map's seed and the object id, with the party level at that moment: the loot tier is the level's gear allowance and a chest's budget is `interact.chest.budgetPct` of the encounter loot cap, so a chest never exceeds the cap. Chest stock is scenery and does not count against `session.lootValueThisEncounter`; remains drops come out of what is left of it and count against it, exactly like `grant_item`. A drop uses a stream forked from the rng, so it never shifts the combat rolls that follow.
+
+Rules (numbers in `packages/engine/data/interact.json` and `loot.json`, summarised in `rules-numbers.md`):
+
+- Reach: Chebyshev distance 1 to a container, door, lever or lock; signs and `examine` work from `examineReach` tiles. Pack cap `inventoryCap` (the schema's 100 stays the ceiling; `grant_item` still uses its own cap). Weapons and armor are bound on pickup (they equip like a granted item) and cannot be dropped or given.
+- In combat every verb costs what `combatCost` says: taking, opening, doors, levers and locks the action; dropping and giving the quick action; reading and examining nothing. Only the active creature acts, and a verb set to `refuse` is not allowed.
+- Locks: `unlock` opens with an item named like `key_item_name`, no roll. `pickLock` is a DEX check (tag lockpicking) and `forceOpen` a STR check (tag athletics, plus a bonus), both against the lock's DC through `checks.ts`. A failed pick has no lasting penalty. Forcing breaks the lock for good on success, and success or failure makes noise (a `noise` event with a radius, for the server and DM to use).
+- Doors: a closed or locked door blocks movement (`occupiedTiles`, so pathfinding sees it) and sight (`sightBlockers`) until opened; it cannot be closed with a creature in the doorway. `interact.doors.blockWhenClosed` turns the blocking off.
+- Levers flip themselves and each linked door (open doors close unless occupied; closed and locked ones open and lose the lock). Signs read their text (`readSign`, no DM call); `setSignText` writes one.
+- `examine` returns a deterministic line for chests, doors, levers, signs, piles and remains. A closed container never reveals its contents. Altars, creatures and pockets come back `narrative: true` with no text: the engine did nothing and the DM should describe it. The same goes for `talk` and for `interact` on an altar or a creature.
+
+Versioning. The Map stays v2 (its three new interactable fields are optional); the Container record is new at v1; the WebSocket protocol goes to 7 because there are new messages and snapshot fields. Object verbs are folded into `act` rather than a second message: `act` is already "do something to a thing on the map", and the engine's `performAct` is the single entry point. Moving items is separate (`container_action`, `inventory_action`) because it has its own payloads and replies.
+
+Engine entry points for the server (all return `{ ok, state, events, error? }` unless noted; none mutate their input): `performAct(state, rng, actorId, verb, targetId)` (adds `narrative`, `text`, `containerId`, `success`), `openContainer`, `closeContainer`, `takeItem`, `takeAll`, `dropItem`, `giveItem`, `openDoor`, `closeDoor`, `unlock`, `pickLock`, `forceOpen`, `pullLever`, `readSign`, `setSignText(state, mapId, objectId, text)`, `examine`, and the pure `containerView(state, containerId)` for `container_view`, `containerSummaries(state, mapId)` and `effectiveMap(state, mapId)` for snapshots (`toSnapshot` already uses both), and `containerDiff(before, after, mapId)` for the `state_diff` container and interactable fields.
+
+Save files (`SAVE_VERSION` stays 1): a state without `containers` or `interactables` loads with both empty, and `restoreState` stocks the chests and loot slots of every map it holds. Nothing else in an old save changes. Map generation takes two optional settings: `tier` (scales lock DCs, default 1) and `doorObjects` (turns the generator's door tiles into real door objects, default off until the client can open doors; both are in `interact.json`).
+
 **Map JSON (v2)**
 
 | Field | Rules |
@@ -296,7 +327,7 @@ Object types in the `objects` layer, all positioned in tiles:
 | `spawn` | name. Exactly one named `party_start`. |
 | `exit` | name, to (map ID or "pending"), target_entry (spawn name) |
 | `entity_slot` | id (so `spawn_entity` can name it as `slot_id`), role (enemy, npc, boss, loot), count (1 to 6) |
-| `interactable` | id, kind (chest, door, lever, sign, altar), state (open, closed, locked) |
+| `interactable` | id, kind (chest, door, lever, sign, altar), state (open, closed, locked), and optional `lock` (chest and door only: `dc` 5 to 30 and optional `key_item_name`, at most 40 characters), `links` (lever only: 1 to 4 ids of door interactables on the same map) and `text` (sign only: 1 to 200 characters). The three optional fields are additive, so the Map stays v2 and older maps parse unchanged. The map's `state` is how it was built; what it is now lives in the game state (see Containers, locks and doors) and is merged into the `map` of every `state_snapshot`. |
 | `trigger` | id, radius (1 to 3 tiles), on_enter (event name) |
 
 A map is valid only if all of these hold. If any fails, regenerate with a new seed, up to 3 tries, then fall back (simplified rooms, the preset's own layout, one plain chamber).
@@ -309,6 +340,8 @@ A map is valid only if all of these hold. If any fails, regenerate with a new se
 6. Exits sit on walkable tiles on the map boundary or in a door tile.
 7. The serialized map is at most 250 KB before compression.
 8. Hazards are never the only way through: every exit, entity slot and interactable is reachable from `party_start` without stepping on a tile whose ground `TileDef` has role `hazard`. (A hazard's damage type and dice come from its material, found by `material_id` in the engine library.)
+
+Doors and rule 4: a door object's tile is an ordinary walkable tile, so closed and locked doors count as passable for reachability. That is deliberate: a locked door or chest can always be picked or forced (a failed attempt has no lasting penalty), so a lock is never a dead end. The schema (not the validator) also checks that `lock` sits on a chest or door, `links` on a lever and `text` on a sign, and that every link names a door on the map.
 
 The validator also warns, without failing, about `TileDef`s no layer uses; the generator never emits any. Tile layer placement: floor, path, door, hazard and walkable liquid go on `ground`; wall, obstacle and non-walkable liquid on `walls` (the collision layer, so a tree blocks sight as well as movement); decor props on `decor`; tree canopies on `above`. A `TileDef`'s `walkable` is false exactly when its layer is `walls`.
 

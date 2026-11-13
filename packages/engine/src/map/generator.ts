@@ -9,6 +9,10 @@ export interface GenerateOptions {
   id: string;
   /** ISO timestamp for meta.generated_at. The engine has no clock, so the caller supplies it. */
   generatedAt?: string;
+  /** Loot tier (1 to 5) the map's lock DCs are scaled to: pass the party's gear allowance (`lootTierForLevel`). Default 1. */
+  tier?: number;
+  /** Make the generator's door tiles real door objects. Default `interact.doors.generated.enabled` (off until the client can open doors). */
+  doorObjects?: boolean;
 }
 
 export const DEFAULT_GENERATED_AT = "1970-01-01T00:00:00Z";
@@ -69,7 +73,11 @@ export function generateMap(brief: MapBrief, opts: GenerateOptions): { map: Game
   for (let attempt = 1; attempt <= stages.length; attempt++) {
     const seed = opts.seed + attempt - 1;
     try {
-      const map = buildMap(stages[attempt - 1]!, seed, { id: opts.id, generatedAt });
+      const map = buildMap(stages[attempt - 1]!, seed, {
+        id: opts.id, generatedAt,
+        ...(opts.tier !== undefined ? { tier: opts.tier } : {}),
+        ...(opts.doorObjects !== undefined ? { doorObjects: opts.doorObjects } : {}),
+      });
       const v = validateMap(map);
       if (v.ok) return { map, attempts: attempt };
       failures.push(`attempt ${attempt} (seed ${seed}): ${v.errors.join("; ")}`);

@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "kindWeights": { "consumable": 38, "weapon": 14, "armor": 10, "trinket": 38 },
+  "roll": { "minItems": 1, "maxItems": 3 },
+  "templates": [
+    { "name": "Healing draught", "kind": "consumable", "draught": true, "weight": 30 },
+    { "name": "Bandage roll", "kind": "consumable", "value": 6, "weight": 12 },
+    { "name": "Smoke pellet", "kind": "consumable", "value": 8, "weight": 10 },
+    { "name": "Flask of lamp oil", "kind": "consumable", "value": 10, "weight": 10 },
+    { "name": "Hard travel biscuit", "kind": "consumable", "value": 3, "weight": 14 },
+    { "name": "Tallow candle bundle", "kind": "consumable", "value": 4, "weight": 12 },
+
+    { "name": "Notched iron blade", "kind": "weapon", "tier": 1, "value": 12, "weight": 12 },
+    { "name": "Ash-wood cudgel", "kind": "weapon", "tier": 1, "value": 10, "weight": 12 },
+    { "name": "Short horn bow", "kind": "weapon", "tier": 1, "value": 14, "weight": 10 },
+    { "name": "Balanced steel sword", "kind": "weapon", "tier": 2, "value": 28, "weight": 10 },
+    { "name": "Weighted war pick", "kind": "weapon", "tier": 2, "value": 30, "weight": 8 },
+    { "name": "Fine-edged longsword", "kind": "weapon", "tier": 3, "value": 50, "weight": 8 },
+    { "name": "Heavy bladed halberd", "kind": "weapon", "tier": 4, "value": 78, "weight": 6 },
+    { "name": "Masterwork duelist's blade", "kind": "weapon", "tier": 5, "value": 105, "weight": 4 },
+
+    { "name": "Padded leather vest", "kind": "armor", "tier": 1, "value": 14, "weight": 12 },
+    { "name": "Studded hide coat", "kind": "armor", "tier": 2, "value": 30, "weight": 9 },
+    { "name": "Riveted plate harness", "kind": "armor", "tier": 3, "value": 52, "weight": 6 },
+
+    { "name": "Polished river stone", "kind": "trinket", "value": 2, "weight": 14 },
+    { "name": "Bone-carved charm", "kind": "trinket", "value": 6, "weight": 14 },
+    { "name": "Glass-bead necklace", "kind": "trinket", "value": 9, "weight": 12 },
+    { "name": "Tarnished silver ring", "kind": "trinket", "value": 15, "weight": 10 },
+    { "name": "Engraved brass compass", "kind": "trinket", "value": 22, "weight": 8 },
+    { "name": "Jade-inlaid hairpin", "kind": "trinket", "value": 38, "minTier": 2, "weight": 6 },
+    { "name": "Gold-threaded sash", "kind": "trinket", "value": 60, "minTier": 3, "weight": 4 },
+    { "name": "Gem-set signet ring", "kind": "trinket", "value": 90, "minTier": 4, "weight": 3 }
+  ]
+}
