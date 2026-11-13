@@ -83,13 +83,14 @@ const PACING: PacingContext = {
   stage: { id: "st_2", name: "Complication", title: "The ledger surfaces", goal: "Learn who in Hollowmere pays the cult and why Edda Marrow was taken.", purpose: "Raise the stakes and turn a rumor into a threat." },
   next: { id: "st_3", name: "Descent", title: "Into the sunken chapel", goal: "Reach the chapel before the next tide." },
   tension: 6, difficulty: "moderate", trendText: "fortune favors the bold, but the marsh is watching", openMilestones: 2,
+  act: { index: 1, count: 3, act: { title: "The Drowned Bell", goal: "Find out who rings the bell beneath the marsh." } },
 };
 
 const growth = (party: PartyMemberContext[]) => Object.fromEntries(party.map((p) => [p.id, 40]));
 
 function pack(o: {
   players: number; abilities: number; items: number; turns: number; facts: number; entities: number; quests: number; milestones: number;
-  summaries: number; cast: number; pacing: boolean; engineLines: string[];
+  summaries: number; notes: number; npcs: number; threads: number; cast: number; pacing: boolean; engineLines: string[];
 }): DmContextPack {
   const base = makeLanternPack([
     { characterId: "ch_brindle", characterName: "Brindle Ash", text: TURN_PLAYER[2]! },
@@ -98,7 +99,16 @@ function pack(o: {
   const party = Array.from({ length: o.players }, (_, i) => member(i, o.abilities, o.items));
   return {
     ...base,
-    summaries: Array.from({ length: o.summaries }, (_, i) => `Session part ${i + 1}: the party arrived in Hollowmere, questioned the innkeeper, found the marsh path flooded, and recovered a clue pointing to the Reed Court. Odalys Brand agreed to hide them for a night in exchange for a favor still unnamed.`),
+    storySoFar: o.summaries > 0 ? "The party arrived in Hollowmere, questioned the innkeeper, found the marsh path flooded, and recovered a clue pointing to the Reed Court. Odalys Brand agreed to hide them for a night in exchange for a favor still unnamed. A bell rang under the water at midnight." : "",
+    chapters: Array.from({ length: Math.min(4, Math.max(0, o.summaries - 1)) }, (_, i) => `Chapter ${i + 1}: the party crossed the causeway at low tide, bargained with the ferryman for passage, and found a ledger of payments signed with a heron sigil. Tamsin kept the ledger; Brindle suspects Odalys.`),
+    dmNotes: Array.from({ length: o.notes }, (_, i) => ["The ferryman is the cult's courier.", "Odalys owes the Reed Court a debt; she will lie once about the ledger.", "The bell rings when someone drowns in the chapel."][i % 3]!),
+    npcs: Array.from({ length: o.npcs }, (_, i) => ({
+      id: `npc_${i + 1}`, name: ["Odalys Brand", "Pell the Ferryman", "Edda Marrow", "Sister Wren"][i % 4]!, role: ["quest_giver", "merchant", "bystander", "villain"][i % 4]!,
+      disposition: ["friendly", "wary", "neutral", "hostile"][i % 4]!, alive: i % 7 !== 6, mapId: i % 2 === 0 ? "m_hollowmere" : "m_marsh", here: i % 2 === 0,
+      concept: "A marsh local with a secret tied to the drowned bell.", voice: "low, careful, answers questions with questions",
+      lines: ["Mind the humming after dark.", "The tide waits for no one."], notes: ["Promised the party a boat at dawn."],
+    })),
+    threads: Array.from({ length: o.threads }, (_, i) => ({ id: `th_${i + 1}`, text: ["Who lit the beacon on the drowned lighthouse?", "What does the heron sigil mean?", "Where was Edda Marrow taken?"][i % 3]! })),
     facts: facts(o.facts),
     scene: { ...base.scene, entities: entities(o.entities, party) },
     party,
@@ -117,11 +127,11 @@ function pack(o: {
 export const CONTEXT_PACKS: Record<"opening" | "typical" | "heavy", DmContextPack> = {
   opening: { ...makeLanternPack([{ characterId: "ch_brindle", characterName: "Brindle Ash", text: "I look around the square." }]), growthRemaining: { ch_brindle: 50, ch_tamsin: 50, ch_orrin: 50 } },
   typical: pack({
-    players: 4, abilities: 4, items: 6, turns: 8, facts: 12, entities: 6, quests: 3, milestones: 6, summaries: 1, cast: 0, pacing: true,
+    players: 4, abilities: 4, items: 6, turns: 8, facts: 12, entities: 6, quests: 3, milestones: 6, summaries: 1, notes: 3, npcs: 4, threads: 2, cast: 0, pacing: true,
     engineLines: ["[engine: Brindle rolled 14 + 3 against DC 12, success]", "[engine: Reed Cultist 01 takes 7 fire damage, hp 5/12]"],
   }),
   heavy: pack({
-    players: 6, abilities: 4, items: 6, turns: 12, facts: 30, entities: 25, quests: 3, milestones: 6, summaries: 6, cast: 10, pacing: true,
+    players: 6, abilities: 4, items: 6, turns: 12, facts: 30, entities: 25, quests: 3, milestones: 6, summaries: 6, notes: 8, npcs: 12, threads: 6, cast: 10, pacing: true,
     engineLines: ["[engine: Brindle rolled 14 + 3 against DC 12, success]", "[engine: Reed Cultist 01 takes 7 fire damage, hp 5/12]"],
   }),
 };

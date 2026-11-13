@@ -186,7 +186,7 @@ describe("buildDmContext", () => {
       patternName: "Quest", arcName: "Rise", stageIndex: 1, stageCount: 4, finished: false,
       stage: { id: "s2", name: "Journey", title: "Out", goal: "Go.", purpose: "Travel." },
       next: { id: "s3", name: "Arrival", title: "In", goal: "Arrive." },
-      tension: 3, difficulty: "easy", trendText: "better", openMilestones: 1,
+      tension: 3, difficulty: "easy", trendText: "better", openMilestones: 1, act: null,
     };
     pack.milestones = [
       { id: "m1", description: "done early", completed: true, stage: "s1" },
