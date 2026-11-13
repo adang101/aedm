@@ -7,6 +7,7 @@ import type { Transport, TransportFactory, TransportHandlers } from "./transport
 import { FIRST_SCENE, NARRATION_OPENING, blockedAt, buildScenes, sceneFromText, type MockScene } from "./mock-world";
 import { designSpriteOffline } from "@aedm/engine";
 import { PREMADE_SPECS } from "../state/sprite-builder";
+import { MockLoot, starterPack } from "./mock-loot";
 
 type Payload = Record<string, unknown>;
 type PlayerStatus = "online" | "away" | "offline" | "autopilot";
@@ -124,6 +125,24 @@ export class MockServer {
   private turnTick: ReturnType<typeof setInterval> | undefined;
   private voteId = 0;
   private turnN = 0;
+  private loot = new MockLoot({
+    map: () => this.map,
+    me: () => this.ents[ME_CHAR],
+    mine: () => this.party.find((c) => c.id === ME_CHAR),
+    party: () => this.party,
+    entities: () => this.ents,
+    emit: (type, payload, ack) => this.emit(type as ServerMessageType, payload, ack),
+    fail: (code, message, ack) => this.fail(code, message, ack),
+    engine: (text) => this.engine(text),
+    diff: (extra) => this.diff([], [], extra),
+    snapshot: () => this.sendSnapshot(),
+    roll: (label, modifier, dc) => {
+      const d = rnd(20);
+      const total = d + modifier;
+      this.emit("roll_result", { who: ME_CHAR, label, dice: [d], modifier, total, target: dc, outcome: d === 20 ? "crit" : d === 1 ? "fumble" : total >= dc ? "success" : "failure" });
+      return d !== 1 && (d === 20 || total >= dc);
+    },
+  });
 
   /** Pass to GameClient. */
   readonly factory: TransportFactory = (h) => this.connect(h);
@@ -223,6 +242,8 @@ export class MockServer {
       case "act": return this.onAct(String(p.verb), String(p.target_id), ack);
       case "basic_attack": return this.onBasicAttack(String(p.target_id), ack);
       case "use_ability": return this.onAbility(String(p.ability_id), p.target as string | { x: number; y: number }, ack);
+      case "container_action": return this.loot.containerAction(String(p.verb), String(p.container_id), p.item_id as string | undefined, ack);
+      case "inventory_action": return this.loot.inventoryAction(String(p.verb), String(p.item_id), p.to_character_id as string | undefined, ack);
       case "use_item": return this.fail("not_found", "You have no such item.", ack);
       case "end_turn": return this.onEndTurn(ack);
       case "say": return this.onSay(String(p.text), p.channel as "ic" | "ooc", ack);
@@ -564,12 +585,13 @@ export class MockServer {
     this.combat = null;
     const squad = this.settings.dev_solo ? [] : this.players.filter((p) => p.player_id !== ME && p.ready && p.character_id);
     const myChar = this.myChar!;
-    this.party.push(myChar);
+    this.party.push({ ...myChar, inventory: starterPack() });
+    this.loot.reset();
     this.addPc(myChar, ME, { x: 13, y: 10 });
     for (const pl of squad) {
       const f = Object.values(FAKES).find((x) => x.id === pl.player_id);
       if (!f) continue;
-      this.party.push(toView(f.char));
+      this.party.push({ ...toView(f.char), inventory: [] });
       this.addPc(toView(f.char), f.id, f.start);
     }
     for (const e of this.scene.entities) this.ents[e.id] = structuredClone(e);
@@ -588,6 +610,7 @@ export class MockServer {
   private sendSnapshot(): void {
     this.emit("state_snapshot", {
       seq: ++this.seq, mode: this.mode, map: this.map, entities: Object.values(this.ents), party: this.party,
+      containers: this.loot.summaries(),
       quests: [{ id: "q_lantern", title: "The Drowned Lantern", status: "active", notes: ["Odalys says three villagers sleepwalk toward the marsh."] },
         { id: "q_choir", title: "Who hired the choir?", status: "new", notes: [] }],
       ...(this.combat ? { combat: this.combatState() } : {}),
@@ -789,6 +812,7 @@ export class MockServer {
 
   private onAct(verb: string, target: string, ack: string): void {
     this.emit("presence", { player_id: ME, status: "online" }, ack);
+    if (this.loot.act(verb, target, ack)) return;
     const ent = this.ents[target];
     const obj = this.map.layers.flatMap((l) => (l.type === "objectgroup" ? l.objects : [])).find((o) => "id" in o && o.id === target);
     if (!ent && !obj) return this.fail("not_found", "There is nothing like that here.", ack);
@@ -802,12 +826,6 @@ export class MockServer {
     if (verb === "talk" && ent) {
       if (ent.kind === "enemy") return this.chat(ent.id, ent.name, "ic", "...hhhmmmmm...");
       return this.chat(ent.id, ent.name, "ic", ent.kind === "npc" ? "Mind the marsh road after dark, friends." : "Hm?");
-    }
-    if (verb === "interact" && obj && "kind" in obj && obj.kind === "chest") {
-      const d = rnd(20);
-      const total = d + 3;
-      this.emit("roll_result", { who: ME_CHAR, label: "Lockpicking: the plaza chest", dice: [d], modifier: 3, total, target: 13, outcome: d === 20 ? "crit" : d === 1 ? "fumble" : total >= 13 ? "success" : "failure" });
-      return;
     }
     this.engine(`You ${verb} ${ent?.name ?? "it"}. Nothing obvious happens.`);
   }

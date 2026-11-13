@@ -1,8 +1,11 @@
 import { spriteSwatch, type EntityView } from "@aedm/schemas";
 import { MapRenderer, type TapInfo } from "../render/renderer";
 import { myCharacter, myEntity, pendingLevelUp, type AppState } from "../state/store";
+import { targetsOnMap, targetTitle } from "../util/interact";
 import { h, replaceChildren } from "../util/dom";
 import { createHud, type Pending } from "./hud";
+import { createContainerPanel } from "./container";
+import { nearbyMenu, targetMenu } from "./interact-menu";
 import { createLevelUpModal } from "./levelup";
 import { createLog } from "./log";
 import { closeMenu, openMenu, type MenuItem } from "./menu";
@@ -23,7 +26,7 @@ export function mountGame(ctx: Ctx): Screen {
   const levelUpModal = createLevelUpModal(ctx);
 
   // ---------- canvas ----------
-  const canvas = h("canvas", { class: "map-canvas", tabindex: 0, "aria-label": "Game map" });
+  const canvas = h("canvas", { class: "map-canvas", tabindex: 0, "aria-label": "Game map. Press E to use things next to you." });
   const loading = h("div", { class: "loading" }, "Loading the world...");
   const zoomIn = h("button", { type: "button", class: "btn tiny", "aria-label": "Zoom in" }, "+");
   const zoomOut = h("button", { type: "button", class: "btn tiny", "aria-label": "Zoom out" }, "-");
@@ -100,13 +103,12 @@ export function mountGame(ctx: Ctx): Screen {
       openMenu(`${target.name}${mine ? " (you)" : ""}`, items, info.clientX, info.clientY);
       return;
     }
-    if (info.interactable) {
-      const it = info.interactable;
-      openMenu(it.kind, [
-        { label: "Examine", run: () => client.send("act", { verb: "examine", target_id: it.id }) },
-        { label: "Interact", run: () => client.send("act", { verb: "interact", target_id: it.id }) },
-        { label: "Move here", run: () => { client.send("move_intent", tile); renderer.flashTile(tile.x, tile.y); } },
-      ], info.clientX, info.clientY);
+    const here = targetsOnMap(s.map, s.containers, []).find((t) =>
+      (info.interactable ? t.type === "interactable" && t.id === info.interactable.id : t.type === "container" && t.id === info.containerId));
+    if (here) {
+      const items = targetMenu(ctx, here);
+      items.push({ label: "Move here", run: () => { client.send("move_intent", tile); renderer.flashTile(tile.x, tile.y); } });
+      openMenu(targetTitle(here, s.entities), items, info.clientX, info.clientY);
       return;
     }
     client.send("move_intent", tile);
@@ -119,6 +121,14 @@ export function mountGame(ctx: Ctx): Screen {
     if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
     if (ev.key === "Escape") { closeMenu(); if (pending) { pending = null; refresh(); } return; }
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+    if (ev.key.toLowerCase() === "e") {
+      ev.preventDefault();
+      const items = nearbyMenu(ctx);
+      if (items.length === 0) { ctx.toast("Nothing within reach.", "info"); return; }
+      const r = canvas.getBoundingClientRect();
+      openMenu("Nearby", items, r.left + r.width / 2 - 90, r.top + r.height / 2);
+      return;
+    }
     const dir = DIRS[ev.key.toLowerCase()];
     if (!dir) return;
     ev.preventDefault();
@@ -161,7 +171,8 @@ export function mountGame(ctx: Ctx): Screen {
 
   const vote = createVoteModal(ctx);
   const sheet = createSheetModal(ctx);
-  const el = h("main", { class: "screen game" }, mapWrap, panel, vote.el, levelUpModal.el, sheet.el);
+  const loot = createContainerPanel(ctx);
+  const el = h("main", { class: "screen game" }, mapWrap, panel, loot.el, vote.el, levelUpModal.el, sheet.el);
 
   // ---------- update ----------
   function refresh(): void { update(store.state); }
@@ -215,6 +226,7 @@ export function mountGame(ctx: Ctx): Screen {
     vote.update(s);
     levelUpModal.update(s);
     sheet.update(s);
+    loot.update(s);
     replaceChildren(chipRow, ...s.chips.map((c) => h("button", {
       type: "button", class: "chip", onClick: () => { client.send("say", { text: c, channel: "ic" }); },
     }, c)));
