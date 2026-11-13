@@ -1,0 +1,17 @@
+{
+  "name": "@aedm/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "tsx src/cli.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@aedm/schemas": "workspace:*",
+    "@aedm/engine": "workspace:*",
+    "@aedm/llm": "workspace:*",
+    "@aedm/server": "workspace:*"
+  },
+  "devDependencies": { "tsx": "^4.20.0" }
+}
