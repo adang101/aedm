@@ -218,7 +218,25 @@
   },
   "ai": {
     "rangedPattern": "\\b(ranged|from afar|from a distance|shoots?|hurls?|throws?|spits?|casts?|sings?|keeps? (its )?distance)\\b",
-    "healBelowPct": 50
+    "healBelowPct": 50,
+    "tactics": {
+      "focus_weakest": "\\b(weakest|wounded|injured|finish(es)? off|picks? off)\\b",
+      "target_healer": "\\b(healers?|support|casters?)\\b",
+      "protect_leader": "\\b(guards?|protects?|bodyguards?|defends? (its|the|their) (master|leader|boss|chief|commander))\\b",
+      "pack": "\\b(pack|swarm(s|ing)?|flanks?|flanking|gangs? up|surrounds?)\\b",
+      "fearless": "\\b(fearless|never (retreats?|flees?|surrenders?|yields?)|fights? to the death|mindless)\\b",
+      "cowardly": "\\b(cowardly|retreats?|flees?|skittish)\\b"
+    },
+    "leaderRoles": ["boss", "elite"],
+    "leaderGuardRadius": 2,
+    "morale": {
+      "breakBelowPct": { "minion": 50, "standard": 30, "elite": 20, "boss": 0 },
+      "cowardlyBonusPct": 20,
+      "checkDc": 10,
+      "leaderDownBreaksMinions": true,
+      "fleeDistance": 8,
+      "bloodiedPct": 50
+    }
   },
   "sprites": {
     "shapes": [

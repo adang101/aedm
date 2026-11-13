@@ -3,7 +3,7 @@ export type { GenerateOptions } from "./generator";
 export { validateMap, stripOrphanTiles, MAX_MAP_BYTES } from "./validate";
 export type { MapValidation } from "./validate";
 export {
-  isWalkable, hasLineOfSight, findPath, distance, findFreeTileNear, getSpawn, getObjects, serializeSize, inBounds,
+  isWalkable, hasLineOfSight, findPath, reachableTiles, distance, findFreeTileNear, getSpawn, getObjects, serializeSize, inBounds,
 } from "./nav";
 export type { Point } from "./nav";
 export { STARTER_BRIEFS } from "./briefs";

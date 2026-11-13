@@ -54,8 +54,25 @@ export interface Rules {
   powerBudget: { base: number; perLevel: number; perAbilityCapPct: number };
   maxAverageEffect: { base: number; perLevel: number };
   log: { maxEvents: number };
-  ai: { rangedPattern: string; healBelowPct: number };
+  ai: {
+    rangedPattern: string;
+    healBelowPct: number;
+    tactics: Record<Tactic, string>;
+    leaderRoles: EnemyRole[];
+    leaderGuardRadius: number;
+    morale: {
+      breakBelowPct: Record<EnemyRole, number>;
+      cowardlyBonusPct: number;
+      checkDc: number;
+      leaderDownBreaksMinions: boolean;
+      fleeDistance: number;
+      bloodiedPct: number;
+    };
+  };
 }
+
+/** Enemy tactics the engine recognises in an archetype's `behavior` text (`rules.ai.tactics` holds the patterns). */
+export type Tactic = "focus_weakest" | "target_healer" | "protect_leader" | "pack" | "fearless" | "cowardly";
 
 export interface LevelRow {
   level: number; proficiency: number; budget: number; perAbilityCap: number; maxAverage: number;
