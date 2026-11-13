@@ -14,7 +14,18 @@ export interface ForgeInput {
   level: number;
   allowedTags: readonly string[];
   caps: { maxAvg: number; maxRadius: number; maxDuration: number };
+  /** The story the ability must fit: the bible's digest in a game, the room's pitch in the lobby. */
+  campaign?: { title?: string; digest: string; tone?: string };
+  /** Abilities already in the party (at most 12 are shown), so the forge can avoid duplicating one. */
+  party?: { owner: string; name: string; summary: string }[];
+  /** `total` is the character's power budget; `target` is what this ability should stay within. */
+  budget?: { total: number; target: number };
+  /** Engine-rendered explanation of what makes an ability expensive. */
+  costGuide?: string;
 }
+
+const MAX_PARTY_ABILITIES = 12;
+const MAX_DIGEST = 600;
 
 export interface ForgeResult<T> {
   ability: T;
@@ -69,8 +80,32 @@ export function buildForgePrompt(input: ForgeInput): { system: string; user: str
   const user = [
     `<character_concept>\n${escapeUntrusted(input.concept, 400)}\n</character_concept>`,
     `<ability_text>\n${escapeUntrusted(input.abilityText, 800)}\n</ability_text>`,
+    ...contextSections(input),
   ].join("\n");
   return { system, user };
+}
+
+/** The optional tagged sections of the forge's user message. Player and model text is escaped. */
+function contextSections({ campaign, party, budget, costGuide }: ForgeInput): string[] {
+  const out: string[] = [];
+  if (campaign) {
+    const lines = [
+      campaign.title ? `Title: ${escapeUntrusted(campaign.title, 120)}` : "",
+      campaign.tone ? `Tone: ${escapeUntrusted(campaign.tone, 120)}` : "",
+      `Story: ${escapeUntrusted(campaign.digest, MAX_DIGEST)}`,
+    ].filter(Boolean);
+    out.push(`<campaign>\n${lines.join("\n")}\n</campaign>`);
+  }
+  if (party?.length) {
+    const lines = party.slice(0, MAX_PARTY_ABILITIES)
+      .map((a) => `- ${escapeUntrusted(a.owner, 60)}: "${escapeUntrusted(a.name, 60)}" (${escapeUntrusted(a.summary, 160)})`);
+    out.push(`<party_abilities>\n${lines.join("\n")}\n</party_abilities>`);
+  }
+  if (budget) {
+    out.push(`<budget>\nThe character's total power budget is ${budget.total}. This ability should cost at most ${budget.target}.\n</budget>`);
+  }
+  if (costGuide) out.push(`<cost_guide>\n${costGuide}\n</cost_guide>`);
+  return out;
 }
 
 export async function forgeAbility<T>(

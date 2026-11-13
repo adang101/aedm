@@ -2,7 +2,7 @@ import { addCharacter, cloneState, validatePixelSprite, validatePointBuy } from 
 import { MAX_CAST_ENTRIES, type CharacterCreate, type ClientMessage } from "@aedm/schemas";
 import { AccountHandlers } from "./accounts/handlers";
 import { WorkshopHandlers } from "./accounts/workshop-handlers";
-import { forgeCharacterAbilities, ForgeError } from "./forge";
+import { forgeCharacterAbilities, ForgeError, partyAbilities, pitchCampaign } from "./forge";
 import { GameSession, type Reply } from "./game";
 import { RateLimiter, type Conn } from "./net";
 import { newToken, Room, RoomRegistry, type Player } from "./rooms";
@@ -345,6 +345,10 @@ export class Handlers {
     room.broadcastLobby();
     try {
       const forged = await forgeCharacterAbilities(this.deps.provider, create, {
+        context: {
+          campaign: pitchCampaign(room.settings.campaign_pitch),
+          party: partyAbilities(Object.values(room.scratch.characters), player.characterId ?? undefined),
+        },
         sleep: (ms) => new Promise((r) => { this.deps.timers.setTimeout(() => r(), ms); }),
         retryBackoffMs: this.cfg.retryBackoffMs,
         onModelError: (err) => this.deps.logger.warn("[forge] model call failed:", err instanceof Error ? err.message : String(err)),

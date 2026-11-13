@@ -12,7 +12,7 @@ import {
   type DmTurnResult,
 } from "@aedm/llm";
 import type { Ability, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
-import { ForgeError, forgeOneAbility } from "./forge";
+import { bibleCampaign, ForgeError, forgeOneAbility, partyAbilities } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import type { Player, Room } from "./rooms";
 import { isSafeId, type SaveFile, SAVE_VERSION } from "./saves";
@@ -711,7 +711,11 @@ export class GameSession {
       const concept = `${name}, ${cur()!.title}. ${cur()!.description}${old ? ` Upgrading the ability "${old.name}": ${old.description}` : ""}`;
       let forged: { ability: Ability; notes: string[] };
       try {
-        forged = await forgeOneAbility(this.deps.provider, { concept, text: choice.text, level, maxCost }, {
+        forged = await forgeOneAbility(this.deps.provider, {
+          concept, text: choice.text, level, maxCost,
+          own: cur()!.abilities.filter((a) => a.id !== replacing),
+          context: { campaign: bibleCampaign(this.state.bible), party: partyAbilities(Object.values(this.state.characters), charId) },
+        }, {
           sleep: (ms) => this.sleep(ms), retryBackoffMs: this.cfg.retryBackoffMs,
           onModelError: (err) => this.deps.logger.warn("[level-up] model call failed:", err instanceof Error ? err.message : String(err)),
         });

@@ -4,6 +4,7 @@ export * from "./rng.ts";
 export * from "./dice.ts";
 export * from "./rules.ts";
 export * from "./cost.ts";
+export * from "./ability-text.ts";
 export * from "./threat.ts";
 export * from "./events.ts";
 export * from "./state.ts";

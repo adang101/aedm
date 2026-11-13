@@ -42,6 +42,7 @@ apps/web  ──WebSocket (contracts.md messages)──▶  apps/server
 - The Anthropic provider maps tiers to configurable model IDs (defaults: Haiku, Sonnet, Opus of the current family).
 - The fake provider returns scripted, schema-valid responses. Tests and offline play use it; no test calls a real model.
 - Prompts live in `packages/llm/prompts/*.md`.
+- Ability forge: the forge adapts a player's idea to the story and the engine rather than transcribing it. Besides the concept and ability text it sees the campaign (the story bible's title, digest and tone in a game; the room's pitch in the lobby), the other characters' abilities as one-line summaries plus the character's own earlier ones (so sets stay varied and teammates are not duplicated), the character's power budget with a per-ability target, and a short cost guide the engine renders from `costs.json`. It may rename and reflavor an ability but keeps the core effect, and always explains what it changed in `forge_notes`. At creation each ability is forged against `floor(remaining budget / abilities left)`; the engine clamp and the repair call shape it to fit, so abilities are no longer dropped for cost (dropping the last ones stays only as a safety net). Level-up forges against the budget that is left.
 
 ## Content model (maps and sprites)
 

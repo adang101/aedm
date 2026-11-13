@@ -65,6 +65,11 @@ describe("level-up flow", () => {
     if (r2.type !== "level_up_result") return;
     expect(r2.payload.ok, r2.payload.message).toBe(true);
     expect(r2.payload.ability?.id).toMatch(/^ab_/);
+    // the forge saw the story bible, the budget left, and its own and the party's abilities
+    const forgeUser = (h.provider as ReturnType<typeof scriptedProvider>).requests.filter((r) => r.purpose === "forge").at(-1)!.messages[0]!.content;
+    expect(forgeUser).toContain(`Title: ${stateOf(h).bible.title}`);
+    expect(forgeUser).toContain("This ability should cost at most");
+    expect(forgeUser).toContain('this character: "');
     const st2 = await t.a.wait("level_up_state", (p) => p.ability_picks === 1, { from: mark2 });
     expect(st2.payload.abilities).toHaveLength(4);
     expect(st2.payload.budget_used).toBeLessThanOrEqual(st2.payload.budget);
