@@ -61,6 +61,8 @@ export interface ServerConfig {
   devLog: boolean;
   /** Characters of the recent-turn window handed to the DM. */
   recentTurnLimit: number;
+  /** Resolve unambiguous mechanical intents (walks, empty input) with the engine and skip the DM call when a whole beat is mechanical. */
+  intentRouter: boolean;
 }
 
 export const DEFAULT_CONFIG: ServerConfig = {
@@ -77,6 +79,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   limits: { movePerSec: 10, sayIntervalMs: 2000, otherPerSec: 5, spriteDesign: { max: 6, windowMs: 60_000 } },
   devLog: false,
   recentTurnLimit: 12,
+  intentRouter: true,
 };
 
 /** Everything injected into rooms and games. */

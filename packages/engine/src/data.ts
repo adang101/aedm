@@ -10,6 +10,7 @@ import costsJson from "../data/costs.json" with { type: "json" };
 import enemiesJson from "../data/enemies.json" with { type: "json" };
 import plotsJson from "../data/plots.json" with { type: "json" };
 import pixelJson from "../data/pixel.json" with { type: "json" };
+import narrationJson from "../data/narration.json" with { type: "json" };
 
 export interface ArmorInfo { name: string; dexCap: number | null; speedPenalty: number }
 
@@ -135,3 +136,15 @@ export const PLOTS = plotsJson as unknown as PlotsData;
 /** Limits for player-painted sprites (see pixel.ts). */
 export interface PixelRules { maxColors: number; minOpaque: number; margin: number; feetY: number; feetTolerance: number; maxRecipeBytes: number }
 export const PIXEL_RULES: PixelRules = pixelJson;
+
+/** Phrasings for the deterministic combat narrator (see narrate.ts). */
+export interface NarrationData {
+  version: number;
+  /** Most sentences one narration may hold. */
+  maxSentences: number;
+  /** A round with more engine lines than this is collapsed into one digest line for the DM. */
+  digestAtLines: number;
+  conditions: Record<Condition, string>;
+  templates: Record<string, string[]>;
+}
+export const NARRATION = narrationJson as unknown as NarrationData;
