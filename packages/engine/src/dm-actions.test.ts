@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fixtures, type DmAction, type MapBrief } from "@aedm/schemas";
+import { RULES } from "./data.ts";
 import { applyDmActions, computePartyLevel, type DmContext } from "./dm-actions.ts";
 import { describeEvent } from "./events.ts";
 import { createRng } from "./rng.ts";
@@ -80,6 +81,92 @@ describe("npcs", () => {
     ]);
     expect(r.rejected).toHaveLength(3);
     expect(r.rejected[0]!.reason).toMatch(/dead/);
+  });
+});
+
+describe("npc dossier", () => {
+  const say = (id: string, text: string): DmAction => ({ type: "npc_say", entity_id: id, text });
+  const note = (id: string, text: string): DmAction => ({ type: "npc_note", entity_id: id, note: text });
+  const created = (voice?: string) => {
+    const { state } = makeWorld();
+    const r = apply({ ...state, turn: 4 }, [{ ...npc("Odalys Brand"), ...(voice ? { voice } : {}) } as DmAction]);
+    return { state: r.state, id: Object.keys(r.state.npcs)[0]! };
+  };
+
+  it("create_npc stores the voice and the beat it was seen", () => {
+    const { state, id } = created("clipped, nautical slang");
+    expect(state.npcs[id]).toMatchObject({ voice: "clipped, nautical slang", last_seen_beat: 4 });
+    expect(created().state.npcs[Object.keys(created().state.npcs)[0]!]).not.toHaveProperty("voice");
+  });
+
+  it("npc_say records each line on the record and keeps only the last few", () => {
+    const { state, id } = created();
+    const lines = Array.from({ length: RULES.npc.linesKept + 2 }, (_, i) => `Line ${i}.`);
+    const r = apply({ ...state, turn: 9 }, lines.map((l) => say(id, l)));
+    expect(r.rejected).toHaveLength(0);
+    expect(r.state.npcs[id]!.lines).toEqual(lines.slice(-RULES.npc.linesKept));
+    expect(r.state.npcs[id]!.last_seen_beat).toBe(9);
+    const long = apply(state, [say(id, "word ".repeat(40).trim())]);
+    expect(long.state.npcs[id]!.lines![0]!.length).toBeLessThanOrEqual(120);
+  });
+
+  it("npc_note appends notes, drops the oldest past the cap and stamps the beat", () => {
+    const { state, id } = created();
+    const notes = Array.from({ length: RULES.npc.notesKept + 1 }, (_, i) => `Note ${i}`);
+    const r = apply({ ...state, turn: 7 }, notes.map((n) => note(id, n)));
+    expect(r.rejected).toHaveLength(0);
+    expect(r.state.npcs[id]!.notes).toEqual(notes.slice(-RULES.npc.notesKept));
+    expect(r.state.npcs[id]!.last_seen_beat).toBe(7);
+  });
+
+  it("npc_note rejects unknown ids, enemies and dead npcs", () => {
+    const { state, id } = created();
+    const dead = apply(state, [{ type: "set_fact", subject: "Odalys Brand", predicate: "is_alive", object: "false" }]).state;
+    const r = apply(dead, [note("npc_999", "x"), note("ch_orrin", "x"), note(id, "x")]);
+    expect(r.applied).toHaveLength(0);
+    expect(r.rejected.map((x) => x.reason)).toEqual([expect.stringMatching(/unknown/), expect.stringMatching(/unknown/), expect.stringMatching(/dead/)]);
+    const byFact = apply({ ...state, facts: [...state.facts.filter((f) => !(f.subject === "Odalys Brand" && f.predicate === "is_alive")), { subject: "Odalys Brand", predicate: "is_alive", object: "false" }] }, [note(id, "x")]);
+    expect(byFact.rejected[0]!.reason).toMatch(/dead/);
+  });
+});
+
+describe("story threads", () => {
+  const open = (text: string): DmAction => ({ type: "open_thread", text });
+  const close = (thread_id: string, resolution = ""): DmAction => ({ type: "close_thread", thread_id, resolution });
+
+  it("open_thread assigns ids and refuses past the open cap; closing frees a slot", () => {
+    const { state } = makeWorld();
+    const many = Array.from({ length: RULES.npc.maxOpenThreads + 1 }, (_, i) => open(`Mystery ${i}`));
+    const r = apply(state, many);
+    expect(r.state.threads).toHaveLength(RULES.npc.maxOpenThreads);
+    expect(new Set(r.state.threads.map((t) => t.id)).size).toBe(RULES.npc.maxOpenThreads);
+    expect(r.state.threads.every((t) => t.status === "open")).toBe(true);
+    expect(r.rejected).toHaveLength(1);
+    const first = r.state.threads[0]!;
+    const freed = apply(r.state, [close(first.id, "Solved."), open("A new one")]);
+    expect(freed.rejected).toHaveLength(0);
+    expect(freed.state.threads.find((t) => t.id === first.id)).toEqual({ ...first, status: "closed", resolution: "Solved." });
+  });
+
+  it("close_thread rejects unknown and already closed threads and omits an empty resolution", () => {
+    const { state } = makeWorld();
+    const opened = apply(state, [open("Who lit the beacon?")]).state;
+    const id = opened.threads[0]!.id;
+    const r = apply(opened, [close("th_missing"), close(id), close(id, "again")]);
+    expect(r.applied).toHaveLength(1);
+    expect(r.rejected.map((x) => x.reason)).toEqual([expect.stringMatching(/unknown/), expect.stringMatching(/already closed/)]);
+    expect(r.state.threads[0]).toEqual({ id, text: "Who lit the beacon?", status: "closed" });
+  });
+
+  it("keeps the thread list bounded by dropping the oldest closed threads", () => {
+    const { state } = makeWorld();
+    let s = state;
+    for (let i = 0; i < RULES.npc.maxThreads + 5; i++) {
+      s = apply(s, [open(`T${i}`)]).state;
+      s = apply(s, [close(s.threads[s.threads.length - 1]!.id)]).state;
+    }
+    expect(s.threads).toHaveLength(RULES.npc.maxThreads);
+    expect(s.threads[0]!.text).toBe("T5");
   });
 });
 

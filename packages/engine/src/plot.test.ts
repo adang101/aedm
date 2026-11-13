@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PLOT_ARCS, PLOT_PATTERNS, StoryBibleSchema, type PlotArc, type PlotPattern, type StoryBible } from "@aedm/schemas";
 import { PLOTS } from "./data.ts";
-import { buildPlot, currentStage, pacingBlock, pickPlot, plotOutline, validateBiblePlot } from "./plot.ts";
+import { buildPlot, currentAct, currentStage, pacingBlock, pickPlot, plotOutline, validateBiblePlot } from "./plot.ts";
 import { BIBLE } from "./testkit.ts";
 
 const plotBible = (pattern: PlotPattern = PLOT_PATTERNS[0], arc: PlotArc = PLOT_ARCS[0], done = 0): StoryBible => {
@@ -119,5 +119,33 @@ describe("currentStage and pacingBlock", () => {
     expect(p.finished).toBe(true);
     expect(p.stage.id).toBe("downfall");
     expect(p.next).toBeNull();
+  });
+});
+
+describe("currentAct", () => {
+  const acts = (n: number) => Array.from({ length: n }, (_, i) => ({ title: `Act ${i + 1}`, goal: `Goal ${i + 1}` }));
+  const actBible = (n: number, done: number) => ({ ...plotBible(PLOT_PATTERNS[0], PLOT_ARCS[0], done), acts: acts(n) });
+
+  it("maps stages proportionally onto acts", () => {
+    expect([0, 2, 4, 6, 8].map((done) => currentAct(actBible(3, done))!.index)).toEqual([0, 0, 1, 1, 2]);
+    expect(currentAct(actBible(3, 0))).toMatchObject({ count: 3, act: { title: "Act 1", goal: "Goal 1" } });
+  });
+
+  it("clamps when there are more acts than stages and shows the last act once finished", () => {
+    expect(currentAct(actBible(10, 8))!.index).toBe(8);
+    expect(currentAct(actBible(10, 10))!.index).toBe(9);
+    expect(currentAct(actBible(3, 10))!.index).toBe(2);
+  });
+
+  it("without a plot follows milestone progress; null without acts", () => {
+    const noPlot = (done: number) => ({ ...BIBLE, acts: acts(2), milestones: [1, 2, 3, 4].map((i) => ({ id: `m${i}`, description: "x", completed: i <= done })) });
+    expect([0, 1, 2, 3, 4].map((d) => currentAct(noPlot(d))!.index)).toEqual([0, 0, 1, 1, 1]);
+    expect(currentAct(plotBible())).toBeNull();
+    expect(currentAct({ ...BIBLE, acts: acts(2), milestones: [] })!.index).toBe(0);
+  });
+
+  it("is part of the pacing block", () => {
+    expect(pacingBlock(actBible(3, 4))!.act).toMatchObject({ index: 1, act: { title: "Act 2" } });
+    expect(pacingBlock(plotBible())!.act).toBeNull();
   });
 });

@@ -89,5 +89,22 @@ export const NpcRecordSchema = z.strictObject({
   appearance: AppearanceSchema.optional(),
   disposition: DispositionSchema.optional(),
   alive: z.boolean().default(true),
+  /** Speech style, for example "clipped, nautical slang, never says no outright". */
+  voice: text(80).optional(),
+  /** The last few things the NPC said (the engine keeps `npc.linesKept`). */
+  lines: z.array(text(120)).max(20).optional(),
+  /** Short DM notes: promises, grudges, secrets known (the engine keeps `npc.notesKept`). */
+  notes: z.array(text(120)).max(20).optional(),
+  /** Beat counter (`GameState.turn`) when the NPC last appeared, spoke or got a note. */
+  last_seen_beat: z.number().int().min(0).optional(),
 });
 export type NpcRecord = z.infer<typeof NpcRecordSchema>;
+
+/** An unresolved clue, mystery, promise, debt or looming danger the DM wants to pay off later. */
+export const StoryThreadSchema = z.strictObject({
+  id: EntityIdSchema,
+  text: text(160),
+  status: z.enum(["open", "closed"]),
+  resolution: text(120).optional(),
+});
+export type StoryThread = z.infer<typeof StoryThreadSchema>;
