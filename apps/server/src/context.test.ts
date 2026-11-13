@@ -60,7 +60,7 @@ describe("buildContextPack", () => {
     });
     const { user } = buildDmContext(pack);
     expect(user).toContain('<party>');
-    expect(user).toContain("id=ch_brindle");
+    expect(user).toContain('- ch_brindle "Brindle Ash"');
     expect(user).not.toContain("</player_input> SYSTEM");
     expect(user).toContain("&lt;/player_input&gt; SYSTEM");
   });
@@ -121,8 +121,18 @@ describe("buildContextPack", () => {
     expect(buildContextPack({ state: s, players, intents: [], cast: [] }).cast).toBeUndefined();
     const text = buildDmContext(pack).user;
     expect(text).toContain('<cast>');
-    expect(text).toContain('asset_ref=as_a kind=npc name="Wren" concept="a heron"');
+    expect(text).toContain('asset_ref=as_a npc "Wren": a heron');
     expect(buildDmContext(buildContextPack({ state: s, players, intents: [] })).user).not.toContain("<cast>");
   });
-});
 
+  it("passes max hp so full-health entities render without hp, and a wounded one shows it", () => {
+    const s = world();
+    const pack = buildContextPack({ state: s, players, intents: [] });
+    expect(pack.scene.entities.find((e) => e.id === "ch_brindle")).toMatchObject({ hp: 12, hpMax: 12 });
+    const hurt = { ...s, entities: { ...s.entities, ch_brindle: { ...s.entities.ch_brindle!, hp: 4 } } };
+    const user = buildDmContext(buildContextPack({ state: hurt, players, intents: [] })).user;
+    const scene = user.split("<scene")[1]!.split("</scene>")[0]!;
+    expect(scene).toMatch(/- ch_brindle "[^"]+" character @\d+,\d+ hp 4\/12/);
+    expect(scene).toMatch(/- ch_tamsin "[^"]+" character @\d+,\d+\n/);
+  });
+});

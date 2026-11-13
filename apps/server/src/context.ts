@@ -63,6 +63,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
         x: e.x,
         y: e.y,
         hp: e.hp,
+        hpMax: e.hpMax,
         ...(e.disposition ? { disposition: e.disposition } : {}),
       });
     }
