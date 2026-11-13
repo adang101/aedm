@@ -45,7 +45,8 @@ function forgeInput(
   return {
     concept, abilityText, level, allowedTags: CHECK_TAGS,
     caps: { maxAvg: caps.maxAverage, maxRadius: caps.maxRadius, maxDuration: caps.maxConditionTurns },
-    budget, costGuide: abilityCostGuide(),
+    // the engine also caps each ability, so the promised target never exceeds what it will accept
+    budget: { total: budget.total, target: Math.min(budget.target, caps.perAbilityCap) }, costGuide: abilityCostGuide(),
     ...(ctx.campaign ? { campaign: ctx.campaign } : {}),
     party: [...own.map((a) => ({ owner: OWN_LABEL, name: a.name, summary: abilitySummary(a) })), ...(ctx.party ?? [])],
   };

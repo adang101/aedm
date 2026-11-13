@@ -58,6 +58,13 @@ describe("forge budget targeting and context", () => {
     expect(userOf(p, 1)).toContain(`this character: "Reality Chorus"`);
   });
 
+  it("never promises more than the engine's per-ability cap", async () => {
+    const p = recording();
+    const single = { ...create, ability_texts: ["one"] } as typeof create;
+    await forgeCharacterAbilities(p, single, opts);
+    expect(userOf(p, 0)).toContain(`at most ${levelCaps(1).perAbilityCap}.`);
+  });
+
   it("phrases the engine's adjustments as sentences for the player", async () => {
     const out = await forgeCharacterAbilities(recording(), create, opts);
     expect(out.notices[0]).toMatch(/^Forged "Reality Chorus" \(cost \d+ of 30\)\. .*\.$/);
