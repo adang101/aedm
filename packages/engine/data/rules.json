@@ -281,6 +281,9 @@
     "linesKept": 3,
     "notesKept": 5,
     "dossierMax": 12,
+    "allyStatPct": 75,
+    "combatSafeActions": ["npc_say", "apply_condition", "request_check", "end_combat", "set_fact", "npc_note", "open_thread", "close_thread", "suggest_actions", "update_quest"],
+    "maxCombatConditions": 1,
     "maxOpenThreads": 12,
     "maxThreads": 100
   }

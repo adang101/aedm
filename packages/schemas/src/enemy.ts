@@ -3,16 +3,7 @@ import { AbilityDraftSchema, AbilitySchema } from "./ability";
 import { ConditionSchema, DamageTypeSchema, EnemyRoleSchema } from "./enums";
 import { SpriteRecipeSchema } from "./character";
 import { AppearanceSchema } from "./sprite";
-import { DiceSchema, EnemyIdSchema, shortWord, text } from "./common";
-
-export const EnemyStatsSchema = z.strictObject({
-  hp: z.number().int().min(1).max(500),
-  defense: z.number().int().min(5).max(30),
-  attack_bonus: z.number().int().min(-2).max(15),
-  speed: z.number().int().min(1).max(12),
-  damage_dice: DiceSchema,
-});
-export type EnemyStats = z.infer<typeof EnemyStatsSchema>;
+import { EnemyIdSchema, EnemyStatsSchema, shortWord, text } from "./common";
 
 const weakness = z.union([DamageTypeSchema, ConditionSchema]).nullable();
 const resistance = DamageTypeSchema.nullable();

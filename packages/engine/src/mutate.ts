@@ -1,5 +1,5 @@
 /** Low-level state mutations shared by combat, abilities and DM actions. All take a `Mut` context. */
-import type { Ability, Advantage, Condition, DamageType, Enemy, Enemy as EnemyT } from "@aedm/schemas";
+import type { Ability, Advantage, Condition, DamageType, Enemy, Enemy as EnemyT, EnemyStats } from "@aedm/schemas";
 import { CONDITION_META, RULES, type Tactic } from "./data.ts";
 import { combineAdvantage, rollDamage } from "./dice.ts";
 import { emit, sideOf, tileKey, type ConditionInstance, type Entity, type Mut, type TerrainTile, type GameState } from "./state.ts";
@@ -12,6 +12,11 @@ export function getEntity(s: GameState, id: string): Entity | undefined {
 
 export function archetypeOf(s: GameState, e: Entity): EnemyT | undefined {
   return e.kind === "enemy" ? s.archetypes[e.refId] : undefined;
+}
+
+/** Combat stat block of a non-player creature: its archetype's, or an allied NPC's own. */
+export function statsOf(s: GameState, e: Entity): EnemyStats | undefined {
+  return archetypeOf(s, e)?.stats ?? (e.kind === "npc" ? s.npcs[e.refId]?.stats : undefined);
 }
 
 export function abilitiesOf(s: GameState, e: Entity): Ability[] {
@@ -44,8 +49,8 @@ export function defenseOf(s: GameState, e: Entity): number {
     const c = s.characters[e.refId];
     if (c) return defenseCalc(c.scores, c.armor_bonus, e.conditions);
   }
-  const a = archetypeOf(s, e);
-  let d = a ? a.stats.defense : RULES.defense.base;
+  const st = statsOf(s, e);
+  let d = st ? st.defense : RULES.defense.base;
   if (hasCondition(e, "slowed")) d += CONDITION_META.slowed.defenseDelta ?? 0;
   if (hasCondition(e, "hasted")) d += CONDITION_META.hasted.defenseDelta ?? 0;
   return d;
@@ -56,8 +61,8 @@ export function speedOf(s: GameState, e: Entity): number {
     const c = s.characters[e.refId];
     return speedCalc({ conditions: e.conditions, armorBonus: c?.armor_bonus ?? 0 });
   }
-  const a = archetypeOf(s, e);
-  return speedCalc({ conditions: e.conditions, baseSpeed: a ? a.stats.speed : RULES.speed.base });
+  const st = statsOf(s, e);
+  return speedCalc({ conditions: e.conditions, baseSpeed: st ? st.speed : RULES.speed.base });
 }
 
 /** Ability modifier used for saves and checks. Non-pc creatures use a flat modifier derived from attack bonus. */
@@ -66,8 +71,8 @@ export function saveModifier(s: GameState, e: Entity, ability: string): number {
     const c = s.characters[e.refId];
     if (c) return abilityModifier(c.scores[ability as keyof typeof c.scores]);
   }
-  const a = archetypeOf(s, e);
-  return a ? Math.floor((a.stats.attack_bonus * RULES.enemySave.num) / RULES.enemySave.den) : 0;
+  const st = statsOf(s, e);
+  return st ? Math.floor((st.attack_bonus * RULES.enemySave.num) / RULES.enemySave.den) : 0;
 }
 
 export function dexScore(s: GameState, e: Entity): number {
@@ -292,7 +297,7 @@ export function attackModifiers(s: GameState, attacker: Entity, target: Entity, 
 
 export function weaponDamageDice(s: GameState, e: Entity): string {
   if (e.kind === "pc") return weaponDice(s.characters[e.refId]?.weapon_tier ?? 1);
-  return archetypeOf(s, e)?.stats.damage_dice ?? "1d4";
+  return statsOf(s, e)?.damage_dice ?? "1d4";
 }
 
 // ---------- terrain triggers ----------
