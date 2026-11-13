@@ -1,9 +1,9 @@
 import {
   applyDmActions, clampEnemy, enemyRangesForLevel, registerArchetype, rngFromState, type DmContext, type GameState,
 } from "@aedm/engine";
-import { buildEnemy, runDmTurn, type DmTurnResult, type ModelProvider } from "@aedm/llm";
+import { buildEnemy, LlmError, runDmTurn, type DmTurnResult, type ModelProvider } from "@aedm/llm";
 import { fixtures, type CharacterCreate, type DmAction } from "@aedm/schemas";
-import { forgeCharacterAbilities } from "@aedm/server/src/forge";
+import { ForgeError, forgeCharacterAbilities } from "@aedm/server/src/forge";
 import type { CheckResult, DmOutcome, DmScenario, DmSetup, ForgeScenario, Scenario } from "./types";
 
 export const DEFAULT_RUNS = 5;
@@ -70,20 +70,41 @@ function createFor(who: ForgeScenario["who"], texts: string[]): CharacterCreate 
   return { v: 1, ...who, key_ability: "int", scores: { ...fixtures.BRINDLE.scores }, trait_tags: ["explosives", "crafting"], ability_texts: texts };
 }
 
-async function playForge(provider: ModelProvider, s: ForgeScenario): Promise<CheckResult> {
-  const outcome = await forgeCharacterAbilities(provider, createFor(s.who, s.texts), {
-    ...(s.context ? { context: s.context } : {}),
-    sleep, retryBackoffMs: 1000,
-  });
-  return s.check(outcome);
+/** The provider was unavailable (rate limit, network, server error): says nothing about the prompts. */
+class ProviderOutage extends Error {}
+
+/** True for errors that come from the provider being unavailable, not from what the model wrote. */
+export function isOutage(err: unknown): boolean {
+  return err instanceof LlmError && (err.kind === "rate_limit" || err.kind === "network" || (err.kind === "api" && (err.status ?? 0) >= 500));
 }
 
-/** One run. Anything the model call or the pipeline throws is a failed run, not a crash. */
-export async function runOnce(provider: ModelProvider, s: Scenario): Promise<CheckResult> {
+async function playForge(provider: ModelProvider, s: ForgeScenario): Promise<CheckResult> {
+  let lastModelError: unknown;
+  try {
+    const outcome = await forgeCharacterAbilities(provider, createFor(s.who, s.texts), {
+      ...(s.context ? { context: s.context } : {}),
+      sleep, retryBackoffMs: 1000,
+      onModelError: (err) => { lastModelError = err; },
+    });
+    return s.check(outcome);
+  } catch (err) {
+    // the forge wraps model errors in a player-facing ForgeError; the model error says whether it was an outage
+    if (err instanceof ForgeError && isOutage(lastModelError)) throw new ProviderOutage((lastModelError as Error).message);
+    throw err;
+  }
+}
+
+/** One run's outcome: a checked result, or a provider outage (no data). */
+export type RunOutcome = CheckResult | { outage: string };
+
+/** One run. A provider outage is reported as such; anything else thrown is a failed run, not a crash. */
+export async function runOnce(provider: ModelProvider, s: Scenario): Promise<RunOutcome> {
   try {
     return s.kind === "dm" ? await playDm(provider, s) : await playForge(provider, s);
   } catch (err) {
-    return { pass: false, reasons: [`threw: ${err instanceof Error ? err.message : String(err)}`] };
+    const message = err instanceof Error ? err.message : String(err);
+    if (err instanceof ProviderOutage || isOutage(err)) return { outage: message };
+    return { pass: false, reasons: [`threw: ${message}`] };
   }
 }
 
@@ -96,6 +117,8 @@ export interface ScenarioResult {
   runs: number;
   passes: number;
   failures: { run: number; reasons: string[] }[];
+  /** Runs lost to provider outages (after retries) or skipped once the provider was given up on. They do not count against the bar. */
+  outages: number;
   notes: string[];
 }
 
@@ -104,28 +127,48 @@ export interface RunOptions {
   runs: number;
   /** Pause between model runs, to respect rate limits. */
   delayMs: number;
+  /** Waits before retrying a run lost to a provider outage; one retry per entry. Default 15 s, then 45 s. */
+  outageBackoffMs?: readonly number[];
+  /** Consecutive outage runs (after retries) before the provider is given up on and the remaining runs are skipped. Default 3. */
+  maxConsecutiveOutages?: number;
   onResult?: (r: ScenarioResult) => void;
 }
 
-/** Runs every scenario `runs` times, one run at a time. */
+/** Runs every scenario `runs` times, one run at a time. Outages are retried with backoff and never count as failures. */
 export async function runScenarios(scenarios: readonly Scenario[], opts: RunOptions): Promise<ScenarioResult[]> {
+  const backoff = opts.outageBackoffMs ?? [15_000, 45_000];
+  const maxOutages = opts.maxConsecutiveOutages ?? 3;
   const results: ScenarioResult[] = [];
   let first = true;
+  let outageStreak = 0;
   for (const s of scenarios) {
     const failures: ScenarioResult["failures"] = [];
     const notes = new Set<string>();
     let passes = 0;
+    let outages = 0;
     for (let run = 1; run <= opts.runs; run++) {
+      if (outageStreak >= maxOutages) { outages++; continue; }
       if (!first) await sleep(opts.delayMs);
       first = false;
-      const r = await runOnce(opts.provider, s);
+      let r = await runOnce(opts.provider, s);
+      for (let i = 0; "outage" in r && i < backoff.length; i++) {
+        await sleep(backoff[i] as number);
+        r = await runOnce(opts.provider, s);
+      }
+      if ("outage" in r) {
+        outages++;
+        outageStreak++;
+        notes.add(`provider unavailable: ${r.outage}`);
+        continue;
+      }
+      outageStreak = 0;
       if (r.pass) passes++;
       else failures.push({ run, reasons: r.reasons });
       for (const n of r.notes ?? []) notes.add(n);
     }
     const result: ScenarioResult = {
       id: s.id, kind: s.kind, category: s.category, description: s.description, threshold: s.threshold,
-      runs: opts.runs, passes, failures, notes: [...notes],
+      runs: opts.runs, passes, failures, outages, notes: [...notes],
     };
     results.push(result);
     opts.onResult?.(result);
@@ -133,24 +176,36 @@ export async function runScenarios(scenarios: readonly Scenario[], opts: RunOpti
   return results;
 }
 
-export const meetsThreshold = (r: ScenarioResult): boolean => r.passes / r.runs >= r.threshold - 1e-9;
+/** Runs that reached a verdict. */
+const judged = (r: ScenarioResult): number => r.runs - r.outages;
 
-export const failedScenarios = (results: readonly ScenarioResult[]): ScenarioResult[] => results.filter((r) => !meetsThreshold(r));
+/** No run reached a verdict: the provider was unavailable throughout. */
+export const noData = (r: ScenarioResult): boolean => judged(r) === 0;
+
+export const meetsThreshold = (r: ScenarioResult): boolean => !noData(r) && r.passes / judged(r) >= r.threshold - 1e-9;
+
+/** Scenarios below their bar on the runs that reached a verdict. Scenarios with no data are not failures. */
+export const failedScenarios = (results: readonly ScenarioResult[]): ScenarioResult[] => results.filter((r) => !noData(r) && !meetsThreshold(r));
 
 const pct = (n: number) => `${Math.round(n * 100)}%`;
 
 /** One table row: pass count, whether the bar was met, and the first failure's reasons. */
 export function formatRow(r: ScenarioResult): string {
   const why = r.failures[0] ? ` | run ${r.failures[0].run}: ${r.failures[0].reasons.join("; ")}` : "";
-  return `${meetsThreshold(r) ? "ok  " : "FAIL"} ${r.id.padEnd(4)} ${`${r.passes}/${r.runs}`.padEnd(5)} (bar ${pct(r.threshold)}) ${r.description}${why}`;
+  const status = noData(r) ? "N/A " : meetsThreshold(r) ? "ok  " : "FAIL";
+  const lost = r.outages ? ` [${r.outages} lost to provider outages]` : "";
+  return `${status} ${r.id.padEnd(4)} ${`${r.passes}/${judged(r)}`.padEnd(5)} (bar ${pct(r.threshold)}) ${r.description}${lost}${why}`;
 }
 
 export function formatSummary(results: readonly ScenarioResult[]): string {
   const bad = failedScenarios(results);
-  const total = results.reduce((n, r) => n + r.runs, 0);
+  const empty = results.filter(noData);
+  const total = results.reduce((n, r) => n + judged(r), 0);
   const passed = results.reduce((n, r) => n + r.passes, 0);
+  const lost = results.reduce((n, r) => n + r.outages, 0);
   return [
-    `${results.length - bad.length} of ${results.length} scenarios met their bar; ${passed} of ${total} runs passed.`,
+    `${results.length - bad.length - empty.length} of ${results.length} scenarios met their bar; ${passed} of ${total} judged runs passed.`,
     ...(bad.length ? [`Below the bar: ${bad.map((r) => r.id).join(", ")}`] : []),
+    ...(lost ? [`${lost} run(s) lost to provider outages${empty.length ? `; no data for ${empty.map((r) => r.id).join(", ")}` : ""}.`] : []),
   ].join("\n");
 }

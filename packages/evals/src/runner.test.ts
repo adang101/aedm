@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createFakeProvider } from "@aedm/llm";
+import { createFakeProvider, LlmError } from "@aedm/llm";
 import { parseCli, selectScenarios } from "./cli";
 import { DM_SCENARIOS } from "./dm-scenarios";
 import { FORGE_SCENARIOS } from "./forge-scenarios";
-import { failedScenarios, formatRow, formatSummary, runScenarios } from "./runner";
+import { failedScenarios, formatRow, formatSummary, noData, runScenarios } from "./runner";
 
 const FILLER = "Rain drums on the roof while the lamps gutter and the room waits for what comes next. ".repeat(4);
 const dmReply = (narration: string, actions: unknown[] = []) => JSON.stringify({ v: 1, narration: `${narration} ${FILLER}`, actions, importance: 2, high_stakes: false });
@@ -34,6 +34,30 @@ describe("runner (fake provider, no network)", () => {
     const provider = createFakeProvider(() => new Error("boom"));
     const results = await runScenarios(only("E01"), { provider, runs: 1, delayMs: 0 });
     expect(results[0]?.failures[0]?.reasons[0]).toMatch(/threw: boom/);
+  });
+
+  it("retries a provider outage and judges the run once the provider answers", async () => {
+    let calls = 0;
+    const provider = createFakeProvider(() => (++calls === 1 ? new LlmError("Model provider rate limit reached", "rate_limit", true, { status: 429 }) : dmReply("The innkeeper shrugs.")));
+    const results = await runScenarios(only("E01"), { provider, runs: 1, delayMs: 0, outageBackoffMs: [0] });
+    expect(results[0]).toMatchObject({ passes: 1, outages: 0 });
+  });
+
+  it("does not count outages against the bar, and gives up on a dead provider", async () => {
+    const provider = createFakeProvider(() => new LlmError("high demand", "api", true, { status: 503 }));
+    const results = await runScenarios(only("E01", "E02", "E03", "E05"), { provider, runs: 2, delayMs: 0, outageBackoffMs: [0], maxConsecutiveOutages: 3 });
+    expect(results.every(noData)).toBe(true);
+    expect(failedScenarios(results)).toEqual([]);
+    // two attempts per run until three runs in a row were lost, then the rest is skipped without calls
+    expect(provider.requests.length).toBe(6);
+    expect(formatRow(results[0]!)).toMatch(/^N\/A  E01.*lost to provider outages/);
+    expect(formatSummary(results)).toMatch(/no data for E01, E02, E03, E05/);
+  });
+
+  it("treats a forge that failed on an outage as no data, not a failure", async () => {
+    const provider = createFakeProvider(() => new LlmError("Model provider rate limit reached", "rate_limit", true, { status: 429 }));
+    const results = await runScenarios(FORGE_SCENARIOS.filter((s) => s.id === "F04"), { provider, runs: 1, delayMs: 0, outageBackoffMs: [] });
+    expect(results[0]).toMatchObject({ passes: 0, outages: 1, failures: [] });
   });
 
   it("runs a forge scenario through the server's forge", async () => {

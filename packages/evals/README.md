@@ -8,6 +8,7 @@ pnpm eval -- --only E06,E21 --runs 3 --suite dm|forge|all --delay-ms 500
 
 - Needs `AEDM_LLM_PROVIDER` (`gemini` or `anthropic`) and its key, from the environment or `.env`. The fake provider is refused unless `--allow-fake` (for smoke-testing the harness).
 - Runs are sequential, `--runs` per scenario (default 5), with a pause between model calls.
+- Provider outages (rate limits, network errors, 5xx) are retried after 15 s and 45 s. A run still lost after that counts as no data, never as a failure, and after three such runs in a row the rest are skipped. A scenario with no judged runs shows `N/A`; the exit code is 3 when nothing failed but some scenarios have no data. Free model tiers have small daily quotas, so run with `--only` or `--runs 1`, or point a tier at a model with quota left (`AEDM_GEMINI_MODEL_STANDARD=...`).
 - Prints a table (passes, bar, first failure) and writes `reports/<timestamp>.json` (git-ignored). Exits non-zero when any scenario is below its bar: 100% for injection, leak, consistency, caps, format and safety; 80% for memory, continuity, combat and forge.
 
 A DM scenario builds a `GameState` with the engine's testkit, turns it into a context pack with the server's `buildContextPack`, runs `runDmTurn`, then applies the parsed actions with `applyDmActions`. Its pure `check` sees what the model proposed and what the engine accepted or refused. Forge scenarios call the server's `forgeCharacterAbilities`. All checks are code, with no judge model, so the language checks (E15, E17, E18) are heuristics.

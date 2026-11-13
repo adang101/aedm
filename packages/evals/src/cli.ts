@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import { createProviderFromEnv } from "@aedm/llm";
 import { DM_SCENARIOS } from "./dm-scenarios";
 import { FORGE_SCENARIOS } from "./forge-scenarios";
-import { DEFAULT_RUNS, failedScenarios, formatRow, formatSummary, runScenarios, type ScenarioResult } from "./runner";
+import { DEFAULT_RUNS, failedScenarios, formatRow, formatSummary, noData, runScenarios, type ScenarioResult } from "./runner";
 import type { Scenario } from "./types";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -103,7 +103,8 @@ async function main(): Promise<number> {
   const summary = formatSummary(results);
   console.log(`\n${summary}`);
   console.log(`Report: ${writeReport({ startedAt, provider: provider.name, runsPerScenario: opts.runs, summary, results })}`);
-  return failedScenarios(results).length > 0 ? 1 : 0;
+  // 1: a scenario is below its bar; 3: nothing failed, but some scenarios have no data (provider unavailable)
+  return failedScenarios(results).length > 0 ? 1 : results.some(noData) ? 3 : 0;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
