@@ -203,7 +203,7 @@ Locks:
 
 - Variance: plus or minus 2, drawn when the map is built, kept within 5 to 30. The tier is the party's gear allowance (the level's weapon tier), passed to map generation; default 1.
 - Unlock with the matching key item: automatic, the key is kept. Pick: DEX check, +2 with the lockpicking tag, against the DC. Force: STR check, +2 with the athletics tag, against the DC plus 2. A failed pick has no penalty. A forced lock breaks for good; forcing makes noise that carries 6 tiles, success or failure.
-- Doors the generator adds on door tiles (when enabled): 50% start closed, and locked with odds by tier of 5, 10, 15, 20 and 25 percent (locked doors are also closed). A lever links to the nearest door (1 link).
+- Doors the generator adds on door tiles (enabled by default): 50% start closed, and locked with odds by tier of 5, 10, 15, 20 and 25 percent (locked doors are also closed). A lever links to the nearest door (1 link).
 
 Loot (`rollLoot`): 1 to 3 items per roll, kinds weighted consumable 38, trinket 38, weapon 14, armor 10, never quest. Gear is rolled only up to the party's tier allowance and richer trinkets only at higher tiers, so no item beats what the level allows. The total value of a roll never exceeds its budget.
 

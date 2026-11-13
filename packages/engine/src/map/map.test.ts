@@ -244,7 +244,7 @@ describe("generateMap", () => {
     });
     const { map } = generateMap(b, { seed: 3, id: "m_x" });
     const objs = getObjects(map);
-    expect(objs.filter((o) => o.type === "interactable").map((o) => (o as { kind: string }).kind).sort()).toEqual(["altar", "chest", "lever", "sign"]);
+    expect(objs.filter((o) => o.type === "interactable" && o.kind !== "door").map((o) => (o as { kind: string }).kind).sort()).toEqual(["altar", "chest", "lever", "sign"]);
     const ids = map.tileset.tiles.filter((t) => t.layer === "decor").map((t) => t.material_id);
     expect(ids).toContain("fountain");
     expect(ids).toContain("statue");
@@ -259,7 +259,7 @@ describe("generateMap", () => {
     const { map } = generateMap(STARTER_BRIEFS.dungeon, { seed: 3, id: "m_d" });
     const objs = getObjects(map);
     expect(objs.filter((o) => o.type === "entity_slot").map((o) => (o as { id: string }).id)).toEqual(["slot_1", "slot_2", "slot_3"]);
-    expect(objs.filter((o) => o.type === "interactable").map((o) => (o as { kind: string }).kind).sort()).toEqual(["altar", "chest", "lever"]);
+    expect(objs.filter((o) => o.type === "interactable" && o.kind !== "door").map((o) => (o as { kind: string }).kind).sort()).toEqual(["altar", "chest", "lever"]);
     expect(objs.filter((o) => o.type === "exit").every((o) => o.type === "exit" && o.to === "pending" && o.target_entry === "party_start")).toBe(true);
     expect(objs[0]).toMatchObject({ type: "spawn", name: "party_start" });
   });

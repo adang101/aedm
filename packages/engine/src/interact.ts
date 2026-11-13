@@ -252,18 +252,50 @@ export function readSign(state: GameState, rng: Rng, actorId: string, objectId: 
   });
 }
 
+/** Write a sign's text on a mutation context. Returns an error string, or undefined. */
+export function setSignTextM(m: Mut, mapId: string, objectId: string, text: string): string | undefined {
+  const sign = findInteractable(m.s, mapId, objectId);
+  if (!sign || sign.kind !== "sign") return `there is no sign ${objectId} on ${mapId}`;
+  const t = text.trim();
+  if (t.length < 1 || t.length > SIGN_TEXT_MAX) return `sign text must be 1 to ${SIGN_TEXT_MAX} characters`;
+  const key = objectKey(mapId, sign.id);
+  m.s.interactables[key] = { ...(m.s.interactables[key] ?? {}), text: t };
+  emit(m, { type: "sign_written", mapId, objectId: sign.id, text: t });
+  return undefined;
+}
+
 /** Write (or rewrite) a sign's text: 1 to 200 characters. For the DM and map tools; it needs no actor. */
 export function setSignText(state: GameState, mapId: string, objectId: string, text: string): ActionResult {
-  return act(state, fromState(state.rngState), "set_sign_text", (m) => {
-    const sign = findInteractable(m.s, mapId, objectId);
-    if (!sign || sign.kind !== "sign") return `there is no sign ${objectId} on ${mapId}`;
-    const t = text.trim();
-    if (t.length < 1 || t.length > SIGN_TEXT_MAX) return `sign text must be 1 to ${SIGN_TEXT_MAX} characters`;
-    const key = objectKey(mapId, sign.id);
-    m.s.interactables[key] = { ...(m.s.interactables[key] ?? {}), text: t };
-    emit(m, { type: "sign_written", mapId, objectId: sign.id, text: t });
-    return undefined;
-  });
+  return act(state, fromState(state.rngState), "set_sign_text", (m) => setSignTextM(m, mapId, objectId, text));
+}
+
+/**
+ * Lock a door or chest (a door or chest interactable id, or a chest container id) on a map: the DM's story beat.
+ * A door is shut and locked; a chest is closed and locked. Returns an error string, or undefined.
+ */
+export function setLockM(m: Mut, mapId: string, targetId: string, lock: Lock): string | undefined {
+  stockMapM(m, mapId);
+  const s = m.s;
+  let obj = findInteractable(s, mapId, targetId);
+  if (!obj) {
+    const c = s.containers[targetId];
+    if (c && c.map_id === mapId && c.object_id) obj = findInteractable(s, mapId, c.object_id);
+  }
+  if (!obj || (obj.kind !== "door" && obj.kind !== "chest")) return `there is no door or chest ${targetId} on ${mapId}`;
+  const l: Lock = { dc: clampDc(lock.dc), ...(lock.key_item_name ? { key_item_name: lock.key_item_name } : {}) };
+  if (obj.kind === "chest") {
+    const c = containerForObject(s, mapId, obj.id);
+    if (!c) return "that chest has no container";
+    c.locked = true;
+    c.lock = l;
+    delete c.opened;
+  } else {
+    if (creatureOnTile(s, mapId, obj.x, obj.y)) return "something is standing in the doorway";
+    const key = objectKey(mapId, obj.id);
+    s.interactables[key] = { ...(s.interactables[key] ?? {}), state: "locked", lock: l };
+  }
+  emit(m, { type: "lock_set", mapId, objectId: obj.id, kind: obj.kind, dc: l.dc, keyed: l.key_item_name !== undefined });
+  return undefined;
 }
 
 // ---------- examine ----------

@@ -11,7 +11,7 @@ export interface GenerateOptions {
   generatedAt?: string;
   /** Loot tier (1 to 5) the map's lock DCs are scaled to: pass the party's gear allowance (`lootTierForLevel`). Default 1. */
   tier?: number;
-  /** Make the generator's door tiles real door objects. Default `interact.doors.generated.enabled` (off until the client can open doors). */
+  /** Make the generator's door tiles real door objects. Default `interact.doors.generated.enabled` (on). */
   doorObjects?: boolean;
 }
 

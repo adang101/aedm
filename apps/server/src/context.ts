@@ -1,7 +1,8 @@
-import type { CombatContext, DmContextPack, NpcDossierEntry, SceneEntity } from "@aedm/llm";
+import type { CombatContext, DmContextPack, NpcDossierEntry, SceneContainer, SceneEntity, SceneObject } from "@aedm/llm";
 import type { NpcRecord } from "@aedm/schemas";
 import {
-  MATERIAL_IDS, RULES, computePartyLevel, currentAct, currentMap, entitiesOnMap, getObjects, lootCap, pacingBlock, sideOf as combatSide, type GameState,
+  MATERIAL_IDS, RULES, computePartyLevel, currentAct, currentMap, effectiveLock, effectiveState, entitiesOnMap, getObjects, lootCap, pacingBlock,
+  sideOf as combatSide, type GameState,
 } from "@aedm/engine";
 
 export interface RecentTurn {
@@ -97,6 +98,8 @@ export function buildContextPack(input: ContextInput): DmContextPack {
 
   const entities: SceneEntity[] = [];
   const exits: DmContextPack["scene"]["exits"] = [];
+  const objects: SceneObject[] = [];
+  const containers: SceneContainer[] = [];
   if (map) {
     for (const e of entitiesOnMap(state, map.id)) {
       entities.push({
@@ -112,11 +115,34 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     }
     for (const o of getObjects(map)) {
       if (o.type === "interactable") {
-        entities.push({ id: o.id, kind: "object", name: `${o.kind} (${o.state})`, x: o.x, y: o.y });
+        if (o.kind === "chest") continue; // listed once, as its container
+        const st = effectiveState(state, map.id, o);
+        const lock = st === "locked" ? effectiveLock(state, map.id, o) : undefined;
+        objects.push({ id: o.id, kind: o.kind, x: o.x, y: o.y, state: st, ...(lock ? { dc: lock.dc } : {}) });
       } else if (o.type === "exit") {
         const side = sideOf(map, o.x, o.y);
         exits.push({ label: o.name, ...(side ? { side } : {}), ...(o.to !== "pending" ? { to: o.to } : {}) });
       }
+    }
+  }
+
+  if (map) {
+    const reach = (c: { x: number; y: number }): number => {
+      const ds = Object.keys(state.characters).flatMap((id) => {
+        const e = state.entities[id];
+        return e && e.mapId === map.id ? [Math.max(Math.abs(e.x - c.x), Math.abs(e.y - c.y))] : [];
+      });
+      return ds.length ? Math.min(...ds) : 99;
+    };
+    const visible = Object.values(state.containers).filter((c) => c.map_id === map.id && c.kind !== "pockets" && (c.kind === "chest" || c.items.length > 0));
+    for (const c of visible.sort((a, b) => reach(a) - reach(b) || a.id.localeCompare(b.id))) {
+      const opened = c.kind === "chest" && c.opened === true && !c.locked;
+      containers.push({
+        id: c.id, kind: c.kind as SceneContainer["kind"], x: c.x, y: c.y, open: c.kind === "chest" ? c.opened === true : true, itemCount: c.items.length,
+        ...(c.kind === "remains" && c.label ? { label: c.label.replace(/^Remains of /, "") } : {}),
+        ...(c.locked ? { locked: c.lock?.dc ?? 10 } : {}),
+        ...(opened ? { items: c.items.map((i) => i.name) } : {}),
+      });
     }
   }
 
@@ -167,6 +193,8 @@ export function buildContextPack(input: ContextInput): DmContextPack {
       description: input.sceneNote ?? (map ? `${map.meta.setting.name}.` : "Nowhere yet."),
       entities: entities.slice(0, MAX_SCENE_ENTITIES),
       exits,
+      ...(containers.length ? { containers } : {}),
+      ...(objects.length ? { objects } : {}),
     },
     party,
     quests: state.bible.quests.map((q) => ({ id: q.id, title: q.title, status: q.status, notes: [...q.notes] })),

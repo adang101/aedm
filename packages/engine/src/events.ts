@@ -56,6 +56,8 @@ export type EngineEvent =
   | { type: "lever_pulled"; mapId: string; objectId: string; state: "open" | "closed"; affected: string[]; x: number; y: number; by: string; byName: string }
   | { type: "sign_read"; mapId: string; objectId: string; text: string; by: string; byName: string }
   | { type: "sign_written"; mapId: string; objectId: string; text: string }
+  | { type: "container_stocked"; containerId: string; label: string; count: number; value: number }
+  | { type: "lock_set"; mapId: string; objectId: string; kind: string; dc: number; keyed: boolean }
   | { type: "examined"; targetId: string; kind: string; text: string }
   | { type: "quest_updated"; questId: string; title: string; status: string; note: string }
   | { type: "fact_set"; subject: string; predicate: string; object: string }
@@ -136,6 +138,8 @@ export function describeEvent(e: EngineEvent): string {
     case "lever_pulled": return wrap(`${e.byName} pulls lever ${e.objectId}${e.affected.length > 0 ? `; ${e.affected.join(", ")} change` : "; nothing seems to happen"}`);
     case "sign_read": return wrap(`${e.byName} reads sign ${e.objectId}: ${e.text}`);
     case "sign_written": return wrap(`sign ${e.objectId} now reads: ${e.text}`);
+    case "container_stocked": return wrap(`${e.label} (${e.containerId}) now holds ${e.count} more item${e.count === 1 ? "" : "s"}`);
+    case "lock_set": return wrap(`${e.kind} ${e.objectId} is now locked (DC ${e.dc}${e.keyed ? ", has a key" : ""})`);
     case "examined": return wrap(`${e.targetId}: ${e.text}`);
     case "quest_updated": return wrap(`quest "${e.title}" is now ${e.status}${e.note ? `: ${e.note}` : ""}`);
     case "fact_set": return wrap(`fact recorded: ${e.subject} ${e.predicate} ${e.object}`);

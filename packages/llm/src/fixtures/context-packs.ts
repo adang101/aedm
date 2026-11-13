@@ -1,5 +1,5 @@
 import type { WorldFact } from "@aedm/schemas";
-import type { DmContextPack, PartyMemberContext, PacingContext, SceneEntity } from "../context";
+import type { DmContextPack, PartyMemberContext, PacingContext, SceneContainer, SceneEntity, SceneObject } from "../context";
 import { makeLanternPack } from "../testing";
 
 /** Deterministic DM context fixtures for token budgets and compaction work. Pure data, no randomness. */
@@ -70,6 +70,30 @@ function entities(n: number, party: PartyMemberContext[]): SceneEntity[] {
   return out;
 }
 
+const CONTAINER_ITEMS = ["Brass key", "Silver ring", "Healing draught", "Bent dagger"];
+
+/** Chests (locked, closed, opened), piles and remains, nearest first. */
+function containers(n: number): SceneContainer[] {
+  return Array.from({ length: n }, (_, i): SceneContainer => {
+    const x = 3 + i;
+    const y = 4 + (i % 3);
+    switch (i % 4) {
+      case 0: return { id: `cn_${10 + i}`, kind: "chest", x, y, locked: 12, open: false, itemCount: 2 };
+      case 1: return { id: `cn_${10 + i}`, kind: "chest", x, y, open: true, itemCount: 3, items: CONTAINER_ITEMS.slice(0, 3) };
+      case 2: return { id: `cn_${10 + i}`, kind: "remains", label: "Reed Cultist", x, y, open: true, itemCount: 2 };
+      default: return { id: `cn_${10 + i}`, kind: "pile", x, y, open: true, itemCount: 1 };
+    }
+  });
+}
+
+function objects(n: number): SceneObject[] {
+  const kinds: [string, string][] = [["door", "closed"], ["sign", "closed"], ["lever", "closed"], ["door", "locked"], ["door", "open"], ["altar", "closed"]];
+  return Array.from({ length: n }, (_, i) => {
+    const [kind, state] = kinds[i % kinds.length]!;
+    return { id: `${kind}_${i + 1}`, kind: kind!, x: 2 + i, y: 3, state: state!, ...(state === "locked" ? { dc: 12 } : {}) };
+  });
+}
+
 function turns(n: number): DmContextPack["recentTurns"] {
   return Array.from({ length: n }, (_, i) =>
     i % 2 === 0
@@ -91,6 +115,7 @@ const growth = (party: PartyMemberContext[]) => Object.fromEntries(party.map((p)
 function pack(o: {
   players: number; abilities: number; items: number; turns: number; facts: number; entities: number; quests: number; milestones: number;
   summaries: number; notes: number; npcs: number; threads: number; cast: number; pacing: boolean; engineLines: string[];
+  containers?: number; objects?: number;
 }): DmContextPack {
   const base = makeLanternPack([
     { characterId: "ch_brindle", characterName: "Brindle Ash", text: TURN_PLAYER[2]! },
@@ -110,7 +135,10 @@ function pack(o: {
     })),
     threads: Array.from({ length: o.threads }, (_, i) => ({ id: `th_${i + 1}`, text: ["Who lit the beacon on the drowned lighthouse?", "What does the heron sigil mean?", "Where was Edda Marrow taken?"][i % 3]! })),
     facts: facts(o.facts),
-    scene: { ...base.scene, entities: entities(o.entities, party) },
+    scene: {
+      ...base.scene, entities: entities(o.entities, party),
+      ...(o.containers ? { containers: containers(o.containers) } : {}), ...(o.objects ? { objects: objects(o.objects) } : {}),
+    },
     party,
     quests: Array.from({ length: o.quests }, (_, i) => ({ id: `q_${i + 1}`, title: ["Find Edda Marrow", "Silence the bell", "Pay the ferryman"][i % 3]!, status: "active", notes: ["Last seen on the causeway.", "Odalys knows more than she says."].slice(0, i % 3) })),
     milestones: Array.from({ length: o.milestones }, (_, i) => ({ id: `ms_${i + 1}`, stage: `st_${(i % 3) + 1}`, completed: i < 2, description: `The party ${["learns the cult's name", "finds the ledger", "crosses the causeway", "frees a captive", "earns Odalys's trust", "reaches the chapel"][i % 6]!}.` })),
@@ -127,11 +155,11 @@ function pack(o: {
 export const CONTEXT_PACKS: Record<"opening" | "typical" | "heavy", DmContextPack> = {
   opening: { ...makeLanternPack([{ characterId: "ch_brindle", characterName: "Brindle Ash", text: "I look around the square." }]), growthRemaining: { ch_brindle: 50, ch_tamsin: 50, ch_orrin: 50 } },
   typical: pack({
-    players: 4, abilities: 4, items: 6, turns: 8, facts: 12, entities: 6, quests: 3, milestones: 6, summaries: 1, notes: 3, npcs: 4, threads: 2, cast: 0, pacing: true,
+    players: 4, abilities: 4, items: 6, turns: 8, facts: 12, entities: 6, quests: 3, milestones: 6, summaries: 1, notes: 3, npcs: 4, threads: 2, cast: 0, pacing: true, containers: 4, objects: 4,
     engineLines: ["[engine: Brindle rolled 14 + 3 against DC 12, success]", "[engine: Reed Cultist 01 takes 7 fire damage, hp 5/12]"],
   }),
   heavy: pack({
-    players: 6, abilities: 4, items: 6, turns: 12, facts: 30, entities: 25, quests: 3, milestones: 6, summaries: 6, notes: 8, npcs: 12, threads: 6, cast: 10, pacing: true,
+    players: 6, abilities: 4, items: 6, turns: 12, facts: 30, entities: 25, quests: 3, milestones: 6, summaries: 6, notes: 8, npcs: 12, threads: 6, cast: 10, pacing: true, containers: 10, objects: 12,
     engineLines: ["[engine: Brindle rolled 14 + 3 against DC 12, success]", "[engine: Reed Cultist 01 takes 7 fire damage, hp 5/12]"],
   }),
 };

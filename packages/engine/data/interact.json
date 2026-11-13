@@ -21,7 +21,7 @@
   },
   "doors": {
     "blockWhenClosed": true,
-    "generated": { "enabled": false, "closedPct": 50, "lockedPct": { "1": 5, "2": 10, "3": 15, "4": 20, "5": 25 } }
+    "generated": { "enabled": true, "closedPct": 50, "lockedPct": { "1": 5, "2": 10, "3": 15, "4": 20, "5": 25 } }
   },
   "levers": { "maxLinks": 1 },
   "chest": { "budgetPct": 40, "maxItems": 3 },

@@ -31,6 +31,9 @@ const actions = [
   { type: "npc_note", entity_id: "npc_odalys", note: "Promised to hide the party's boat." },
   { type: "open_thread", text: "Who lit the beacon on the drowned lighthouse?" },
   { type: "close_thread", thread_id: "th_9", resolution: "The keeper did, to call the cult." },
+  { type: "stock_container", container_id: "cn_4", items: [{ name: "Brass key", kind: "quest", value: 0 }, { name: "Silver ring", kind: "trinket", value: 20 }] },
+  { type: "set_sign_text", object_id: "sign_1", text: "The bridge is out. Ask the ferryman." },
+  { type: "set_lock", target_id: "door_2", dc: 15, key_item_name: "Brass key" },
 ];
 
 describe("DmAction", () => {
@@ -48,6 +51,19 @@ describe("DmAction", () => {
     expect(DmActionSchema.safeParse({ ...actions[0], on_success: words(61) }).success).toBe(false);
     expect(DmActionSchema.safeParse({ ...actions[0], on_failure: "" }).success).toBe(false);
     expect(DmActionSchema.safeParse({ ...actions[0], on_partial: "x" }).success).toBe(false);
+  });
+  it("stock_container, set_sign_text and set_lock have strict limits", () => {
+    const stock = { type: "stock_container", container_id: "cn_4", items: [{ name: "Coin", kind: "trinket", value: 1 }] };
+    expect(DmActionSchema.safeParse(stock).success).toBe(true);
+    expect(DmActionSchema.safeParse({ ...stock, items: [] }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...stock, items: Array.from({ length: 7 }, () => stock.items[0]) }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...stock, items: [{ name: "Coin", kind: "gem", value: 1 }] }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ type: "set_sign_text", object_id: "sign_1", text: "t".repeat(201) }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ type: "set_sign_text", object_id: "sign_1", text: "" }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ type: "set_lock", target_id: "door_2", dc: 4 }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ type: "set_lock", target_id: "door_2", dc: 31 }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ type: "set_lock", target_id: "door_2", dc: 12 }).success).toBe(true);
+    expect(DmActionSchema.safeParse({ type: "set_lock", target_id: "door_2", dc: 12, key_item_name: "k".repeat(41) }).success).toBe(false);
   });
   it("rejects unknown type and unknown fields", () => {
     expect(DmActionSchema.safeParse({ type: "give_gold", amount: 5000 }).success).toBe(false);

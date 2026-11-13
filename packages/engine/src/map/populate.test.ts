@@ -22,10 +22,12 @@ const brief = (over: Partial<MapBrief> = {}): MapBrief => ({
 });
 
 describe("generated door objects", () => {
-  it("are off by default, so maps are as they were", () => {
-    const map = generateMap(brief(), { seed: 3, id: "m_a" }).map;
-    expect(interactables(map).filter((o) => o.id.startsWith("door_")).length).toBeLessThanOrEqual(1); // at most the one POI door
-    expect(INTERACT.doors.generated.enabled).toBe(false);
+  it("are on by default (`interact.doors.generated.enabled`), and doorObjects: false leaves maps as they were", () => {
+    expect(INTERACT.doors.generated.enabled).toBe(true);
+    const off = generateMap(brief(), { seed: 3, id: "m_a", doorObjects: false }).map;
+    expect(interactables(off).filter((o) => o.id.startsWith("door_")).length).toBeLessThanOrEqual(1); // at most the one POI door
+    const on = generateMap(brief(), { seed: 3, id: "m_a" }).map;
+    expect(interactables(on).filter((o) => o.kind === "door").length).toBeGreaterThan(interactables(off).filter((o) => o.kind === "door").length);
   });
 
   it("turn every door tile into a door object when enabled, without touching the tiles", () => {
