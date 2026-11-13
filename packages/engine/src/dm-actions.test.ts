@@ -29,6 +29,13 @@ describe("request_check", () => {
     expect(r.rejected).toHaveLength(1);
     expect(r.applied).toHaveLength(2);
   });
+  it("carries branch text into the pending check", () => {
+    const { state } = makeWorld();
+    const r = apply(state, [
+      { type: "request_check", target: "ch_brindle", ability: "int", dc: 10, tags: [], advantage: "none", reason: "x", on_success: "It opens.", on_failure: "It jams." },
+    ]);
+    expect(r.pendingChecks[0]).toMatchObject({ onSuccess: "It opens.", onFailure: "It jams." });
+  });
 });
 
 describe("npcs", () => {

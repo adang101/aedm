@@ -302,6 +302,8 @@ export function improvDm(user: string): string {
       actions.push({
         type: "request_check", target: checkIntent.characterId, ability: rule.ability,
         dc: 10 + (h % 7), tags: rule.tags, advantage: "none", reason: rule.reason,
+        on_success: "You pull it off, and the moment turns in your favor.",
+        on_failure: "It slips away from you, and the moment turns against you.",
       });
     }
 

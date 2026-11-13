@@ -8,7 +8,7 @@ import {
   type CheckRequest, type CreateEnemyAction, type EngineEvent, type Entity, type GameState,
 } from "@aedm/engine";
 import {
-  buildEnemy, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn, summarizeTurns,
+  buildEnemy, clampNarration, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn, summarizeTurns,
   type DmTurnResult,
 } from "@aedm/llm";
 import type { Ability, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
@@ -1011,7 +1011,7 @@ export class GameSession {
     if (result.response.dm_notes) this.dmNotes.push(result.response.dm_notes);
     if (this.dmNotes.length > 40) this.dmNotes.shift();
 
-    const checkLines = await this.applyResponse(result.response);
+    const checkLines = await this.applyResponse(result.response, turnId);
 
     if (opts.tick && !this.state.combat) {
       const r = advanceBeat(this.state, this.rng());
@@ -1031,7 +1031,8 @@ export class GameSession {
 
   // ---------- applying the DM's response ----------
 
-  private async applyResponse(resp: DmResponse): Promise<string[]> {
+  /** Returns engine lines for checks that still need a follow-up DM call to narrate them. */
+  private async applyResponse(resp: DmResponse, turnId: string): Promise<string[]> {
     const checks: CheckRequest[] = [];
     const unreferenced: string[] = [];
     let newMapId: string | null = null;
@@ -1070,14 +1071,32 @@ export class GameSession {
     else if (sceneChanged) this.afterSceneChange();
 
     const lines: string[] = [];
+    const settled: string[] = [];
+    let lineMark = 0;
+    let branchN = 0;
     for (const req of checks) {
       const r = resolveCheck(this.state, this.rng(), req, { presentCharacterIds: this.presentIds() });
       this.commit(r.state);
       lines.push(...this.publish(r.events, { toDm: false }));
       if (r.result) {
         const outcome = r.result.success ? "success" : "failure";
-        lines.push(`[engine: check "${req.reason}" (${req.ability.toUpperCase()} DC ${r.result.dc}) overall result: ${outcome}]`);
+        const summary = `[engine: check "${req.reason}" (${req.ability.toUpperCase()} DC ${r.result.dc}) overall result: ${outcome}]`;
+        // Pre-written branch text (flavor only) settles the check in this beat; pivotal beats and checks without it need a follow-up call.
+        const branch = clampNarration(r.result.success ? req.onSuccess ?? "" : req.onFailure ?? "", 60);
+        if (branch && !resp.high_stakes) {
+          settled.push(...lines.splice(lineMark), summary);
+          this.room.broadcast("narration_chunk", { turn_id: `${turnId}c${++branchN}`, text: branch, done: true });
+          this.recent.push({ speaker: "DM", text: branch, kind: "dm" });
+          this.trimRecent();
+          continue;
+        }
+        lines.push(summary);
       }
+      lineMark = lines.length;
+    }
+    if (settled.length > 0) {
+      this.pendingLines.push(...settled);
+      if (this.pendingLines.length > MAX_PENDING_LINES) this.pendingLines.splice(0, this.pendingLines.length - MAX_PENDING_LINES);
     }
     return lines;
   }

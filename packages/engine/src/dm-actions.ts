@@ -70,6 +70,8 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
       if (a.target === "party" && present.length === 0) return "no characters are present";
       for (const t of a.tags) if (!(CHECK_TAGS as readonly string[]).includes(t)) return `tag ${t} is not allowed`;
       const req: CheckRequest = { target: a.target, ability: a.ability, dc: clampDc(a.dc), tags: a.tags, advantage: a.advantage, reason: a.reason };
+      if (a.on_success) req.onSuccess = a.on_success;
+      if (a.on_failure) req.onFailure = a.on_failure;
       out.pendingChecks.push(req);
       emit(m, { type: "check_requested", target: req.target, ability: req.ability, dc: req.dc, tags: req.tags, reason: req.reason });
       return undefined;

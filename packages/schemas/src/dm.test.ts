@@ -38,6 +38,14 @@ describe("DmAction", () => {
     }
     expect(DM_ACTION_TYPES.sort()).toEqual(actions.map((a) => a.type).sort());
   });
+  it("request_check takes optional on_success and on_failure of 1 to 60 words", () => {
+    const ok = DmActionSchema.safeParse({ ...actions[0], on_success: "The door yields.", on_failure: "The lock bites back." });
+    expect(ok.success).toBe(true);
+    expect(DmActionSchema.safeParse(actions[0]).success).toBe(true);
+    expect(DmActionSchema.safeParse({ ...actions[0], on_success: words(61) }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[0], on_failure: "" }).success).toBe(false);
+    expect(DmActionSchema.safeParse({ ...actions[0], on_partial: "x" }).success).toBe(false);
+  });
   it("rejects unknown type and unknown fields", () => {
     expect(DmActionSchema.safeParse({ type: "give_gold", amount: 5000 }).success).toBe(false);
     expect(DmActionSchema.safeParse({ ...actions[6], extra: 1 }).success).toBe(false);
