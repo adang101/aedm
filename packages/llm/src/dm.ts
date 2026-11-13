@@ -3,7 +3,7 @@ import { buildDmContext, type DmContextPack } from "./context";
 import { extractJson, formatZodError, truncate } from "./json";
 import { NarrationExtractor } from "./narration-stream";
 import { completeWithRepair } from "./pipeline";
-import type { ModelProvider, Tier } from "./provider";
+import { MAX_OUTPUT_TOKENS, type ModelProvider, type Tier } from "./provider";
 import { LlmError } from "./errors";
 
 export interface DmTurnOptions {
@@ -57,9 +57,9 @@ export async function runDmTurn(provider: ModelProvider, pack: DmContextPack, op
 
   const outcome = await completeWithRepair(
     provider,
-    { tier, system, messages: [{ role: "user", content: user }], purpose: "dm", ...(opts.maxTokens ? { maxTokens: opts.maxTokens } : {}) },
+    { tier, system, messages: [{ role: "user", content: user }], purpose: "dm", maxTokens: opts.maxTokens ?? MAX_OUTPUT_TOKENS.dm },
     DmResponseSchema,
-    { signal: opts.signal, onText },
+    { signal: opts.signal, onText, repairContext: "minimal" },
   );
 
   if (outcome.ok) {

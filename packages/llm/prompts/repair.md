@@ -1,5 +1,5 @@
-Your previous reply could not be accepted. Problems found:
+Your previous reply was rejected:
 
 {{errors}}
 
-Return the complete corrected JSON object now, fixing every problem above. Output only the JSON object: no code fence, no commentary. Keep the story content the same where it was valid.
+Return the complete corrected JSON object only (no code fence, no commentary), fixing every problem. Keep valid content unchanged.

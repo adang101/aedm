@@ -3,7 +3,7 @@ import { StoryBibleSchema, type PlotArc, type PlotPattern, type StoryBible } fro
 import { escapeUntrusted } from "./context";
 import { lanternMarshBible } from "./default-bible";
 import { completeWithRepair, type CallOptions } from "./pipeline";
-import type { ModelProvider } from "./provider";
+import { MAX_OUTPUT_TOKENS, type ModelProvider } from "./provider";
 import { loadPrompt } from "./template";
 
 export interface BibleInput {
@@ -55,7 +55,7 @@ export async function generateStoryBible(provider: ModelProvider, input: BibleIn
   ].join("\n");
   const outcome = await completeWithRepair(
     provider,
-    { tier: "standard", system: loadPrompt("story-bible"), messages: [{ role: "user", content: user }], purpose: "bible", maxTokens: 6000 },
+    { tier: "standard", system: loadPrompt("story-bible"), messages: [{ role: "user", content: user }], purpose: "bible", maxTokens: MAX_OUTPUT_TOKENS.bible },
     StoryBibleSchema,
     opts,
     (b) => checkBible(b, input.plot),
