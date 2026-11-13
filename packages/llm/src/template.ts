@@ -20,9 +20,8 @@ export function loadPrompt(name: string): string {
 }
 
 /** A Windows checkout (core.autocrlf) gives CRLF; prompts are always LF so every host sends the model the same text. */
-const normalizeEol = (text: string) => text.replace(/
-/g, "
-");
+const CRLF = new RegExp(String.raw`\r\n`, "g");
+const normalizeEol = (text: string) => text.replace(CRLF, "\n");
 
 const PLACEHOLDER = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
 
