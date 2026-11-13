@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createProviderFromEnv, type ModelProvider } from "@aedm/llm";
+import { createProviderFromEnv, formatUsageLine, UsageLedger, withUsageLedger, type ModelProvider } from "@aedm/llm";
 import { parseEnv } from "./env";
 import { createGameServer } from "./server";
 
@@ -28,6 +28,9 @@ async function main(): Promise<void> {
     console.error(err instanceof Error ? err.message : String(err), "Set it in .env.");
     process.exit(1);
   }
+
+  // Per-call token usage, one compact line per call (counts only; never prompt text or keys).
+  provider = withUsageLedger(provider, new UsageLedger(), (purpose, usage) => console.log(formatUsageLine(purpose, usage)));
 
   const server = await createGameServer({ port, provider, saveDir, dataDir, config: { devLog: process.env.AEDM_DEV_LOG === "1" } });
   console.log(`AEDM server listening on ws://localhost:${server.port} (LLM provider: ${provider.name}, saves: ${saveDir}, accounts: ${join(dataDir, "accounts")})`);

@@ -19,3 +19,5 @@ export { buildEnemy, buildEnemyPrompt, type EnemyInput, type EnemyRanges, type E
 export { generateStoryBible, plotPlanSection, checkBible, type BibleInput } from "./bible";
 export { summarizeTurns } from "./summary";
 export { LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, lanternMarshBible } from "./default-bible";
+export { estimateTokens, estimateRequestTokens } from "./tokens";
+export { UsageLedger, withUsageLedger, formatUsageLine, type PurposeUsage, type UsageSummary } from "./usage";
