@@ -56,18 +56,42 @@ const STOCK: Record<string, () => Item[]> = {
   chest_camp: () => [item("Trail Rations", "consumable", 4)],
 };
 
+/** Traps the offline map keeps out of the map payload until a search finds them (like the real server's hidden objects). */
+const HIDDEN_TRAPS: Record<string, Interactable[]> = {
+  m_hollowmere: [{ type: "interactable", id: "trap_hidden", kind: "trap", state: "closed", x: 16, y: 11 }],
+};
+
 const objects = (map: GameMap): MapObject[] => map.layers.flatMap((l) => (l.type === "objectgroup" ? l.objects : []));
 const interactables = (map: GameMap): Interactable[] => objects(map).filter((o): o is Interactable => o.type === "interactable");
 
 export class MockLoot {
   private byMap = new Map<string, Map<string, MockContainer>>();
   private n = 0;
+  private found = new Set<string>();
+  private prayed = false;
 
   constructor(private host: LootHost) {}
 
   reset(): void {
     this.byMap.clear();
     this.n = 0;
+    this.found.clear();
+    this.prayed = false;
+  }
+
+  /** Search: reveals hidden traps within sight of me (the offline stand-in always succeeds when close enough). */
+  search(): void {
+    const me = this.host.me();
+    const map = this.host.map();
+    const near = (HIDDEN_TRAPS[map.id] ?? []).filter((t) => !this.found.has(t.id) && (!me || cheb(me, t) <= EXAMINE_REACH));
+    if (near.length === 0) { this.host.engine("You search carefully and find nothing."); return; }
+    const layer = map.layers.find((l) => l.type === "objectgroup");
+    for (const t of near) {
+      this.found.add(t.id);
+      if (layer?.type === "objectgroup") layer.objects.push({ ...t });
+    }
+    this.host.diff({ interactables_revealed: near.map((t) => ({ map_id: map.id, object: { ...t } })) });
+    this.host.engine(near.length === 1 ? "You spot a trap hidden in the floor." : "You spot some traps hidden in the floor.");
   }
 
   private here(): Map<string, MockContainer> {
@@ -163,6 +187,8 @@ export class MockLoot {
       case "open": return this.open(o, c, ack);
       case "close": return this.close(o, c, ack);
       case "pull": return this.pull(o);
+      case "disarm": return this.disarm(o);
+      case "pray": return this.pray(o);
       case "unlock": case "pick_lock": case "force": return this.unlock(v, o, c);
       default: this.host.engine(`You study the ${kind}. Nothing obvious happens.`); return true;
     }
@@ -173,7 +199,24 @@ export class MockLoot {
     if (o.kind === "lever") return "pull";
     if (o.kind === "sign") return "read";
     if (o.kind === "door") return o.state === "open" ? "close" : "open";
+    if (o.kind === "altar") return "pray";
     return o.kind === "chest" ? "open" : "none";
+  }
+
+  private disarm(o?: Interactable): boolean {
+    if (o?.kind !== "trap") { this.host.engine("There is nothing to disarm."); return true; }
+    if (o.state === "open") { this.host.engine("The trap is already harmless."); return true; }
+    if (!this.host.roll("Disarm: the trap", 3, 12)) { this.host.engine("The mechanism resists your tools."); return true; }
+    this.host.diff({ interactables_changed: [this.set(o, "open")] });
+    this.host.engine("Click. The trap is harmless now.");
+    return true;
+  }
+
+  private pray(o?: Interactable): boolean {
+    if (o?.kind !== "altar") { this.host.engine("There is nothing to pray to."); return true; }
+    this.host.engine(this.prayed ? "The altar has nothing more to give you." : "A warm light settles over you. The altar's boon is yours.");
+    this.prayed = true;
+    return true;
   }
 
   private describe(o?: Interactable, c?: MockContainer): string {
@@ -181,6 +224,8 @@ export class MockLoot {
     if (o?.kind === "door") return o.state === "locked" ? "A door, closed and locked." : o.state === "open" ? "A door, standing open." : "A door, closed.";
     if (o?.kind === "lever") return o.state === "open" ? "A lever, pulled down." : "A lever, pushed up.";
     if (o?.kind === "sign") return "A sign with writing on it.";
+    if (o?.kind === "trap") return o.state === "open" ? "A trap, sprung or disarmed. Harmless now." : "A trap, armed. Something is set to spring here.";
+    if (o?.kind === "altar") return "An altar, worn smooth by hands. It feels welcoming.";
     if (o) return `You study the ${o.kind}.`;
     return c?.kind === "remains" ? "The remains of something that did not make it." : "A pile of dropped items.";
   }

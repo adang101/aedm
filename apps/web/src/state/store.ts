@@ -196,6 +196,27 @@ export function applyInteractableChanges(map: GameMap | null, changes: readonly 
   }
 }
 
+type Revealed = NonNullable<Msg<"state_diff">["interactables_revealed"]>;
+
+/**
+ * Add newly found objects (traps, hidden chests) to the loaded map's object layer. Returns a new map (the renderer rebuilds
+ * its layers when the map object changes); the same map when nothing applies. Other maps are ignored; an id already on the
+ * map is replaced.
+ */
+export function revealInteractables(map: GameMap | null, revealed: Revealed): GameMap | null {
+  if (!map) return map;
+  const mine = revealed.filter((r) => r.map_id === map.id);
+  if (mine.length === 0) return map;
+  const index = map.layers.findIndex((l) => l.type === "objectgroup");
+  if (index < 0) return map;
+  const layers = map.layers.map((l, i) => {
+    if (i !== index || l.type !== "objectgroup") return l;
+    const ids = new Set(mine.map((r) => r.object.id));
+    return { ...l, objects: [...l.objects.filter((o) => !("id" in o) || !ids.has(o.id)), ...mine.map((r) => r.object)] };
+  });
+  return { ...map, layers };
+}
+
 /** The container (chest, pile, remains) standing on a tile, if any. A chest is found by its own tile too. */
 export function containerAt(s: Pick<AppState, "containers">, x: number, y: number): ContainerSummary | null {
   return Object.values(s.containers).find((c) => c.x === x && c.y === y) ?? null;
@@ -251,6 +272,7 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
       for (const id of p.removed) delete s.entities[id];
       for (const c of p.containers_changed ?? []) s.containers[c.id] = c;
       for (const id of p.containers_removed ?? []) delete s.containers[id];
+      if (p.interactables_revealed) s.map = revealInteractables(s.map, p.interactables_revealed);
       if (p.interactables_changed) applyInteractableChanges(s.map, p.interactables_changed);
       if (p.mode) s.mode = p.mode;
       if (p.combat) s.combat = p.combat;

@@ -59,8 +59,16 @@ export function verbsFor(t: Target): VerbOption[] {
     }
     case "lever": return [act("pull", "Pull", true, t.state === "open" ? "pulled" : undefined), examine];
     case "sign": return [act("read", "Read", false), examine];
-    default: return [act("interact", "Interact"), examine]; // altar and anything new: left to the DM
+    case "altar": return [act("interact", "Pray"), examine]; // the engine gives a once-per-character boon
+    // A trap is only known once found: armed ("closed") can be disarmed; sprung or disarmed ("open") is harmless.
+    case "trap": return t.state === "open" ? [examine] : [act("disarm", "Disarm"), examine];
+    default: return [act("interact", "Interact"), examine]; // anything new: left to the DM
   }
+}
+
+/** Search costs an action in combat, so it follows the same rule as Attack and abilities: only on my turn. Free in exploration. */
+export function canSearch(inCombat: boolean, activeId: string | null | undefined, myId: string | null | undefined): boolean {
+  return !inCombat || (!!myId && activeId === myId);
 }
 
 export interface VerbState { disabled: boolean; hint?: string }
@@ -101,6 +109,7 @@ export function targetsOnMap(map: GameMap | null, containers: Record<string, Con
 export function targetTitle(t: Target, entities: Record<string, EntityView>): string {
   if (t.type === "npc") return entities[t.id]?.name ?? "Someone";
   if (t.type === "container") return t.kind === "remains" ? "Remains" : t.kind === "pockets" ? "Pockets" : "Pile of items";
+  if (t.kind === "trap" && t.state === "open") return "Trap (harmless)";
   const empty = t.container && t.container.item_count === 0 && t.state === "open";
   return `${t.kind.charAt(0).toUpperCase()}${t.kind.slice(1)}${empty ? " (empty)" : ""}`;
 }
