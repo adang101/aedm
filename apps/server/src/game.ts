@@ -8,6 +8,7 @@ import {
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
   type ActResult, type CheckRequest, type ClassifiedIntent, type CreateEnemyAction, type DramaLookup, type EngineEvent, type Entity, type GameState, type IntentContext,
 } from "@aedm/engine";
+import { describeInventory, describeScene, exitSide, RULES } from "@aedm/engine";
 import {
   buildEnemy, clampNarration, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
   type DmTurnResult,
@@ -531,8 +532,8 @@ export class GameSession {
   }
 
   /**
-   * `act`: the engine resolves it (`performAct`) with no DM call. Only what it cannot describe (an altar, a creature, `talk`)
-   * is recorded as an intent for the DM. In combat the verb goes through `combatAction`, so turns and costs are enforced.
+   * `act`: the engine resolves it (`performAct`) with no DM call. Only what it cannot describe (an altar, `talk` and `interact`
+   * on a creature, NPC pockets) is recorded as an intent for the DM. In combat the verb goes through `combatAction`, so turns and costs are enforced.
    */
   handleAct(player: Player, verb: ActVerb, targetId: string, reply: Reply): void {
     const ch = this.characterOf(player);
@@ -690,16 +691,22 @@ export class GameSession {
     return {
       actorId,
       objects: objects.flatMap((o) => (o.type === "interactable" ? [withDist(dist(o), { id: o.id, kind: o.kind })] : [])),
-      exits: objects.flatMap((o) => (o.type === "exit" ? [{ name: o.name }] : [])),
+      exits: objects.flatMap((o) => {
+        if (o.type !== "exit") return [];
+        const side = map ? exitSide(map, o) : undefined;
+        return [side ? { name: o.name, side } : { name: o.name }];
+      }),
       entities: map ? entitiesOnMap(this.state, map.id).map((e) => ({ id: e.id, name: e.name, kind: e.kind })) : [],
       containers,
-      inventory: ch ? ch.inventory.map((i) => ({ id: i.id, name: i.name })) : [],
+      // only the healing draught can be used by name (see `useItem`); anything else a player says goes to the DM
+      inventory: ch ? ch.inventory.map((i) => ({ id: i.id, name: i.name, usable: i.kind === "consumable" && i.name.toLowerCase() === RULES.draught.name.toLowerCase() })) : [],
     };
   }
 
   /**
    * Resolve the mechanical intents of a beat with engine calls: movement and the typed object commands (open, unlock, pull,
-   * read, examine, take, drop, give). An intent whose engine call fails, or that the engine leaves to the DM, goes to the DM.
+   * read, examine, take, drop, give, use an item), plus look, inventory and wait. A typed attack still goes to the DM (see
+   * `engageFromIntent`). An intent whose engine call fails, or that the engine leaves to the DM, goes to the DM.
    */
   private routeIntents(all: Intent[]): { narrative: Intent[]; mechanical: Intent[]; lines: string[] } {
     const narrative: Intent[] = [];
@@ -725,6 +732,30 @@ export class GameSession {
         mechanical.push(i);
         continue;
       }
+      if (verdict.action === "look") {
+        // the engine's own description, shown to the table like an examine line; the DM hears only that it happened
+        this.room.broadcast("log", { kind: "narration", text: describeScene(this.state, ent.id).slice(0, 4000) });
+        lines.push(`[engine: ${ent.name} looks around the scene (${quote})]`);
+        mechanical.push(i);
+        continue;
+      }
+      if (verdict.action === "inventory") {
+        // private to the player who asked; the DM needs no line
+        const owner = this.ownerOf(i.characterId);
+        if (owner) this.sysTo(owner.id, describeInventory(this.state, ent.id));
+        mechanical.push(i);
+        continue;
+      }
+      if (verdict.action === "wait") {
+        lines.push(`[engine: ${ent.name} waits (${quote})]`);
+        mechanical.push(i);
+        continue;
+      }
+      if (verdict.action === "attack") {
+        if (this.engageFromIntent(ent.id, verdict.targetId)) { mechanical.push(i); continue; }
+        narrative.push(i); // for now the DM decides whether a fight starts, exactly as before
+        continue;
+      }
       if (verdict.action !== "move_to") {
         const r = this.typedAction(ent.id, verdict);
         if (r.narrative) { narrative.push(i); continue; }
@@ -746,8 +777,17 @@ export class GameSession {
     return { narrative, mechanical, lines };
   }
 
+  /**
+   * Start a fight from a typed attack on a lone, uniquely named enemy (`classifyIntent` verdict `attack`). Returns whether the
+   * engine took it over. Always false for now: the combat branch supplies engine-started combat, and until then the intent goes to
+   * the DM as narrative.
+   */
+  private engageFromIntent(_actorId: string, _targetId: string): boolean {
+    return false;
+  }
+
   /** The engine call for a typed command the router recognized. */
-  private typedAction(actorId: string, v: Exclude<ClassifiedIntent, { kind: "narrative" } | { action: "empty" | "ooc" | "move_dir" | "move_to" }>): ActResult {
+  private typedAction(actorId: string, v: Exclude<ClassifiedIntent, { kind: "narrative" } | { action: "empty" | "ooc" | "move_dir" | "move_to" | "look" | "inventory" | "wait" | "attack" }>): ActResult {
     const st = this.state;
     const rng = this.rng();
     const plain = (r: { state: GameState; events: EngineEvent[]; ok: boolean; error?: string }): ActResult => ({ ...r, narrative: false });
@@ -757,6 +797,7 @@ export class GameSession {
       case "take_all": return plain(takeAll(st, rng, actorId, v.containerId));
       case "drop": return plain(dropItem(st, rng, actorId, v.itemId));
       case "give": return plain(giveItem(st, rng, actorId, v.itemId, v.toId));
+      case "use_item": return plain(useItem(st, rng, actorId, v.itemId, v.targetId));
     }
   }
 

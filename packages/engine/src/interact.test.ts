@@ -374,13 +374,16 @@ describe("examine", () => {
     const remains = withState(dropped.state, (s) => { s.containers[pile.id]!.kind = "remains"; s.containers[pile.id]!.label = "Remains of Robed Chorister"; });
     expect(line(remains, pile.id).text).toBe("The remains of Robed Chorister (1 item).");
   });
-  it("hands anything else to the DM: altars, creatures, NPC pockets", () => {
+  it("hands anything else to the DM: altars and NPC pockets; a creature gets the engine's description", () => {
     const s = placeAt(world().state, A, 4, 9);
     const altar = examine(s, rngFromState(s), A, "altar_1");
     expect(altar).toMatchObject({ ok: true, narrative: true, events: [] });
     expect(altar.text).toBeUndefined();
     expect(altar.state).toEqual(s);
-    expect(line(s, B)).toMatchObject({ ok: true, narrative: true });
+    const near = line(placeAt(s, B, 4, 10), B);
+    expect(near).toMatchObject({ ok: true, narrative: false });
+    expect(near.text).toContain(s.entities[B]!.name);
+    expect(line(s, B).ok).toBe(false); // out of the examine reach
   });
   it("needs a target in view (within the examine reach) and a real one", () => {
     const s = world().state;

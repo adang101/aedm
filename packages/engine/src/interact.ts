@@ -11,6 +11,7 @@ import { clampDc, rollCharacterCheck } from "./checks.ts";
 import { act, type ActionResult } from "./combat.ts";
 import { labelOf, stockMapM } from "./containers.ts";
 import { INTERACT } from "./data.ts";
+import { describeCreature } from "./describe.ts";
 import { closeContainer, openContainer } from "./inventory.ts";
 import { MapRng } from "./map/prng.ts";
 import { signText } from "./map/signs.ts";
@@ -302,8 +303,9 @@ export function setLockM(m: Mut, mapId: string, targetId: string, lock: Lock): s
 
 /**
  * A deterministic description line for anything the engine understands: a chest, door, lever, sign, pile or remains, built from
- * its kind, state and (for an open container) how many items it holds. Closed containers never reveal contents. Altars,
- * creatures and NPC pockets have nothing to say: the result is `narrative: true`, no text, for the DM. Free in combat.
+ * its kind, state and (for an open container) how many items it holds. Closed containers never reveal contents. A creature
+ * is described by `describeCreature` (no DM-only fields, no numbers). Altars and NPC pockets have nothing to say: the result is
+ * `narrative: true`, no text, for the DM. Free in combat.
  */
 export function examine(state: GameState, rng: Rng, actorId: string, targetId: string): ActResult {
   const out: Out = {};
@@ -346,7 +348,8 @@ export function examine(state: GameState, rng: Rng, actorId: string, targetId: s
       const line = c.items.length === 0 ? t?.empty : t?.any;
       return say(c.kind, fill(line ?? "", { name, items: itemsText(c.items.length) }), c, c.map_id);
     }
-    if (s.entities[targetId]) { out.narrative = true; return undefined; }
+    const creature = s.entities[targetId];
+    if (creature) return say("creature", describeCreature(s, targetId) ?? "", creature, creature.mapId);
     return "there is nothing like that here";
   });
   return finishAct(r, out);
