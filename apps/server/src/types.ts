@@ -74,6 +74,13 @@ export interface ServerConfig {
    * event and closes every fight, and attacks outside combat are always left to the DM.
    */
   combatDm: "lean" | "full";
+  /**
+   * Where enemy stats come from. "engine" (default): `buildEnemyOffline`, no model call. "model": the model proposes the enemy and
+   * the engine clamps it; if that call fails the engine builds the enemy offline instead.
+   */
+  enemyBuilder: "engine" | "model";
+  /** Hostile creatures that see a party character out of combat start the fight by themselves (`aggroCheck`). Only active when `combatDm` is "lean". */
+  aggro: boolean;
 }
 
 export const DEFAULT_CONFIG: ServerConfig = {
@@ -94,6 +101,8 @@ export const DEFAULT_CONFIG: ServerConfig = {
   dmNotebookLimit: 8,
   combatReactionsPerRound: 1,
   combatDm: "lean",
+  enemyBuilder: "engine",
+  aggro: true,
 };
 
 /** Everything injected into rooms and games. */

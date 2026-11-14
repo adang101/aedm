@@ -143,9 +143,30 @@ describe("router: look, pack, wait, items, creatures", () => {
     expect(provider.dmRequests().length).toBe(before);
   });
 
-  it("an attack on an enemy is still the DM's call for now", async () => {
+  it("a typed attack on an enemy starts the engine fight in lean mode with zero DM calls", async () => {
     const provider = scriptedProvider();
     h = await startHarness({ provider });
+    const t = await startedTable(h);
+    stage(h, t);
+    await gameOf(h).idle();
+    const before = provider.dmRequests().length;
+    const mark = t.a.mark();
+    say(t.a, "attack the robed chorister");
+    await t.a.wait("combat_state", () => true, { from: mark });
+    await gameOf(h).idle();
+    expect(stateOf(h).combat).not.toBeNull();
+    expect(provider.dmRequests().length).toBe(before);
+    const pending = gameOf(h).pendingEngineLines.join(" ");
+    expect(pending).toContain("the engine started the fight without the DM");
+    expect(pending).toMatch(/attacked Robed Chorister/);
+    // the typed line is in the DM's recent turns exactly once
+    const ctx = JSON.stringify((gameOf(h) as unknown as { recent: { text: string }[] }).recent);
+    expect(ctx.split("attack the robed chorister").length - 1).toBe(1);
+  });
+
+  it("a typed attack in full mode is still the DM's call", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider, config: { combatDm: "full" } });
     const t = await startedTable(h);
     stage(h, t);
     await gameOf(h).idle();
@@ -154,6 +175,26 @@ describe("router: look, pack, wait, items, creatures", () => {
     say(t.b, "wait");
     await until(() => provider.dmRequests().length === before + 1);
     expect(provider.dmRequests().at(-1)!.messages[0]!.content).toContain("attack the robed chorister");
+  });
+
+  it("intents after a typed attack in the same beat are handled as combat intents, not as a beat call", async () => {
+    const provider = scriptedProvider();
+    h = await startHarness({ provider });
+    const t = await startedTable(h);
+    stage(h, t);
+    await gameOf(h).idle();
+    const before = provider.dmRequests().length;
+    const mark = t.a.mark();
+    say(t.a, "attack the robed chorister");
+    say(t.b, "I shout a taunt at the cultist, daring it to come closer");
+    await t.a.wait("combat_state", () => true, { from: mark });
+    await until(() => provider.dmRequests().length > before);
+    await gameOf(h).idle();
+    expect(stateOf(h).combat).not.toBeNull();
+    const asked = provider.dmRequests().slice(before).filter((r) => r.messages[0]!.content.includes("I shout a taunt"));
+    expect(asked).toHaveLength(1); // one combat reaction call carries the line; the beat itself made no call
+    expect(provider.dmRequests().length).toBe(before + 1);
+    expect(asked[0]!.messages[0]!.content).toContain("the engine started the fight without the DM");
   });
 
   it("a use the engine cannot do falls back to the DM with an engine line", async () => {

@@ -1,5 +1,5 @@
 import {
-  addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
+  addAbilityToCharacter, addCharacter, aggroCheck, buildEnemyOffline, followStep, placePartyWithAllies, planAggroEngagement, addGrowth, addMap, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
   classifyIntent, closeContainer, computePartyLevel, containerDiff, containerForObject, containerView, createGameState, createRng, currentMap, describeEvent, digestEvents, getObjects, hasDramaticBeat,
   creatureVoice, isDmVictoryRole, narrateCombatEnd, narrateCombatStart, planEngagement, startCombat, victoryNeedsDm,
   narrateEvents, NARRATION, endCombat, endTurn, enemyRangesForLevel,
@@ -14,7 +14,7 @@ import {
   buildEnemy, clampNarration, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
   type DmTurnResult,
 } from "@aedm/llm";
-import type { Ability, ActVerb, DmAction, DmResponse, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
+import type { Ability, ActVerb, DmAction, DmResponse, Enemy, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
 import { bibleCampaign, ForgeError, forgeOneAbility, partyAbilities } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import { absorbTurns, EMPTY_MEMORY, type StoryMemory } from "./memory";
@@ -716,30 +716,72 @@ export class GameSession {
    * runs the normal combat loop, with no model call. Returns false, and changes nothing, in "full" mode, during a fight, or when
    * the target is not a hostile enemy on the attacker's map (the caller then leaves the attack to the DM).
    */
-  engageEnemy(characterId: string, targetId: string): boolean {
+  engageEnemy(characterId: string, targetId: string, opts: { line?: string } = {}): boolean {
     if (this.cfg.combatDm !== "lean" || this.state.combat) return false;
     const present = this.presentIds();
     const plan = planEngagement(this.state, characterId, targetId, { presentCharacterIds: present, partyLevel: computePartyLevel(this.state, present) });
     if (!plan.ok) return false;
+    const targetName = this.state.entities[targetId]?.name ?? "the enemy";
+    return this.startEngineFight(plan, {
+      starter: plan.starter,
+      line: opts.line ?? `I attack ${targetName}.`,
+      pending: (text) => `[engine: ${plan.starter} attacked ${targetName} and the engine started the fight without the DM${text ? `: ${text}` : ""}]`,
+    });
+  }
+
+  /**
+   * Lean mode, after a party character moved or arrived outside combat: allied NPCs follow, then hostile creatures that see the
+   * party start the fight (`aggroCheck`) without a model call. Returns whether a fight started.
+   */
+  private afterPartyMoved(): boolean {
+    if (this.state.combat || this.closed) return false;
+    const f = followStep(this.state, this.rng());
+    if (f.ok && f.events.length > 0) {
+      this.commit(f.state);
+      this.publish(f.events, { toDm: false });
+    }
+    return this.checkAggro();
+  }
+
+  private checkAggro(): boolean {
+    if (!this.cfg.aggro || this.cfg.combatDm !== "lean" || this.state.combat) return false;
+    const found = aggroCheck(this.state);
+    if (!found) return false;
+    const plan = planAggroEngagement(this.state, found, { partyLevel: computePartyLevel(this.state, this.presentIds()) });
+    const started = this.startEngineFight(plan, {
+      noticed: true,
+      pending: (text) => `[engine: hostile creatures noticed the party and the engine started the fight without the DM${text ? `: ${text}` : ""}]`,
+    });
+    if (started) this.walks.clear(); // nobody keeps walking into a fight
+    return started;
+  }
+
+  /**
+   * The part of an engine-started fight both `engageEnemy` and aggro share: roll initiative, open with `narrateCombatStart`, put the
+   * line and the opening in the recent turns, leave a pending `[engine: ...]` line for the DM and run the combat loop.
+   */
+  private startEngineFight(
+    plan: { participants: string[]; difficulty: Parameters<typeof startCombat>[3]; foes: string[] },
+    how: { starter?: string; noticed?: true; line?: string; pending: (openingText: string) => string },
+  ): boolean {
     const r = startCombat(this.state, this.rng(), plan.participants, plan.difficulty);
     if (!r.ok) return false;
     this.commit(r.state);
     this.publish(r.events);
     const first = r.state.combat ? r.state.entities[r.state.combat.active_id] : undefined;
     const text = narrateCombatStart({
-      foes: plan.foes, starter: plan.starter,
+      foes: plan.foes,
+      ...(how.noticed ? { noticed: true } : how.starter ? { starter: how.starter } : {}),
       ...(first ? { first: { name: first.name, side: first.kind === "enemy" ? "enemy" as const : "party" as const } } : {}),
     }, this.flavorRng());
-    const targetName = this.state.entities[targetId]?.name ?? "the enemy";
-    this.recent.push({ speaker: plan.starter, text: `I attack ${targetName}.`, kind: "player", channel: "ic" });
+    if (how.starter && how.line) this.recent.push({ speaker: how.starter, text: how.line, kind: "player", channel: "ic" });
     if (text) {
       this.room.broadcast("narration_chunk", { turn_id: `n${++this.turnN}`, text, done: true });
       this.recent.push({ speaker: "DM", text, kind: "dm" });
     }
     this.trimRecent();
-    this.pushPending([`[engine: ${plan.starter} attacked ${targetName} and the engine started the fight without the DM${text ? `: ${text}` : ""}]`]);
+    this.pushPending([how.pending(text)]);
     this.roundLineStart = this.pendingLines.length; // the round digest must not swallow the opening
-
     this.enqueue(() => this.advanceCombat());
     return true;
   }
@@ -774,9 +816,17 @@ export class GameSession {
         intents = routed.narrative;
         lines = routed.lines;
         for (const i of routed.mechanical) {
+          if (routed.engaged.has(i)) continue; // engageEnemy recorded this line with the opening
           if (i.text.trim() !== "" && !/^\/ooc\b/i.test(i.text.trim())) this.recent.push({ speaker: i.characterName, text: i.text, kind: "player", channel: "ic" });
         }
         this.trimRecent();
+        if (this.state.combat) {
+          // a fight began while the beat was routed: what is left is handled like intents during combat (no beat DM call)
+          this.pushPending(lines);
+          this.combatIntents.push(...routed.narrative);
+          if (this.combatIntents.length > MAX_PENDING_LINES) this.combatIntents.splice(0, this.combatIntents.length - MAX_PENDING_LINES);
+          return;
+        }
         if (intents.length === 0) {
           // Every intent was mechanical: the engine already resolved them, so no model call. The lines wait for the next DM call.
           this.pushPending(lines);
@@ -828,11 +878,15 @@ export class GameSession {
   /**
    * Resolve the mechanical intents of a beat with engine calls: movement and the typed object commands (open, unlock, pull,
    * read, examine, take, drop, give, use an item), plus look, inventory and wait. A typed attack still goes to the DM (see
-   * `engageFromIntent`). An intent whose engine call fails, or that the engine leaves to the DM, goes to the DM.
+   * `engageFromIntent`). An intent whose engine call fails, or that the engine leaves to the DM, goes to the DM. If a fight
+   * starts while the beat is routed (a typed attack, or a walk that makes creatures notice the party), the intents after it
+   * are left narrative and the caller hands them to the combat loop.
    */
-  private routeIntents(all: Intent[]): { narrative: Intent[]; mechanical: Intent[]; lines: string[] } {
+  private routeIntents(all: Intent[]): { narrative: Intent[]; mechanical: Intent[]; engaged: Set<Intent>; lines: string[] } {
     const narrative: Intent[] = [];
     const mechanical: Intent[] = [];
+    /** Intents whose line `engageEnemy` already put in the recent turns. */
+    const engaged = new Set<Intent>();
     const lines: string[] = [];
     for (const i of all) {
       const verdict = classifyIntent(i.text, this.intentContext(i.characterId));
@@ -852,6 +906,7 @@ export class GameSession {
         this.publish(r.events, { toDm: false });
         lines.push(`[engine: ${ent.name} steps from (${from.x},${from.y}) to (${from.x + dx},${from.y + dy}) (${quote})]`);
         mechanical.push(i);
+        this.afterPartyMoved();
         continue;
       }
       if (verdict.action === "look") {
@@ -874,8 +929,8 @@ export class GameSession {
         continue;
       }
       if (verdict.action === "attack") {
-        if (this.engageFromIntent(ent.id, verdict.targetId)) { mechanical.push(i); continue; }
-        narrative.push(i); // for now the DM decides whether a fight starts, exactly as before
+        if (this.engageFromIntent(ent.id, verdict.targetId, i.text)) { mechanical.push(i); engaged.add(i); continue; }
+        narrative.push(i); // full mode, or the engine cannot start this fight: the DM decides
         continue;
       }
       if (verdict.action !== "move_to") {
@@ -896,16 +951,16 @@ export class GameSession {
         : `[engine: ${ent.name} is already beside ${verdict.label} at (${dest.at.x},${dest.at.y}) (${quote})]`);
       mechanical.push(i);
     }
-    return { narrative, mechanical, lines };
+    return { narrative, mechanical, engaged, lines };
   }
 
   /**
    * Start a fight from a typed attack on a lone, uniquely named enemy (`classifyIntent` verdict `attack`). Returns whether the
-   * engine took it over. Always false for now: the combat branch supplies engine-started combat, and until then the intent goes to
-   * the DM as narrative.
+   * engine took it over: in lean mode through `engageEnemy` (which records the player's typed line), otherwise false and the DM decides.
    */
-  private engageFromIntent(_actorId: string, _targetId: string): boolean {
-    return false;
+  private engageFromIntent(actorId: string, targetId: string, text: string): boolean {
+    const line = text.trim().slice(0, 200);
+    return this.engageEnemy(actorId, targetId, line ? { line } : {});
   }
 
   /** The engine call for a typed command the router recognized. */
@@ -967,6 +1022,7 @@ export class GameSession {
       this.commit(r.state);
       this.publish(r.events, { toDm: false });
       reply("ok");
+      this.afterPartyMoved();
       return;
     }
 
@@ -996,6 +1052,7 @@ export class GameSession {
       if (!r.ok) { this.walks.delete(entityId); return; }
       this.commit(r.state);
       this.publish(r.events, { toDm: false });
+      if (this.afterPartyMoved()) return; // a fight began: afterPartyMoved already stopped every walk
       if (i + 1 < path.length) this.later(() => step(i + 1), this.cfg.moveStepMs);
       else this.walks.delete(entityId);
     };
@@ -1669,15 +1726,27 @@ export class GameSession {
       damagePerRound: [r.damageHundredths.min / 100, r.damageHundredths.max / 100] as [number, number],
     };
     try {
-      const built = await buildEnemy(this.deps.provider, { concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ranges }, {
-        finalize: (draft) => {
-          try {
-            const c = clampEnemy(draft, level);
-            return { ok: true as const, enemy: c.enemy, notes: c.notes };
-          } catch (err) {
-            return { ok: false as const, errors: [err instanceof Error ? err.message : "invalid enemy"] };
-          }
-        },
+      let built: { enemy: Enemy } | undefined;
+      if (this.cfg.enemyBuilder === "model") {
+        try {
+          built = await buildEnemy(this.deps.provider, { concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ranges }, {
+            finalize: (draft) => {
+              try {
+                const c = clampEnemy(draft, level);
+                return { ok: true as const, enemy: c.enemy, notes: c.notes };
+              } catch (err) {
+                return { ok: false as const, errors: [err instanceof Error ? err.message : "invalid enemy"] };
+              }
+            },
+          });
+        } catch (err) {
+          this.deps.logger.warn("[dm] enemy builder model failed, building offline:", err instanceof LlmError ? err.kind : (err as Error)?.name);
+        }
+      }
+      // the engine's own builder: the default, and the fallback when the model call fails. The seed comes from the game, never a clock.
+      built ??= buildEnemyOffline({
+        concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ...(a.ref ? { ref: a.ref } : {}),
+        seed: Math.imul(this.state.seed | 0, 2654435761) ^ Object.keys(this.state.archetypes).length,
       });
       const enemy = { ...built.enemy };
       const castLook = this.castLook(a.asset_ref, "enemy");
@@ -1738,7 +1807,7 @@ export class GameSession {
   }
 
   private moveToMap(mapId: string): void {
-    const r = placePartyOnMap(this.state, mapId, "party_start");
+    const r = placePartyWithAllies(this.state, mapId, "party_start", this.presentIds());
     if (!r.value) return;
     this.commit(r.state);
     this.publish(r.events);
@@ -1756,6 +1825,7 @@ export class GameSession {
       this.publish(r.events);
     }
     this.pendingLines.push(`[engine: the party arrives at a new area, ${map?.meta.setting.name ?? "unknown"} (map ${map?.id ?? "?"})]`);
+    this.checkAggro(); // the party arrived: creatures that see it may start the fight (no follow step, the allies came along)
   }
 
   /** Spawn positions are a placement detail, not a rules number: snap a blocked tile to the nearest free one. */
