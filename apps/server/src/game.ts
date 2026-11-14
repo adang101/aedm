@@ -1,12 +1,13 @@
 import {
-  addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
+  addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
   classifyIntent, closeContainer, computePartyLevel, containerDiff, containerForObject, containerView, createGameState, createRng, currentMap, describeEvent, digestEvents, getObjects, hasDramaticBeat,
+  creatureVoice, isDmVictoryRole, narrateCombatEnd, narrateCombatStart, planEngagement, startCombat, victoryNeedsDm,
   narrateEvents, NARRATION, endCombat, endTurn, enemyRangesForLevel,
   dropItem, enemyTakeTurn, entitiesOnMap, giveItem, labelOf, openContainer, performAct, takeAll, takeItem, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
   pickPlot, placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
   skipAbilityPick, spendScorePoint, STARTER_BRIEFS, toCharacterView,
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
-  type ActResult, type CheckRequest, type ClassifiedIntent, type CreateEnemyAction, type DramaLookup, type EngineEvent, type Entity, type GameState, type IntentContext,
+  type ActResult, type BarkEvent, type CreatureVoice, type CheckRequest, type ClassifiedIntent, type CreateEnemyAction, type DramaLookup, type EngineEvent, type Entity, type GameState, type IntentContext,
 } from "@aedm/engine";
 import {
   buildEnemy, clampNarration, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
@@ -52,7 +53,10 @@ const DM_SKIP_EVENTS = new Set<EngineEvent["type"]>([
   "examined", "container_stocked", "lock_set", "sign_written",
 ]);
 
-/** Engine events that earn a DM reaction at the next turn boundary of a fight. */
+/** Events that get an engine bark in lean mode instead of a DM reaction. */
+const BARK_EVENTS = new Set<EngineEvent["type"]>(["morale_broken", "surrendered", "fled", "bloodied"]);
+
+/** Engine events that earn a DM reaction at the next turn boundary of a fight ("full" mode; lean mode keeps only dramatic beats). */
 const REACTION_EVENTS = new Set<EngineEvent["type"]>(["morale_broken", "surrendered", "fled", "bloodied", "downed"]);
 
 /** A dramatic beat: morale, surrender, a bloodied leader, a hero downed or an allied NPC defeated. Call after the state is committed. */
@@ -99,6 +103,10 @@ export class GameSession {
   private vote: Vote | null = null;
   private voteN = 0;
   private lastNarratedRound = 1;
+  /** Lean mode: bark-worthy events waiting for the combat loop (the creature's facts are captured when the event is published). */
+  private barkQueue: { event: BarkEvent; entityId: string; info: CreatureVoice }[] = [];
+  /** What happened in the current fight, for the engine's closing narration and the "does the DM close this?" decision. */
+  private fight = { fell: 0, fled: 0, surrendered: 0, leaderInvolved: false };
   /** Combat events since the last narration or DM call; the deterministic narrator and the round digest read them. */
   private combatEvents: EngineEvent[] = [];
   /** Index in pendingLines where the current round's lines begin (they may be collapsed into one digest line). */
@@ -382,8 +390,17 @@ export class GameSession {
       this.walkEpoch++;
       this.lastNarratedRound = next.combat.round;
       this.reactions = { round: 0, n: 0 };
+      this.barkQueue = [];
+      this.fight = {
+        fell: 0, fled: 0, surrendered: 0,
+        leaderInvolved: next.combat.order.some((o) => {
+          const e = next.entities[o.entity_id];
+          return e?.kind === "enemy" && isDmVictoryRole(next.archetypes[e.refId]?.role);
+        }),
+      };
       this.room.broadcast("combat_state", toWsCombat(next.combat));
     } else if (prev.combat && !next.combat) {
+      this.barkQueue = [];
       this.clearTurnTimer();
       if (this.vote) { this.finishVoteUi(this.vote, 0); this.clearLater(this.vote.timer); this.vote = null; }
     } else if (prev.combat && next.combat && (prev.combat.active_id !== next.combat.active_id || prev.combat.round !== next.combat.round)) {
@@ -436,8 +453,12 @@ export class GameSession {
         const real = events.filter((e) => !DM_SKIP_EVENTS.has(e.type));
         this.combatEvents.push(...real);
         if (this.combatEvents.length > MAX_COMBAT_EVENTS) this.combatEvents.splice(0, this.combatEvents.length - MAX_COMBAT_EVENTS);
-        // reactions: morale, surrender, a bloodied leader, a hero downed, an ally or a boss/elite defeated
-        if (events.some((e) => isReactionEvent(this.state, e)) || hasDramaticBeat(events, this.dramaLookup())) this.reactionDue = true;
+        // reactions: lean mode keeps only dramatic beats (a hero downed, a boss or elite defeated); full mode also reacts to
+        // morale, surrender, flight, a bloodied leader and a defeated ally
+        const lean = this.cfg.combatDm === "lean";
+        if ((!lean && events.some((e) => isReactionEvent(this.state, e))) || hasDramaticBeat(events, this.dramaLookup())) this.reactionDue = true;
+        this.tallyFight(events);
+        if (lean) this.queueBarks(events);
       }
       this.pushPending(lines);
     }
@@ -452,6 +473,69 @@ export class GameSession {
       this.pendingLines.splice(0, over);
       this.roundLineStart = Math.max(0, this.roundLineStart - over);
     }
+  }
+
+  /** An enemy as it stood before the latest commit (a fled or surrendered creature is gone or changed now), with the state that knows its archetype. */
+  private enemyBefore(id: string): { state: GameState; entity: Entity } | undefined {
+    for (const state of [this.lastPrev, this.state]) {
+      const entity = state?.entities[id];
+      if (state && entity?.kind === "enemy") return { state, entity };
+    }
+    return undefined;
+  }
+
+  /** Count who fell, fled or yielded, and whether a boss or elite was among them. */
+  private tallyFight(events: EngineEvent[]): void {
+    for (const e of events) {
+      if (e.type !== "defeated" && e.type !== "fled" && e.type !== "surrendered") continue;
+      const f = this.enemyBefore(e.entityId);
+      if (!f) continue;
+      if (e.type === "defeated") this.fight.fell++;
+      else if (e.type === "fled") this.fight.fled++;
+      else this.fight.surrendered++;
+      if (isDmVictoryRole(f.state.archetypes[f.entity.refId]?.role)) this.fight.leaderInvolved = true;
+    }
+  }
+
+  private queueBarks(events: EngineEvent[]): void {
+    for (const e of events) {
+      if (!BARK_EVENTS.has(e.type)) continue;
+      const event = e as BarkEvent;
+      const entityId = event.entityId;
+      const f = this.enemyBefore(entityId);
+      const info = f && creatureVoice(f.state, f.entity);
+      if (info) this.barkQueue.push({ event, entityId, info });
+    }
+  }
+
+  private flavorRng() {
+    return createRng(Math.imul(this.state.seed | 0, 31) ^ Math.imul(++this.turnN, 2654435761));
+  }
+
+  /**
+   * Lean mode: show the engine's barks. Spoken lines go through the engine's `npc_say` (so a surrendered creature's dossier
+   * remembers them) and reach players as chat; creatures that cannot talk get a narration line. Both land in the DM's recent turns.
+   */
+  private flushBarks(): void {
+    if (this.barkQueue.length === 0) return;
+    for (const q of this.barkQueue.splice(0)) {
+      const bark = barkFor(q.event, q.info, this.flavorRng());
+      if (!bark) continue;
+      if (bark.kind === "emote") {
+        this.room.broadcast("narration_chunk", { turn_id: `n${++this.turnN}`, text: bark.text, done: true });
+        this.recent.push({ speaker: "DM", text: bark.text, kind: "dm" });
+        continue;
+      }
+      const r = applyDmActions(this.state, this.rng(), [{ type: "npc_say", entity_id: q.entityId, text: bark.text }], this.dmContext());
+      if (r.applied.length > 0) {
+        this.commit(r.state);
+        this.publish(r.events);
+      } else {
+        // the creature has already left the scene (fled): the words still reach the table
+        this.publish([{ type: "npc_said", entityId: q.entityId, name: q.info.name, text: bark.text }]);
+      }
+    }
+    this.trimRecent();
   }
 
   private dramaLookup(): DramaLookup {
@@ -611,14 +695,52 @@ export class GameSession {
       : giveItem(this.state, this.rng(), id, p.item_id, p.to_character_id ?? "")));
   }
 
-  /** basic_attack outside combat is just an intent: the DM decides whether a fight starts. */
+  /**
+   * basic_attack outside combat. In lean mode, attacking a living hostile enemy starts the fight in the engine (`engageEnemy`);
+   * anything else is just an intent: the DM decides whether a fight starts.
+   */
   handleAttackIntent(player: Player, targetId: string, reply: Reply): void {
     const ch = this.characterOf(player);
     if (!ch) return reply("error", "forbidden", "You have no character in this game.");
     const name = this.state.entities[targetId]?.name;
     if (!name) return reply("error", "not_found", "That target is gone.");
     reply("ok");
+    if (this.engageEnemy(ch.id, targetId)) return;
     this.recordIntent(player, `I attack ${name} (${targetId}).`);
+  }
+
+  /**
+   * Lean mode: a character attacks a living hostile enemy on their map outside combat. The engine starts the fight (the party,
+   * allies and every hostile enemy there), opens it with `narrateCombatStart`, records what happened for the DM's next call and
+   * runs the normal combat loop, with no model call. Returns false, and changes nothing, in "full" mode, during a fight, or when
+   * the target is not a hostile enemy on the attacker's map (the caller then leaves the attack to the DM).
+   */
+  engageEnemy(characterId: string, targetId: string): boolean {
+    if (this.cfg.combatDm !== "lean" || this.state.combat) return false;
+    const present = this.presentIds();
+    const plan = planEngagement(this.state, characterId, targetId, { presentCharacterIds: present, partyLevel: computePartyLevel(this.state, present) });
+    if (!plan.ok) return false;
+    const r = startCombat(this.state, this.rng(), plan.participants, plan.difficulty);
+    if (!r.ok) return false;
+    this.commit(r.state);
+    this.publish(r.events);
+    const first = r.state.combat ? r.state.entities[r.state.combat.active_id] : undefined;
+    const text = narrateCombatStart({
+      foes: plan.foes, starter: plan.starter,
+      ...(first ? { first: { name: first.name, side: first.kind === "enemy" ? "enemy" as const : "party" as const } } : {}),
+    }, this.flavorRng());
+    const targetName = this.state.entities[targetId]?.name ?? "the enemy";
+    this.recent.push({ speaker: plan.starter, text: `I attack ${targetName}.`, kind: "player", channel: "ic" });
+    if (text) {
+      this.room.broadcast("narration_chunk", { turn_id: `n${++this.turnN}`, text, done: true });
+      this.recent.push({ speaker: "DM", text, kind: "dm" });
+    }
+    this.trimRecent();
+    this.pushPending([`[engine: ${plan.starter} attacked ${targetName} and the engine started the fight without the DM${text ? `: ${text}` : ""}]`]);
+    this.roundLineStart = this.pendingLines.length; // the round digest must not swallow the opening
+
+    this.enqueue(() => this.advanceCombat());
+    return true;
   }
 
   private trimRecent(): void {
@@ -864,7 +986,7 @@ export class GameSession {
     this.publish(r.events);
     opts.onOk?.(r);
     reply("ok");
-    if (opts.endsTurn || combatOutcome(this.state) !== null || this.reactionDue) this.enqueue(() => this.advanceCombat());
+    if (opts.endsTurn || combatOutcome(this.state) !== null || this.reactionDue || this.barkQueue.length > 0) this.enqueue(() => this.advanceCombat());
   }
 
   handleBasicAttack(player: Player, targetId: string, reply: Reply): void {
@@ -1085,6 +1207,7 @@ export class GameSession {
   private async advanceCombat(): Promise<void> {
     for (let guard = 0; guard < 400; guard++) {
       if (this.closed) return;
+      this.flushBarks(); // may commit a spoken line, so read the state after it
       const st = this.state;
       const c = st.combat;
       if (!c) { this.clearTurnTimer(); return; }
@@ -1168,10 +1291,31 @@ export class GameSession {
 
   private async finishCombat(outcome: "victory" | "defeat"): Promise<void> {
     this.clearTurnTimer();
+    // Lean mode: an ordinary victory is closed by the engine. Defeat, a boss or elite, a hero still down, waiting speech
+    // or an unspent dramatic trigger all still get the real DM.
+    const c = this.state.combat;
+    const partyDown = (c?.order ?? [])
+      .map((o) => this.state.entities[o.entity_id])
+      .filter((e): e is Entity => e?.kind === "pc" && (e.hp <= 0 || !!e.out))
+      .map((e) => e.name);
+    const summary = { ...this.fight, partyDown };
+    const engineCloses = this.cfg.combatDm === "lean" && outcome === "victory" && !victoryNeedsDm(summary) && this.combatIntents.length === 0 && !this.reactionDue;
+    if (engineCloses) this.narrateRound(c?.round ?? this.lastNarratedRound);
     const r = endCombat(this.state, this.rng(), outcome);
     if (!r.ok) return;
     this.commit(r.state);
     this.publish(r.events);
+    if (engineCloses) {
+      const text = narrateCombatEnd(summary, this.flavorRng());
+      if (text) {
+        this.room.broadcast("narration_chunk", { turn_id: `n${++this.turnN}`, text, done: true });
+        this.recent.push({ speaker: "DM", text, kind: "dm" });
+        this.trimRecent();
+        this.pushPending([`[engine: the fight ended in victory; the engine narrated the close without the DM: ${text}]`]);
+      }
+      this.autosave();
+      return;
+    }
     await this.dmTurn({ intents: [], engineLines: [], allowFollowup: true, tick: false });
   }
 

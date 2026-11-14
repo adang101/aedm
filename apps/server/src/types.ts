@@ -67,6 +67,13 @@ export interface ServerConfig {
   dmNotebookLimit: number;
   /** DM reaction calls allowed per combat round (on top of the end-of-round narration). Extra triggers wait for the round narration. */
   combatReactionsPerRound: number;
+  /**
+   * How much of a fight the model narrates. "lean" (default): the engine writes the opening of a fight it started, short creature
+   * barks, and the close of an ordinary victory; the DM is called for dramatic beats (a hero down, a boss or elite fallen), player
+   * speech, a defeat, or a victory that included a boss or elite. "full": the DM reacts to every morale, surrender, flee and bloodied
+   * event and closes every fight, and attacks outside combat are always left to the DM.
+   */
+  combatDm: "lean" | "full";
 }
 
 export const DEFAULT_CONFIG: ServerConfig = {
@@ -86,6 +93,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   intentRouter: true,
   dmNotebookLimit: 8,
   combatReactionsPerRound: 1,
+  combatDm: "lean",
 };
 
 /** Everything injected into rooms and games. */
