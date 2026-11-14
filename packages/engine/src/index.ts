@@ -26,4 +26,6 @@ export * from "./narrate.ts";
 export * from "./intents.ts";
 export * from "./describe.ts";
 export { DESCRIBE, NARRATION, PIXEL_RULES, RULES, LEVELS, COSTS, ENEMY_DATA, CONDITION_META, PLOTS, LOOT, INTERACT, ENEMY_KITS } from "./data.ts";
+export * from "./npc-behavior.ts";
+export * from "./ai-nav.ts";
 export * from "./map/index.ts";

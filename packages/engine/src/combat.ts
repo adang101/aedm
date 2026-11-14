@@ -1,10 +1,11 @@
 import type { Ability, Condition, Difficulty, Effect, Enemy, Save } from "@aedm/schemas";
 import { CONDITION_META, RULES, type Tactic } from "./data.ts";
-import { rollD20, rollDamage, rollNotation } from "./dice.ts";
+import { hazardTiles, pathAvoiding } from "./ai-nav.ts";
+import { averageHundredths, rollD20, rollDamage, rollNotation } from "./dice.ts";
 import type { EngineEvent } from "./events.ts";
 import {
   abilitiesOf, applyCondition, applyDamage, applyHeal, archetypeOf, attackModifiers, basicAttackRange, breakMorale, canAct,
-  canMove, defenseOf, dexScore, enemyTactics, enterTile, getEntity, hasCondition, isLeader, isStanding, leaveCombat,
+  canMove, defenseOf, dexScore, enemyTactics, enterTile, getEntity, hasCondition, isLeader, isRangedAttacker, isStanding, leaveCombat,
   removeCondition, removeEntity, reviveAt, saveModifier, speedOf, statsOf, terrainAt, walkPath, weaknessMultiplied, weaponDamageDice,
 } from "./mutate.ts";
 import type { Rng } from "./rng.ts";
@@ -898,15 +899,19 @@ function leaderOf(s: GameState, e: Entity): Entity | undefined {
  */
 function rankFoes(s: GameState, e: Entity, tactics: ReadonlySet<Tactic>): Entity[] {
   const foes = foesOf(s, e);
-  if (tactics.size === 0 || foes.length < 2) return foes;
+  const finish = RULES.ai.finish;
+  if (foes.length < 2 || (tactics.size === 0 && !finish.enabled)) return foes;
   const leader = tactics.has("protect_leader") ? leaderOf(s, e) : undefined;
   const mates = tactics.has("pack") ? alliesOf(s, e).filter((a) => a.id !== e.id && a.hp > 0) : [];
   const reach = (s.combat?.turn.movementLeft ?? 0) + Math.max(basicAttackRange(s, e), ...abilitiesOf(s, e).map((ab) => ab.range_tiles));
+  const hit = Math.max(RULES.attack.minDamage * 100, averageHundredths(weaponDamageDice(s, e)) + keyMod(s, e) * 100);
   const key = (f: Entity): number[] => [
     leader && dist(leader, f) <= RULES.ai.leaderGuardRadius ? 0 : 1,
     tactics.has("target_healer") && isHealer(s, f) ? 0 : 1,
     tactics.has("focus_weakest") && dist(e, f) <= reach ? f.hp / f.hpMax : 2,
     -mates.filter((a) => dist(a, f) <= 1).length,
+    // a foe this creature can plausibly drop this turn (integers: HP plus shield against the average hit, in hundredths)
+    finish.enabled && dist(e, f) <= reach && (f.hp + f.shield) * 10000 <= hit * finish.damagePct ? 0 : 1,
   ];
   return foes
     .map((f) => ({ f, k: key(f) }))
@@ -927,36 +932,112 @@ function canReach(m: Mut, from: Entity, to: Point, range: number): boolean {
   return rangeError(m, from, to, range) === undefined;
 }
 
+const isHostileEffect = (ab: Ability, x: Effect): boolean =>
+  x.type === "damage" || x.type === "push" || x.type === "pull" || x.type === "mark" ||
+  (x.type === "condition" && defaultAffects(ab, x) === "enemies");
+
+/** Living creatures inside the ability's area when it is aimed at `point`. */
+function caughtAt(s: GameState, e: Entity, ab: Ability, point: Point): Entity[] {
+  const map = s.maps[e.mapId];
+  const area = abilityArea(ab);
+  if (!map) return [];
+  if (area.shape === "single") return entitiesAt(s, e.mapId, [point]).filter((t) => t.hp > 0);
+  const tiles = area.shape === "burst" ? burstTiles(point, area.radius, map)
+    : area.shape === "line" ? lineTiles(e, point, area.length, map)
+      : coneTiles(e, point, area.length, map);
+  return entitiesAt(s, e.mapId, tiles).filter((t) => t.hp > 0);
+}
+
+/**
+ * The best place to aim an ability. `anchors` are the creatures it may be aimed at, in preference order. For an
+ * area ability aimed at a tile every reachable tile is also tried. Each candidate scores `good - penalty * bad`
+ * over the creatures it would catch; a candidate that catches no good creature, or at least as many bad ones as
+ * good ones, is never chosen. The first best candidate wins, so ties keep the anchor order.
+ */
+function aim(
+  m: Mut, e: Entity, ab: Ability, anchors: Entity[], good: (t: Entity) => boolean, bad: (t: Entity) => boolean,
+): Target | null {
+  const s = m.s;
+  const area = abilityArea(ab);
+  const cands: { target: Target; point: Point }[] = [];
+  const seen = new Set<string>();
+  const add = (target: Target, point: Point): void => {
+    const k = tileKey(point.x, point.y);
+    if (seen.has(k)) return;
+    seen.add(k);
+    cands.push({ target, point });
+  };
+  for (const a of anchors) {
+    if (canReach(m, e, a, ab.range_tiles)) add(ab.target === "tile" ? { x: a.x, y: a.y } : a.id, a);
+  }
+  if (area.shape === "single") return cands[0]?.target ?? null;
+  const map = s.maps[e.mapId];
+  if (ab.target === "tile" && map) {
+    for (let dx = -ab.range_tiles; dx <= ab.range_tiles; dx++) {
+      for (let dy = -ab.range_tiles; dy <= ab.range_tiles; dy++) {
+        const p = { x: e.x + dx, y: e.y + dy };
+        if (isWalkable(map, p.x, p.y) && canReach(m, e, p, ab.range_tiles)) add(p, p);
+      }
+    }
+  }
+  let best: { target: Target; net: number } | null = null;
+  for (const c of cands) {
+    const caught = caughtAt(s, e, ab, c.point);
+    const g = caught.filter(good).length;
+    const b = caught.filter(bad).length;
+    if (g === 0 || (b > 0 && b >= g)) continue;
+    const net = g - b * RULES.ai.areaAllyPenalty;
+    if (best === null || net > best.net) best = { target: c.target, net };
+  }
+  return best?.target ?? null;
+}
+
 function planAbility(m: Mut, e: Entity, ab: Ability, foes: Entity[]): Target | null {
   const s = m.s;
-  const offensive = ab.effects.some((x) =>
-    x.type === "damage" || x.type === "push" || x.type === "pull" || x.type === "mark" ||
-    (x.type === "condition" && defaultAffects(ab, x) === "enemies"));
+  const offensive = ab.effects.some((x) => isHostileEffect(ab, x));
   const heals = ab.effects.some((x) => x.type === "heal");
   const buffs = ab.effects.some((x) => x.type === "shield" || (x.type === "condition" && defaultAffects(ab, x) === "allies"));
+  const area = abilityArea(ab);
+  const foeIds = new Set(foes.map((f) => f.id));
+  const myAllies = alliesOf(s, e);
   if (offensive) {
+    const hurtsAllies = ab.effects.some((x) => isHostileEffect(ab, x) && defaultAffects(ab, x) !== "enemies");
+    const isFoe = (t: Entity) => foeIds.has(t.id);
+    const isAlly = (t: Entity) => hurtsAllies && sideOf(t) === sideOf(e);
     if (ab.target === "self") {
-      const r = abilityArea(ab).radius || 1;
-      return foes.some((f) => dist(e, f) <= r) ? e.id : null;
+      if (area.shape !== "burst") return foes.some((f) => dist(e, f) <= (area.radius || 1)) ? e.id : null;
+      const caught = caughtAt(s, e, ab, e);
+      const g = caught.filter(isFoe).length;
+      const b = caught.filter(isAlly).length;
+      return g > 0 && (b === 0 || g > b) ? e.id : null;
     }
-    for (const f of foes) {
-      if (!canReach(m, e, f, ab.range_tiles)) continue;
-      if (ab.target === "tile") return { x: f.x, y: f.y };
-      if (ab.target === "enemy" || ab.target === "any") return f.id;
-    }
-    return null;
+    return aim(m, e, ab, foes, isFoe, isAlly);
   }
   if (heals) {
-    const need = alliesOf(s, e).find((a) => a.hp * 100 < a.hpMax * RULES.ai.healBelowPct);
-    if (!need) return null;
-    if (ab.target === "self") return need.id === e.id || abilityArea(ab).shape !== "single" ? e.id : null;
-    if (ab.target === "ally" || ab.target === "any") return canReach(m, e, need, ab.range_tiles) ? need.id : null;
-    return null;
+    const needy = (a: Entity) => a.hp * 100 < a.hpMax * RULES.ai.healBelowPct;
+    const need = myAllies.filter(needy);
+    if (need.length === 0) return null;
+    const hurtsFoes = ab.effects.some((x) => x.type === "heal" && defaultAffects(ab, x) !== "allies");
+    const isNeedy = (t: Entity) => sideOf(t) === sideOf(e) && needy(t);
+    const isFoe = (t: Entity) => hurtsFoes && foeIds.has(t.id);
+    if (ab.target === "self") {
+      if (area.shape === "single") return needy(e) ? e.id : null;
+      const caught = caughtAt(s, e, ab, e);
+      return caught.some(isNeedy) && !caught.some(isFoe) ? e.id : null;
+    }
+    if (ab.target === "enemy") return null;
+    return aim(m, e, ab, need, isNeedy, isFoe);
   }
   if (buffs) {
-    const cond = ab.effects.find((x) => x.type === "condition") as Extract<Effect, { type: "condition" }> | undefined;
-    if (ab.target === "self") return cond && hasCondition(e, cond.condition) ? null : foes.length > 0 ? e.id : null;
-    return null;
+    if (foes.length === 0) return null;
+    const lacks = (a: Entity): boolean => ab.effects.some((x) =>
+      (x.type === "shield" && !hasCondition(a, "shielded")) ||
+      (x.type === "condition" && defaultAffects(ab, x) === "allies" && !hasCondition(a, x.condition)));
+    if (ab.target === "self") return lacks(e) ? e.id : null;
+    if (ab.target === "enemy") return null;
+    const pool = myAllies.filter((a) => a.hp > 0 && lacks(a));
+    const ordered = [...pool.filter((a) => isLeader(s, a)), ...pool.filter((a) => !isLeader(s, a))];
+    return aim(m, e, ab, ordered, () => true, () => false);
   }
   return null;
 }
@@ -978,29 +1059,63 @@ function walkToward(m: Mut, e: Entity, target: Entity, desired: number): void {
   const c = s.combat as CombatState;
   if (!map || !readyToMove(m, e)) return;
   const blockers = sightBlockers(s, e.mapId);
-  const there = (p: Point) => dist(p, target) <= desired && (dist(p, target) <= 1 || hasLineOfSight(map, p, target, blockers));
-  if (there(e)) return;
+  const hazards = hazardTiles(s, e);
+  const there = (p: Point) => !hazards.has(tileKey(p.x, p.y)) && dist(p, target) <= desired && (dist(p, target) <= 1 || hasLineOfSight(map, p, target, blockers));
+  if (dist(e, target) <= desired && (dist(e, target) <= 1 || hasLineOfSight(map, e, target, blockers))) return;
   const occupied = occupiedTiles(s, e.mapId, { exceptId: e.id });
-  let best: Point[] | null = null;
-  for (let ox = -1; ox <= 1; ox++) {
-    for (let oy = -1; oy <= 1; oy++) {
-      if (ox === 0 && oy === 0) continue;
-      const goal = { x: target.x + ox, y: target.y + oy };
-      if (occupied.has(tileKey(goal.x, goal.y)) || !isWalkable(map, goal.x, goal.y)) continue;
-      const p = findPath(map, e, goal, occupied);
-      if (p && (best === null || p.length < best.length)) best = p;
+  const shortest = (skipHazardGoals: boolean): Point[] | null => {
+    let best: Point[] | null = null;
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        if (ox === 0 && oy === 0) continue;
+        const goal = { x: target.x + ox, y: target.y + oy };
+        if (occupied.has(tileKey(goal.x, goal.y)) || !isWalkable(map, goal.x, goal.y)) continue;
+        if (skipHazardGoals && hazards.has(tileKey(goal.x, goal.y))) continue;
+        const p = pathAvoiding(map, e, goal, occupied, hazards);
+        if (p && (best === null || p.length < best.length)) best = p;
+      }
     }
-  }
+    return best;
+  };
+  const best = shortest(true) ?? shortest(false);
   if (!best) return;
   let k = best.length;
   for (let i = 0; i < best.length; i++) {
     if (there(best[i] as Point)) { k = i + 1; break; }
   }
   k = Math.min(k, c.turn.movementLeft);
+  while (k > 0 && hazards.has(tileKey((best[k - 1] as Point).x, (best[k - 1] as Point).y))) k--;
   if (k > 0) {
     const steps = walkPath(m, e, best, k);
     c.turn.movementLeft -= steps;
   }
+}
+
+/**
+ * A ranged creature with a foe next to it steps to a tile that is adjacent to no foe but still has range and line of
+ * sight to its target, so it can shoot from there. Leaving melee costs nothing in the rules (no opportunity attacks).
+ * Does nothing when no such tile is in reach; the creature then fights from where it stands.
+ */
+function kite(m: Mut, e: Entity, target: Entity | undefined): void {
+  const cfg = RULES.ai.kite;
+  const s = m.s;
+  const c = s.combat as CombatState;
+  const map = s.maps[e.mapId];
+  if (!cfg.enabled || !target || !map || c.turn.actionUsed || !isRangedAttacker(s, e)) return;
+  const foes = foesOf(s, e);
+  if (!foes.some((f) => dist(e, f) <= cfg.triggerDistance) || !readyToMove(m, e)) return;
+  const range = basicAttackRange(s, e);
+  const blockers = sightBlockers(s, e.mapId);
+  const hazards = hazardTiles(s, e);
+  const occupied = occupiedTiles(s, e.mapId, { exceptId: e.id });
+  const clearance = (p: Point) => Math.min(...foes.map((f) => dist(p, f)));
+  let best: { d: number; path: Point[] } | null = null;
+  for (const t of reachableTiles(map, e, c.turn.movementLeft, new Set([...occupied, ...hazards]))) {
+    const d = clearance(t);
+    if (d < cfg.minFoeDistance || dist(t, target) > range || !hasLineOfSight(map, t, target, blockers)) continue;
+    if (best === null || d > best.d || (d === best.d && t.path.length < best.path.length)) best = { d, path: t.path };
+  }
+  if (best) c.turn.movementLeft -= walkPath(m, e, best.path, best.path.length);
 }
 
 function aiActions(m: Mut, e: Entity): void {
@@ -1037,6 +1152,9 @@ function aiActions(m: Mut, e: Entity): void {
     removeCondition(m, e, "burning");
     c.turn.actionUsed = true;
   }
+  const taunter = e.conditions.find((x) => x.condition === "taunted")?.source;
+  const ranked = rankFoes(s, e, tactics);
+  kite(m, e, ranked.find((f) => f.id === taunter) ?? ranked[0]);
   const act1 = tryAbilities();
   const act2 = tryBasic();
   if (act1 || act2) return;
@@ -1096,9 +1214,15 @@ function retreat(m: Mut, e: Entity, a: Enemy): void {
   const start = clearance(e);
   let best = { d: start, path: [] as Point[] };
   if (map && foes.length > 0 && readyToMove(m, e)) {
-    for (const t of reachableTiles(map, e, c.turn.movementLeft, occupiedTiles(s, e.mapId, { exceptId: e.id }))) {
-      const d = clearance(t);
-      if (d > best.d) best = { d, path: t.path };
+    const occupied = occupiedTiles(s, e.mapId, { exceptId: e.id });
+    const hazards = hazardTiles(s, e);
+    // run around hazards; cross them only when that is the sole way to get any farther
+    for (const blocked of hazards.size > 0 ? [new Set([...occupied, ...hazards]), occupied] : [occupied]) {
+      for (const t of reachableTiles(map, e, c.turn.movementLeft, blocked)) {
+        const d = clearance(t);
+        if (d > best.d) best = { d, path: t.path };
+      }
+      if (best.d > start) break;
     }
     c.turn.movementLeft -= walkPath(m, e, best.path, best.path.length);
   }

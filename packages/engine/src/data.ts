@@ -73,6 +73,18 @@ export interface Rules {
       fleeDistance: number;
       bloodiedPct: number;
     };
+    /** Each ally caught by an area ability cancels this many foes caught. */
+    areaAllyPenalty: number;
+    /** Ranged creatures with a foe adjacent step to a tile at least `minFoeDistance` from every foe, if it keeps range and sight. */
+    kite: { enabled: boolean; triggerDistance: number; minFoeDistance: number };
+    /** Prefer a foe whose HP (plus shield) is at most `damagePct` percent of the attacker's average basic-attack damage. */
+    finish: { enabled: boolean; damagePct: number };
+    /** AI movement avoids damaging terrain when a path at most `detourAllowance` tiles longer exists. */
+    hazard: { avoid: boolean; detourAllowance: number };
+    /** Out-of-combat aggro: a hostile that sees a party character within `radius` starts a fight; hostiles within `joinRadius` of one that noticed join (or all when `joinAll`). */
+    aggro: { enabled: boolean; radius: number; joinRadius: number; joinAll: boolean; includeAllies: boolean };
+    /** Allied NPCs farther than `maxDistance` from the party walk up to `stepTiles` toward it, stopping within `stopDistance`. */
+    follow: { enabled: boolean; maxDistance: number; stopDistance: number; stepTiles: number };
   };
 }
 
