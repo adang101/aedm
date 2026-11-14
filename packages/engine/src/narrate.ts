@@ -11,15 +11,15 @@ import type { Rng } from "./rng.ts";
 interface Sentence { text: string; kind: string }
 
 /** Fill `{name}` slots. Unknown slots are left empty so a bad template never leaks braces. */
-function fill(template: string, vars: Record<string, string | number>): string {
+export function fill(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
 }
 
 /** Picks a template per kind, avoiding a repeat inside one narration while unused phrasings remain. */
-function picker(rng: Rng): (kind: string, vars: Record<string, string | number>) => string {
+export function picker(rng: Rng, source: Record<string, string[]> = NARRATION.templates): (kind: string, vars: Record<string, string | number>) => string {
   const used = new Map<string, Set<number>>();
   return (kind, vars) => {
-    const list = NARRATION.templates[kind] ?? [];
+    const list = source[kind] ?? [];
     if (list.length === 0) return "";
     let seen = used.get(kind);
     if (!seen || seen.size >= list.length) { seen = new Set(); used.set(kind, seen); }

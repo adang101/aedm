@@ -18,6 +18,7 @@ import {
 import { designSpriteOffline, spriteSeed } from "./sprites.ts";
 import { allyStats, bossThreatCap, encounterBudget, enemyThreat } from "./threat.ts";
 import { findFreeTileNear, getObjects, isWalkable } from "./map/index.ts";
+import { alliesWithParty, moveAlliesToScene } from "./npc-behavior.ts";
 
 export { placePartyOnMap, registerArchetype } from "./state.ts";
 export { addMap } from "./map-state.ts";
@@ -393,7 +394,9 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
 
     case "change_scene": {
       if (!s.maps[a.map_id]) return `unknown map ${a.map_id}`;
+      const allies = alliesWithParty(s, present); // before the party moves: they are picked from where the party stands now
       if (!placePartyInternal(m, a.map_id, a.entry, present)) return `map ${a.map_id} has no spawn named ${a.entry}`;
+      moveAlliesToScene(m, allies, a.map_id, a.entry); // after the party, so the allies take the free tiles around it
       s.currentMapId = a.map_id;
       emit(m, { type: "scene_changed", mapId: a.map_id, entry: a.entry });
       return undefined;

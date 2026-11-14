@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "caps": { "exits": 4, "objects": 6, "containers": 4, "creatures": 8, "party": 6, "inventory": 24 },
+  "more": "and {n} more",
+  "list": { "sep": ", ", "last": " and " },
+  "exitEdgeMargin": 1,
+  "sides": { "n": "north", "s": "south", "e": "east", "w": "west" },
+  "scene": {
+    "placeMood": "You are in {place}. It feels {mood}.",
+    "place": "You are in {place}.",
+    "noPlace": "You look around.",
+    "exits": "Ways out: {list}.",
+    "exit": "{name}",
+    "exitSide": "{name} ({side})",
+    "objects": "You can see {list}.",
+    "containers": "On the ground: {list}.",
+    "creatures": "Nearby: {list}.",
+    "party": "With you: {list}.",
+    "nothing": "Nothing else catches your eye.",
+    "moods": { "bright": "bright", "neutral": "calm", "dim": "dim", "dark": "dark", "eerie": "eerie" }
+  },
+  "objectNames": {
+    "door": { "open": "an open door", "closed": "a closed door", "locked": "a locked door" },
+    "chest": { "open": "an open chest", "closed": "a closed chest", "locked": "a locked chest" },
+    "lever": { "open": "a lever, pulled down", "closed": "a lever, pushed up" },
+    "sign": { "any": "a sign" },
+    "altar": { "any": "an altar" }
+  },
+  "objectFallback": "a {kind}",
+  "containerNames": { "pile": "a pile of dropped items", "remains": "the remains of {name}", "remainsPlain": "remains" },
+  "tags": { "hostile": "hostile", "downed": "downed", "out": "out of the fight" },
+  "healthBands": [
+    { "minPct": 100, "text": "unhurt" },
+    { "minPct": 75, "text": "scratched" },
+    { "minPct": 50, "text": "wounded" },
+    { "minPct": 25, "text": "badly wounded" },
+    { "minPct": 1, "text": "barely standing" },
+    { "minPct": 0, "text": "downed" }
+  ],
+  "creature": {
+    "enemy": "{name}.{appearance} It looks {health}.{conditions}",
+    "npc": "{name}.{appearance} {disposition}{downed}",
+    "pc": "{name}{title}. Looks {health}.{conditions}",
+    "appearance": " {text}",
+    "title": ", {title}",
+    "enemyConditions": " It is {list}.",
+    "pcConditions": " Currently {list}.",
+    "downed": " They are downed.",
+    "dispositions": {
+      "friendly": "They seem friendly.",
+      "neutral": "They seem neutral.",
+      "wary": "They seem wary.",
+      "hostile": "They are hostile."
+    },
+    "conditions": {
+      "stunned": "stunned", "slowed": "slowed", "rooted": "rooted to the spot", "prone": "knocked prone", "burning": "on fire",
+      "bleeding": "bleeding", "shielded": "wrapped in a protective ward", "hasted": "moving faster", "marked": "marked",
+      "taunted": "goaded", "dazzled": "dazzled", "evasive": "slippery"
+    }
+  },
+  "inventory": {
+    "carrying": "You are carrying: {list}.",
+    "empty": "You are carrying nothing.",
+    "count": "{name} x{n}"
+  }
+}

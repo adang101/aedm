@@ -11,8 +11,11 @@ import enemiesJson from "../data/enemies.json" with { type: "json" };
 import plotsJson from "../data/plots.json" with { type: "json" };
 import pixelJson from "../data/pixel.json" with { type: "json" };
 import narrationJson from "../data/narration.json" with { type: "json" };
+import combatVoiceJson from "../data/combat-voice.json" with { type: "json" };
 import lootJson from "../data/loot.json" with { type: "json" };
 import interactJson from "../data/interact.json" with { type: "json" };
+import enemyKitsJson from "../data/enemy-kits.json" with { type: "json" };
+import describeJson from "../data/describe.json" with { type: "json" };
 
 export interface ArmorInfo { name: string; dexCap: number | null; speedPenalty: number }
 
@@ -71,6 +74,18 @@ export interface Rules {
       fleeDistance: number;
       bloodiedPct: number;
     };
+    /** Each ally caught by an area ability cancels this many foes caught. */
+    areaAllyPenalty: number;
+    /** Ranged creatures with a foe adjacent step to a tile at least `minFoeDistance` from every foe, if it keeps range and sight. */
+    kite: { enabled: boolean; triggerDistance: number; minFoeDistance: number };
+    /** Prefer a foe whose HP (plus shield) is at most `damagePct` percent of the attacker's average basic-attack damage. */
+    finish: { enabled: boolean; damagePct: number };
+    /** AI movement avoids damaging terrain when a path at most `detourAllowance` tiles longer exists. */
+    hazard: { avoid: boolean; detourAllowance: number };
+    /** Out-of-combat aggro: a hostile that sees a party character within `radius` starts a fight; hostiles within `joinRadius` of one that noticed join (or all when `joinAll`). */
+    aggro: { enabled: boolean; radius: number; joinRadius: number; joinAll: boolean; includeAllies: boolean };
+    /** Allied NPCs farther than `maxDistance` from the party walk up to `stepTiles` toward it, stopping within `stopDistance`. */
+    follow: { enabled: boolean; maxDistance: number; stopDistance: number; stepTiles: number };
   };
 }
 
@@ -168,6 +183,30 @@ export interface NarrationData {
 }
 export const NARRATION = narrationJson as unknown as NarrationData;
 
+/** Engine-written combat openings, endings and short creature reactions (see combat-voice.ts). */
+export interface CombatVoiceData {
+  version: number;
+  /** Body plan assumed when a creature's sprite does not name one. */
+  defaultBody: string;
+  /** Body plans whose creatures speak words; the rest get a described reaction. */
+  talkingBodies: string[];
+  /** Body plan to emote group (a key of `emote`). */
+  emoteGroups: Record<string, string>;
+  /** Chance in percent that an event produces a bark at all. */
+  barkChancePct: Record<string, number>;
+  /** Enemy roles that count as a fight's leaders (a bloodied leader gets the `leader` flavor). */
+  leaderRoles: EnemyRole[];
+  /** An ordinary victory is engine-narrated unless one of these holds. */
+  victory: { dmRoles: EnemyRole[]; dmWhenPartyDown: boolean };
+  listJoin: string;
+  /** event, then flavor (`default` is the fallback), then phrasings. */
+  say: Record<string, Record<string, string[]>>;
+  /** emote group, then event, then flavor. */
+  emote: Record<string, Record<string, Record<string, string[]>>>;
+  templates: Record<string, string[]>;
+}
+export const COMBAT_VOICE = combatVoiceJson as unknown as CombatVoiceData;
+
 // ---------- containers, locks, doors and loot (data/interact.json, data/loot.json) ----------
 
 export type ActionCost = "action" | "quick" | "free" | "refuse";
@@ -222,5 +261,64 @@ export interface InteractData {
   texts: Record<string, Record<string, string>>;
 }
 
+// ---------- engine-written descriptions (data/describe.json, see describe.ts) ----------
+
+export interface DescribeData {
+  version: number;
+  caps: { exits: number; objects: number; containers: number; creatures: number; party: number; inventory: number };
+  /** Template for a list's overflow; `{n}` is the count left out. */
+  more: string;
+  list: { sep: string; last: string };
+  /** An exit within this many tiles of a map edge counts as on that side. */
+  exitEdgeMargin: number;
+  sides: Record<"n" | "s" | "e" | "w", string>;
+  scene: {
+    placeMood: string; place: string; noPlace: string; exits: string; exit: string; exitSide: string; objects: string;
+    containers: string; creatures: string; party: string; nothing: string; moods: Record<string, string>;
+  };
+  /** By object kind, then state (or `any`). */
+  objectNames: Record<string, Record<string, string>>;
+  /** For an object kind with no entry above; `{kind}` is the kind. */
+  objectFallback: string;
+  containerNames: { pile: string; remains: string; remainsPlain: string };
+  tags: { hostile: string; downed: string; out: string };
+  /** Checked in order: the first band whose `minPct` the health percentage (rounded up) reaches. */
+  healthBands: { minPct: number; text: string }[];
+  creature: {
+    enemy: string; npc: string; pc: string; appearance: string; title: string; enemyConditions: string; pcConditions: string;
+    downed: string; dispositions: Record<string, string>; conditions: Record<string, string>;
+  };
+  inventory: { carrying: string; empty: string; count: string };
+}
+
+export const DESCRIBE = describeJson as unknown as DescribeData;
 export const LOOT = lootJson as unknown as LootData;
 export const INTERACT = interactJson as unknown as InteractData;
+
+// ---------- offline enemy builder (data/enemy-kits.json) ----------
+
+export interface KitTrait { id: string; keywords: string[]; hpPct: number; defensePct: number; attackPct: number; damagePct: number; speed: number }
+export interface KitBehaviorFamily { id: string; tactic: Tactic | "ranged"; group?: string; keywords: string[]; variants: string[][] }
+/** An ability as written in the data: effects may carry `dicePct` (percent of the level's maximum average) or `absorbBase` and `absorbPerLevel` instead of a final number. */
+export interface KitAbilityTemplate {
+  name: string; description: string; tags: string[]; action: string; target: string; range_tiles: number;
+  cooldown_turns?: number; uses_per_rest?: number; effects: Record<string, unknown>[];
+}
+export interface KitTheme {
+  id: string; keywords: string[]; resistance: DamageType | null; weakness: DamageType | null;
+  lootHint: string; spriteTags: string[]; templates: KitAbilityTemplate[];
+}
+export interface EnemyKitsData {
+  version: number;
+  maxConceptLength: number;
+  defaultConcept: string;
+  name: { maxLength: number; maxWords: number; refPrefix: string; articles: string[]; clauseWords: string[]; trailingWords: string[]; defaults: Record<EnemyRole, string> };
+  variation: { startPct: number; jitterPct: number; speedJitterChancePct: number };
+  traits: KitTrait[];
+  spriteTags: { keywords: string[]; tags: string[] }[];
+  behavior: { minLines: number; maxLines: number; families: KitBehaviorFamily[]; fillers: Record<EnemyRole, string[]> };
+  abilities: { targetCount: Record<EnemyRole, number>; rolePowerPct: Record<EnemyRole, number>; fallback: KitAbilityTemplate };
+  defaultTheme: string;
+  themes: KitTheme[];
+}
+export const ENEMY_KITS = enemyKitsJson as unknown as EnemyKitsData;
