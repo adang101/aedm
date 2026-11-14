@@ -61,6 +61,8 @@ export interface ServerConfig {
   devLog: boolean;
   /** Characters of the recent-turn window handed to the DM. */
   recentTurnLimit: number;
+  /** Resolve unambiguous mechanical intents (walks, empty input) with the engine and skip the DM call when a whole beat is mechanical. */
+  intentRouter: boolean;
   /** How many of the DM's latest private notes are handed back to it. */
   dmNotebookLimit: number;
   /** DM reaction calls allowed per combat round (on top of the end-of-round narration). Extra triggers wait for the round narration. */
@@ -81,6 +83,7 @@ export const DEFAULT_CONFIG: ServerConfig = {
   limits: { movePerSec: 10, sayIntervalMs: 2000, otherPerSec: 5, spriteDesign: { max: 6, windowMs: 60_000 } },
   devLog: false,
   recentTurnLimit: 12,
+  intentRouter: true,
   dmNotebookLimit: 8,
   combatReactionsPerRound: 1,
 };

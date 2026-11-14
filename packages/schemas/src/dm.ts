@@ -19,6 +19,9 @@ export const RequestCheckActionSchema = z.strictObject({
   tags: z.array(CheckTagSchema).max(2),
   advantage: AdvantageSchema.default("none"),
   reason: text(120),
+  /** Pre-written outcome per branch (1 to 60 words, flavor only). Optional so old replies parse. */
+  on_success: wordRange(1, 60).optional(),
+  on_failure: wordRange(1, 60).optional(),
 });
 
 export const CreateNpcActionSchema = z.strictObject({
@@ -112,6 +115,39 @@ export const GrantItemActionSchema = z.strictObject({
   }),
 });
 
+/**
+ * Puts items in a container: an existing chest, pile or remains, or an NPC's pockets (the id of a living NPC).
+ * Validated against the remaining loot cap exactly like `grant_item`; refused in combat.
+ */
+export const StockContainerActionSchema = z.strictObject({
+  type: z.literal("stock_container"),
+  container_id: EntityIdSchema,
+  items: z.array(z.strictObject({
+    name: text(40),
+    kind: ItemKindSchema,
+    value: z.number().int().min(0).max(100000),
+    tier: z.number().int().min(1).max(5).optional(),
+  })).min(1).max(6),
+});
+
+/** Writes the text of a sign on the current map (1 to 200 characters). */
+export const SetSignTextActionSchema = z.strictObject({
+  type: z.literal("set_sign_text"),
+  object_id: EntityIdSchema,
+  text: text(200),
+});
+
+/**
+ * Locks a door or chest as a story beat. `target_id` is a door or chest interactable id, or a chest container id.
+ * `key_item_name` names the item that opens it; the key reaches players only through `grant_item` or `stock_container`.
+ */
+export const SetLockActionSchema = z.strictObject({
+  type: z.literal("set_lock"),
+  target_id: EntityIdSchema,
+  dc: z.number().int().min(5).max(30),
+  key_item_name: text(40).optional(),
+});
+
 export const UpdateQuestActionSchema = z.strictObject({
   type: z.literal("update_quest"),
   quest_id: EntityIdSchema,
@@ -188,7 +224,7 @@ export const SuggestActionsActionSchema = z.strictObject({
 export const DmActionSchema = z.discriminatedUnion("type", [
   RequestCheckActionSchema, CreateNpcActionSchema, NpcSayActionSchema, NpcNoteActionSchema, CreateEnemyActionSchema,
   SpawnEntityActionSchema, StartCombatActionSchema, EndCombatActionSchema, ApplyConditionActionSchema,
-  GrantItemActionSchema, UpdateQuestActionSchema, SetFactActionSchema, GenerateMapActionSchema,
+  GrantItemActionSchema, StockContainerActionSchema, SetSignTextActionSchema, SetLockActionSchema, UpdateQuestActionSchema, SetFactActionSchema, GenerateMapActionSchema,
   ChangeSceneActionSchema, AwardGrowthActionSchema, CompleteMilestoneActionSchema, AdjustPlotActionSchema,
   OpenThreadActionSchema, CloseThreadActionSchema, SuggestActionsActionSchema,
 ]);

@@ -1,5 +1,5 @@
 import { FsKv, type KvBackend } from "./kv";
-import type { GameState } from "@aedm/engine";
+import { restoreState, type GameState } from "@aedm/engine";
 import type { CampaignInfo, RoomSettings } from "@aedm/schemas";
 import type { RecentTurn } from "./context";
 
@@ -43,16 +43,19 @@ type StoredSave = Omit<SaveFile, "story_so_far" | "chapters" | "state"> & {
   chapters?: string[];
   /** Before tiered memory: a rolling list of cumulative summaries, newest last. */
   summaries?: string[];
-  state: Omit<GameState, "threads"> & { threads?: GameState["threads"] };
+  state: Omit<GameState, "threads" | "containers" | "interactables"> & Partial<Pick<GameState, "threads" | "containers" | "interactables">>;
 };
 
-/** Fills in what older saves lack: the last cumulative summary becomes the story so far, and threads start empty. */
+/**
+ * Fills in what older saves lack: the last cumulative summary becomes the story so far, threads start empty, and a state from
+ * before containers gets empty `containers` and `interactables` and has its maps' chests and loot slots stocked (`restoreState`).
+ */
 function migrateSave({ summaries, ...save }: StoredSave): SaveFile {
   return {
     ...save,
     story_so_far: save.story_so_far ?? summaries?.at(-1) ?? "",
     chapters: save.chapters ?? [],
-    state: { ...save.state, threads: save.state.threads ?? [] },
+    state: restoreState({ ...save.state, threads: save.state.threads ?? [] }),
   };
 }
 

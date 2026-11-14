@@ -1,5 +1,6 @@
 import type {
-  AuthUser, CampaignInfo, CastEntry, CharacterSummary, CombatState, CharacterView, EntityView, GameMap, LevelUpResult, LevelUpState, Quest, ServerMessage, WorkshopAsset,
+  AuthUser, CampaignInfo, CastEntry, CharacterSummary, CombatState, CharacterView, ContainerSummary, ContainerView, EntityView, GameMap,
+  InteractableView, LevelUpResult, LevelUpState, Quest, ServerMessage, WorkshopAsset,
 } from "@aedm/schemas";
 
 type Msg<T extends ServerMessage["type"]> = Extract<ServerMessage, { type: T }>["payload"];
@@ -96,6 +97,10 @@ export interface AppState {
   party: CharacterView[];
   quests: Quest[];
   combat: CombatState | null;
+  /** Chests, piles and remains on the current map, by container id. Contents arrive only in `containerView`. */
+  containers: Record<string, ContainerSummary>;
+  /** The container I opened last, with its contents; null when no panel should be open. */
+  containerView: ContainerView | null;
   turnTimer: TimedValue<{ entity_id: string; seconds_left: number }> | null;
   vote: VoteView | null;
   log: LogEntry[];
@@ -117,6 +122,7 @@ export function createInitialState(): AppState {
     displayName: "", playerId: null, roomId: null, inviteCode: null, authToken: null,
     lobby: null, cast: [], myCharacterName: null, claimed: {},
     seq: 0, needsResync: false, mode: "exploration", map: null, entities: {}, party: [], quests: [],
+    containers: {}, containerView: null,
     combat: null, turnTimer: null, vote: null, log: [], chips: [],
     levelUp: null, levelUpResult: null, levelUpBusy: false,
   };
@@ -137,7 +143,7 @@ export function resetRoom(s: AppState): void {
   s.playerId = fresh.playerId; s.roomId = fresh.roomId; s.inviteCode = fresh.inviteCode; s.authToken = fresh.authToken;
   s.lobby = null; s.cast = []; s.myCharacterName = null; s.claimed = {};
   s.seq = 0; s.needsResync = false; s.mode = "exploration"; s.map = null; s.entities = {}; s.party = [];
-  s.quests = []; s.combat = null; s.turnTimer = null; s.vote = null; s.log = []; s.chips = [];
+  s.quests = []; s.containers = {}; s.containerView = null; s.combat = null; s.turnTimer = null; s.vote = null; s.log = []; s.chips = [];
   s.levelUp = null; s.levelUpResult = null; s.levelUpBusy = false;
   s.busy = false;
 }
@@ -168,6 +174,31 @@ export function isHost(s: AppState): boolean {
 export function nameOf(s: AppState, id: string): string {
   return s.entities[id]?.name ?? s.party.find((c) => c.id === id)?.name
     ?? s.lobby?.players.find((p) => p.player_id === id)?.display_name ?? id;
+}
+
+/** Containers as a record keyed by id. */
+export function indexContainers(list: readonly ContainerSummary[] | undefined): Record<string, ContainerSummary> {
+  return Object.fromEntries((list ?? []).map((c) => [c.id, c]));
+}
+
+/**
+ * Set door, lever and chest states on the loaded map, in place (the renderer holds the same objects, so it
+ * draws the new look on the next frame). Changes for another map are ignored.
+ */
+export function applyInteractableChanges(map: GameMap | null, changes: readonly InteractableView[]): void {
+  if (!map) return;
+  for (const ch of changes) {
+    if (ch.map_id !== map.id) continue;
+    for (const layer of map.layers) {
+      if (layer.type !== "objectgroup") continue;
+      for (const o of layer.objects) if (o.type === "interactable" && o.id === ch.id) o.state = ch.state;
+    }
+  }
+}
+
+/** The container (chest, pile, remains) standing on a tile, if any. A chest is found by its own tile too. */
+export function containerAt(s: Pick<AppState, "containers">, x: number, y: number): ContainerSummary | null {
+  return Object.values(s.containers).find((c) => c.x === x && c.y === y) ?? null;
 }
 
 /** Apply one validated server message to the state, in place. `now` is wall-clock ms. */
@@ -203,7 +234,9 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
     }
     case "state_snapshot": {
       const p = msg.payload;
+      if (s.map?.id !== p.map.id) s.containerView = null;
       s.seq = p.seq; s.needsResync = false; s.mode = p.mode; s.map = p.map;
+      s.containers = indexContainers(p.containers);
       s.entities = Object.fromEntries(p.entities.map((e) => [e.id, e]));
       s.party = p.party; s.quests = p.quests; s.combat = p.combat ?? null;
       if (!s.combat) s.turnTimer = null;
@@ -216,11 +249,17 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
       s.seq = p.seq;
       for (const e of p.changed) s.entities[e.id] = e;
       for (const id of p.removed) delete s.entities[id];
+      for (const c of p.containers_changed ?? []) s.containers[c.id] = c;
+      for (const id of p.containers_removed ?? []) delete s.containers[id];
+      if (p.interactables_changed) applyInteractableChanges(s.map, p.interactables_changed);
       if (p.mode) s.mode = p.mode;
       if (p.combat) s.combat = p.combat;
       if (s.mode === "exploration") { s.combat = null; s.turnTimer = null; }
       return;
     }
+    case "container_view":
+      s.containerView = msg.payload;
+      return;
     case "combat_state":
       s.combat = msg.payload;
       s.mode = "combat";

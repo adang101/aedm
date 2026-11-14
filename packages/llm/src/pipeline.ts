@@ -11,7 +11,16 @@ export interface CallOptions {
   signal?: AbortSignal | undefined;
   /** Streams text of the FIRST call only (a repair call is never streamed). */
   onText?: ((delta: string) => void) | undefined;
+  /**
+   * What the repair call resends. "full" (default): the whole conversation plus the bad reply and the errors.
+   * "minimal": only the system prompt (cached), the bad reply and the errors. Use it for schema-only repairs whose
+   * input is large (the DM context), where the errors alone tell the model what to fix.
+   */
+  repairContext?: "full" | "minimal" | undefined;
 }
+
+/** Longest bad reply echoed back in a minimal repair (characters). */
+export const MAX_REPAIR_ECHO = 8000;
 
 export type ParseOutcome<T> =
   | { ok: true; data: T; repaired: boolean; rawText: string; model: string; calls: number; responses: ModelResponse[] }
@@ -51,14 +60,14 @@ export async function completeWithRepair<T>(
     return { ok: true, data: p1.data, repaired: false, rawText: first.text, model: first.model, calls: 1, responses: [first] };
   }
 
+  const badReply = first.text.trim() === "" ? "(empty reply)" : first.text;
+  const repairText = renderPrompt("repair", { errors: p1.errors });
   const repairReq: ModelRequest = {
     ...req,
     purpose: "repair",
-    messages: [
-      ...req.messages,
-      { role: "assistant", content: first.text.trim() === "" ? "(empty reply)" : first.text },
-      { role: "user", content: renderPrompt("repair", { errors: p1.errors }) },
-    ],
+    messages: opts.repairContext === "minimal"
+      ? [{ role: "user", content: `<previous_reply>\n${badReply.slice(0, MAX_REPAIR_ECHO)}\n</previous_reply>\n\n${repairText}` }]
+      : [...req.messages, { role: "assistant", content: badReply }, { role: "user", content: repairText }],
   };
   const second = await provider.complete(repairReq, opts.signal ? { signal: opts.signal } : {});
   const p2 = check(second.text);

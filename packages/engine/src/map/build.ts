@@ -9,10 +9,56 @@ import { closestPattern, findMaterial, getMaterial, resolveMaterial, words } fro
 import { MapRng } from "./prng";
 import { resolveSetting } from "./settings";
 import type { ResolvedSetting } from "./settings";
+import { signText } from "./signs";
+import { INTERACT } from "../data.ts";
 
 export interface BuildOptions {
   id: string;
   generatedAt: string;
+  /** Loot tier (1 to 5) the map's locks are scaled to; the party's gear allowance. Default `interact.locks.defaultTier`. */
+  tier?: number;
+  /** Make the generator's door tiles real door objects (open, closed or locked). Default `interact.doors.generated.enabled`. */
+  doorObjects?: boolean;
+}
+
+type InteractableObj = Extract<MapObject, { type: "interactable" }>;
+
+/** A lock DC for the tier, from data, with a little seeded variance. */
+function lockFor(tier: number, rng: MapRng): { dc: number } {
+  const base = INTERACT.locks.dcByTier[String(Math.min(5, Math.max(1, Math.trunc(tier) || 1)))] ?? 10;
+  const v = INTERACT.locks.variance;
+  return { dc: Math.min(30, Math.max(5, base + rng.int(-v, v))) };
+}
+
+/**
+ * Fill in what the engine can decide without a DM: door objects at the generator's door tiles (open, closed or locked by data),
+ * locks on locked chests and doors, text on signs, and each lever linked to the nearest door(s). Uses its own stream so the
+ * layout, objects and decor stay exactly what they were.
+ */
+function populateObjects(objects: MapObject[], doorTiles: Pt[], rooms: ReadonlyMap<string, string>, setting: string, seed: number, tier: number, signRooms: Map<string, string>): void {
+  const rng = new MapRng(seed ^ 0x51ab17);
+  const used = new Set(objects.map((o) => `${o.x},${o.y}`));
+  let doorN = objects.filter((o) => o.type === "interactable" && o.kind === "door").length;
+  const lockedPct = INTERACT.doors.generated.lockedPct[String(Math.min(5, Math.max(1, Math.trunc(tier) || 1)))] ?? 0;
+  for (const p of doorTiles) {
+    if (used.has(`${p.x},${p.y}`)) continue;
+    used.add(`${p.x},${p.y}`);
+    const roll = rng.int(1, 100);
+    const locked = roll <= lockedPct;
+    const closed = locked || rng.int(1, 100) <= INTERACT.doors.generated.closedPct;
+    doorN += 1;
+    objects.push({ type: "interactable", id: `door_${doorN}`, kind: "door", state: locked ? "locked" : closed ? "closed" : "open", ...(locked ? { lock: lockFor(tier, rng) } : {}), x: p.x, y: p.y });
+  }
+  const doors = objects.filter((o): o is InteractableObj => o.type === "interactable" && o.kind === "door");
+  objects.forEach((o, i) => {
+    if (o.type !== "interactable") return;
+    if ((o.kind === "chest" || o.kind === "door") && o.state === "locked" && !o.lock) objects[i] = { ...o, lock: lockFor(tier, rng) };
+    if (o.kind === "sign" && !o.text) objects[i] = { ...o, text: signText(setting, rooms.get(signRooms.get(o.id) ?? ""), (arr) => rng.pick(arr)) };
+    if (o.kind === "lever" && !o.links && doors.length > 0) {
+      const near = [...doors].sort((a, b) => Math.max(Math.abs(a.x - o.x), Math.abs(a.y - o.y)) - Math.max(Math.abs(b.x - o.x), Math.abs(b.y - o.y)) || a.id.localeCompare(b.id));
+      objects[i] = { ...o, links: near.slice(0, INTERACT.levers.maxLinks).map((d) => d.id) };
+    }
+  });
 }
 
 const SIZE_RANGE = { small: [20, 30], medium: [30, 45], large: [45, 60] } as const;
@@ -222,6 +268,7 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
     objects.push({ type: "entity_slot", id: `slot_${k + 1}`, role: s.role, count: s.count, x: p.x, y: p.y });
   });
   const counters = new Map<string, number>();
+  const signRooms = new Map<string, string>();
   for (const poi of brief.points_of_interest) {
     const p = freeTile(byId.get(poi.room_id));
     const i = grid.idx(p.x, p.y);
@@ -233,6 +280,7 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
       const state = ik === "chest" || ik === "door" ? (rng.chance(0.3) ? "locked" : "closed") : "closed";
       decor.set(i, ik === "door" ? setting.materials.door[0]! : (getMaterial(INTERACTABLE_PROP[ik]) ?? propFor(ik, setting)));
       objects.push({ type: "interactable", id: `${ik}_${n}`, kind: ik, state, x: p.x, y: p.y });
+      if (ik === "sign") signRooms.set(`${ik}_${n}`, poi.room_id);
     } else {
       decor.set(i, propFor(poi.kind, setting));
     }
@@ -241,6 +289,13 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
   placeHazards(grid, setting, rng, taken, start);
   repairHazards(grid, objects, startIdx);
   scatterDecor(grid, setting, rng, taken, decor);
+
+  const doorTiles: Pt[] = [];
+  for (let i = 0; i < grid.t.length; i++) if (grid.t[i] === T.DOOR) doorTiles.push({ x: i % w, y: Math.floor(i / w) });
+  populateObjects(
+    objects, (opts.doorObjects ?? INTERACT.doors.generated.enabled) ? doorTiles : [], new Map(brief.rooms.map((r) => [r.id, r.type])),
+    brief.setting.name, seed, opts.tier ?? INTERACT.locks.defaultTier, signRooms,
+  );
 
   const a = assemble({ grid, setting, seed, decor });
   return {

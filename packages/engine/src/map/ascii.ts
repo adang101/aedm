@@ -32,6 +32,7 @@ export function renderAscii(map: GameMap): string {
   const mark = { spawn: "S", exit: "E", entity_slot: "e", interactable: "c", trigger: "t" } as const;
   for (const o of getObjects(map)) {
     const row = grid[o.y];
+    if (o.type === "interactable" && o.kind === "door" && row?.[o.x] === "+") continue; // a door object on its door tile stays "+"
     if (row && o.x < row.length) row[o.x] = mark[o.type];
   }
   return grid.map((r) => r.join("")).join("\n");

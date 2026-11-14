@@ -1,6 +1,6 @@
 import { escapeUntrusted } from "./context";
 import type { CallOptions } from "./pipeline";
-import type { ModelProvider } from "./provider";
+import { MAX_OUTPUT_TOKENS, type ModelProvider } from "./provider";
 import { loadPrompt } from "./template";
 
 /** Hard caps a little above the word limits the prompts ask for. */
@@ -9,7 +9,7 @@ const STORY_WORDS = 320;
 
 async function summarize(provider: ModelProvider, prompt: string, user: string, maxWords: number, opts: CallOptions): Promise<string> {
   const res = await provider.complete(
-    { tier: "fast", system: loadPrompt(prompt), messages: [{ role: "user", content: user }], purpose: "summary", maxTokens: 1500 },
+    { tier: "fast", system: loadPrompt(prompt), messages: [{ role: "user", content: user }], purpose: "summary", maxTokens: MAX_OUTPUT_TOKENS.summary },
     opts.signal ? { signal: opts.signal } : {},
   );
   return res.text.trim().split(/\s+/).slice(0, maxWords).join(" ");

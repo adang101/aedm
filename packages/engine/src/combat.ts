@@ -20,7 +20,7 @@ type Point = { x: number; y: number };
 const dist = (a: Point, b: Point) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
 /** Run a validated action. `fn` returns an error string (before rolling anything) to refuse it; the input state is then returned untouched. */
-function act(state: GameState, rng: Rng, name: string, fn: (m: Mut) => string | undefined): ActionResult {
+export function act(state: GameState, rng: Rng, name: string, fn: (m: Mut) => string | undefined): ActionResult {
   const m: Mut = { s: cloneState(state), rng, ev: [] };
   const error = fn(m);
   if (error) return { state, events: [{ type: "action_rejected", action: name, reason: error }], ok: false, error };
@@ -244,7 +244,7 @@ export function endTurn(state: GameState, rng: Rng, entityId?: string): ActionRe
 
 // ---------- actor validation ----------
 
-function actorError(s: GameState, e: Entity | undefined, need: "move" | "action" | "quick" | "none"): string | undefined {
+export function actorError(s: GameState, e: Entity | undefined, need: "move" | "action" | "quick" | "none"): string | undefined {
   if (!e) return "unknown creature";
   if (!isStanding(e)) return `${e.name} is down`;
   if (need !== "none" && !(need === "move" ? canMove(e) : canAct(e))) {

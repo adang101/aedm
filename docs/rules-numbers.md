@@ -172,6 +172,56 @@ Interpolate between rows. The enemy builder's allowed ranges are HP and damage w
 
 Each character has two tags and gets +2 on checks the DM labels with a matching tag. The DM may use only tags from this list: athletics, stealth, speed, perception, survival, nature, medicine, lore, crafting, explosives, lockpicking, persuasion, deception, intimidation, performance, leadership, tinkering, animals. Add tags only after playtests show a gap.
 
+**Containers, locks and loot** (added with the engine-handled interactions; none of the numbers above change)
+
+Stored in `packages/engine/data/interact.json` and `loot.json`. Starting values, to be tuned by simulation.
+
+| Rule | Value |
+| --- | --- |
+| Reach | 1 tile (Chebyshev, so diagonals count) to a container, door, lever or lock. Reading a sign and `examine`: 4 tiles. |
+| Pack cap for taking, receiving and picking up | 24 items per character. (The schema allows 100 and the DM's `grant_item` keeps its existing cap of 100; the 24 applies to engine transfers.) |
+| Items per pile or remains | 30; a full pile starts another on the same tile |
+| Bound gear | Weapons and armor equip on pickup like a granted item and cannot be dropped or given, so a tier cannot be copied from one character to another |
+
+In combat (only the active creature acts; one verb per slot):
+
+| Verb | Cost |
+| --- | --- |
+| Open or close a container, take, take all, open or close a door, pull a lever, unlock, pick or force a lock | Action |
+| Drop, give | Quick action |
+| Read a sign, examine | Free, even out of turn |
+
+Locks:
+
+| Tier | Lock DC (before variance) |
+| --- | --- |
+| 1 | 10 |
+| 2 | 12 |
+| 3 | 15 |
+| 4 | 18 |
+| 5 | 20 |
+
+- Variance: plus or minus 2, drawn when the map is built, kept within 5 to 30. The tier is the party's gear allowance (the level's weapon tier), passed to map generation; default 1.
+- Unlock with the matching key item: automatic, the key is kept. Pick: DEX check, +2 with the lockpicking tag, against the DC. Force: STR check, +2 with the athletics tag, against the DC plus 2. A failed pick has no penalty. A forced lock breaks for good; forcing makes noise that carries 6 tiles, success or failure.
+- Doors the generator adds on door tiles (enabled by default): 50% start closed, and locked with odds by tier of 5, 10, 15, 20 and 25 percent (locked doors are also closed). A lever links to the nearest door (1 link).
+
+Loot (`rollLoot`): 1 to 3 items per roll, kinds weighted consumable 38, trinket 38, weapon 14, armor 10, never quest. Gear is rolled only up to the party's tier allowance and richer trinkets only at higher tiers, so no item beats what the level allows. The total value of a roll never exceeds its budget.
+
+| Source | Budget | Items |
+| --- | --- | --- |
+| Chest | 40% of the encounter loot cap (12 at level 1) | up to 3 |
+| Loot slot | 30% of the cap for each count (9 at level 1 for a count of 1) | up to 2 for each count |
+| Remains | Percent of the cap by role below, and never more than the cap still unspent this encounter | by role below |
+
+| Enemy role | Drops nothing | Drops loot | Budget (% of cap) | Most items |
+| --- | --- | --- | --- | --- |
+| Minion | 70 | 30 | 15 | 1 |
+| Standard | 35 | 65 | 30 | 2 |
+| Elite | 10 | 90 | 50 | 3 |
+| Boss | 0 | 100 | 80 | 4 |
+
+Remains loot counts against the encounter loot cap exactly like `grant_item` (and the cap resets when the next combat starts). Chest and slot stock is scenery: it does not count. Template values run from 2 (a river stone) to 105 (a master-made blade); the healing draught takes its name and value (25) from the Gear table above.
+
 **Tuning plan**
 
 Run seeded battles nightly between generated parties and enemies. Starting targets: a standard encounter is won in 70 to 90% of runs and ends within about 8 rounds. If results fall outside that band, change the encounter budget multiplier first, then enemy damage, and keep the ability cost formula stable.

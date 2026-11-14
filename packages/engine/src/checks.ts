@@ -14,6 +14,9 @@ export interface CheckRequest {
   tags: CheckTag[];
   advantage: Advantage;
   reason: string;
+  /** Pre-written flavor for each branch; the engine only carries it, the server shows it. */
+  onSuccess?: string;
+  onFailure?: string;
 }
 
 export interface CheckRoll {

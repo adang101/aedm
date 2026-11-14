@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "maxSentences": 8,
+  "digestAtLines": 6,
+  "conditions": {
+    "stunned": "stunned",
+    "slowed": "slowed",
+    "rooted": "rooted to the spot",
+    "prone": "knocked prone",
+    "burning": "set alight",
+    "bleeding": "bleeding",
+    "shielded": "wrapped in a protective ward",
+    "hasted": "moving faster",
+    "marked": "marked as a target",
+    "taunted": "goaded into fury",
+    "dazzled": "dazzled",
+    "evasive": "slippery and hard to hit"
+  },
+  "templates": {
+    "hit": [
+      "{attacker} strikes {target} for {amount}.",
+      "{attacker}'s blow lands on {target}, dealing {amount}.",
+      "{attacker} catches {target} cleanly for {amount}.",
+      "{target} takes {amount} from {attacker}."
+    ],
+    "crit": [
+      "{attacker} finds a gap and hits {target} hard for {amount}.",
+      "A brutal, perfectly placed blow from {attacker} costs {target} {amount}.",
+      "{attacker} lands a critical strike on {target} for {amount}."
+    ],
+    "hit_unsourced": [
+      "{target} suffers {amount}.",
+      "{target} loses {amount} to the harm around them.",
+      "{target} is hurt for {amount}."
+    ],
+    "absorbed": [
+      "{target}'s shield soaks the blow.",
+      "The strike glances off the ward around {target}.",
+      "{target} is protected by a shield and takes no harm."
+    ],
+    "miss": [
+      "{attacker} swings at {target} and misses.",
+      "{target} slips away from {attacker}'s attack.",
+      "{attacker}'s attack on {target} goes wide.",
+      "{target} avoids {attacker}."
+    ],
+    "ability": [
+      "{actor} uses {ability} on {target}.",
+      "{actor} turns {ability} against {target}.",
+      "{actor} unleashes {ability} at {target}."
+    ],
+    "ability_self": [
+      "{actor} uses {ability}.",
+      "{actor} calls on {ability}.",
+      "{actor} draws on {ability}."
+    ],
+    "down": [
+      "{name} drops, out of strength.",
+      "{name} falls and does not rise.",
+      "{name} collapses, downed."
+    ],
+    "defeated": [
+      "{name} is defeated.",
+      "{name} goes down for good.",
+      "{name} falls, beaten."
+    ],
+    "out": [
+      "{name} is out of the fight.",
+      "{name} cannot continue and slips from the battle."
+    ],
+    "revived": [
+      "{name} is back on their feet with {hp} HP.",
+      "{name} gasps and rises with {hp} HP left.",
+      "Help arrives and {name} stands again at {hp} HP."
+    ],
+    "woke": [
+      "{name} stirs awake with {hp} HP.",
+      "{name} comes round with {hp} HP."
+    ],
+    "heal": [
+      "{target} recovers {amount}.",
+      "Warmth returns to {target}, restoring {amount}.",
+      "{target} is mended for {amount}."
+    ],
+    "heal_sourced": [
+      "{source} restores {amount} to {target}.",
+      "{source} patches up {target} for {amount}.",
+      "{target} is healed {amount} by {source}."
+    ],
+    "shield": [
+      "A ward settles around {target}.",
+      "{target} is wrapped in a protective shield.",
+      "{target} gains a shield."
+    ],
+    "condition_applied": [
+      "{target} is {condition}.",
+      "{target} is now {condition}.",
+      "{target} finds themselves {condition}."
+    ],
+    "condition_ended": [
+      "{target} is no longer {condition}.",
+      "{target} shakes off being {condition}."
+    ],
+    "condition_resisted": [
+      "{target} shrugs off the effect.",
+      "The effect does not take hold on {target}."
+    ],
+    "flee": [
+      "The party breaks away from the fight.",
+      "The party escapes, and the fight is left behind."
+    ],
+    "truce": [
+      "The fighting stops as both sides stand down.",
+      "A fragile truce settles over the field."
+    ]
+  }
+}

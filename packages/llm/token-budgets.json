@@ -1,0 +1,15 @@
+{
+  "dm.user.opening": 527,
+  "dm.total.opening": 5596,
+  "dm.user.typical": 2475,
+  "dm.total.typical": 7544,
+  "dm.user.heavy": 4411,
+  "dm.total.heavy": 9481,
+  "system.dm": 5070,
+  "system.forge": 1454,
+  "system.enemy": 1450,
+  "system.bible": 982,
+  "system.summary": 141,
+  "system.sprite": 938,
+  "system.repair": 55
+}

@@ -39,7 +39,8 @@ describe("prompt files", () => {
     expect(sys).toContain("stone_floor");
     expect(sys).not.toContain('"biome"');
     const custom = buildDmSystem({ materialIds: ["moon_dust", "glass_floor"] });
-    expect(custom).toContain("moon_dust, glass_floor");
+    expect(custom).toContain("glass_floor, moon_dust"); // sorted, so the cached prefix is deterministic
+    expect(buildDmSystem({ materialIds: ["glass_floor", "moon_dust"] })).toBe(custom);
     expect(custom).not.toContain("stone_floor,");
     expect(templateKeys(custom)).toEqual([]);
     expect(buildDmSystem({ materialIds: ["moon_dust", "glass_floor"] })).toBe(custom);

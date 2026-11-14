@@ -1,6 +1,6 @@
 import { SpriteSpecDraftSchema, type SpriteSpec, type SpriteSpecDraft } from "@aedm/schemas";
 import { completeWithRepair, type CallOptions } from "./pipeline";
-import type { ModelProvider } from "./provider";
+import { MAX_OUTPUT_TOKENS, type ModelProvider } from "./provider";
 import { buildSpriteDesignerPrompt } from "./sprite-designer";
 
 export interface SpriteDesignRequest {
@@ -41,7 +41,7 @@ export async function designSprite(
     });
     const outcome = await completeWithRepair(
       provider,
-      { tier: "fast", system, messages: [{ role: "user", content: user }], purpose: "sprite", maxTokens: 600 },
+      { tier: "fast", system, messages: [{ role: "user", content: user }], purpose: "sprite", maxTokens: MAX_OUTPUT_TOKENS.sprite },
       SpriteSpecDraftSchema,
       opts,
     );

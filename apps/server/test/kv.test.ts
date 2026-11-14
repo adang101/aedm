@@ -93,4 +93,16 @@ describe("KvSaveStore", () => {
     expect(loaded).toMatchObject({ story_so_far: "older", chapters: ["c1"] });
     expect(loaded.state.threads).toEqual(threads);
   });
+
+  it("loads a save from before containers: containers and interactables default to empty, and a current save keeps its own", async () => {
+    const { KvSaveStore } = await import("../src/saves");
+    const store = new KvSaveStore(new MemoryKv());
+    await store.write("room_1", "old", save("u1"));
+    const old = (await store.readExact("room_1", "old"))!;
+    expect(old.state.containers).toEqual({});
+    expect(old.state.interactables).toEqual({});
+    const interactables = { "m_x/door_1": { state: "open" as const } };
+    await store.write("room_1", "new", { ...save("u1"), state: { campaignId: "c1", bible: { title: "T" }, containers: {}, interactables } as never });
+    expect((await store.readExact("room_1", "new"))!.state.interactables).toEqual(interactables);
+  });
 });

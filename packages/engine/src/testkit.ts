@@ -1,8 +1,9 @@
 /** Shared fixtures for engine tests. Not exported from the package. */
-import { fixtures, type Enemy, type GameMap, type StoryBible, type WorldFact } from "@aedm/schemas";
+import { fixtures, type Enemy, type GameMap, type MapObject, type StoryBible, type WorldFact } from "@aedm/schemas";
 import { applyDmActions } from "./dm-actions.ts";
 import { createRng, type Rng } from "./rng.ts";
-import { addCharacter, addMap, createGameState, placePartyOnMap, registerArchetype, type GameState } from "./state.ts";
+import { addMap } from "./map-state.ts";
+import { addCharacter, cloneState, createGameState, placePartyOnMap, registerArchetype, type GameState } from "./state.ts";
 
 export const BIBLE: StoryBible = {
   title: "The Lantern Marsh",
@@ -54,7 +55,7 @@ export const chorister: Enemy = {
   }],
 };
 
-export function makeWorld(seed = 7, opts: { walls?: [number, number][]; bible?: StoryBible } = {}): { state: GameState; rng: Rng } {
+export function makeWorld(seed = 7, opts: { walls?: [number, number][]; bible?: StoryBible; objects?: MapObject[] } = {}): { state: GameState; rng: Rng } {
   const rng = createRng(seed);
   let state = createGameState({ seed, bible: opts.bible ?? BIBLE, facts: FACTS, contentRating: "teen" });
   for (const c of fixtures.SPIKE_PARTY) {
@@ -62,7 +63,10 @@ export function makeWorld(seed = 7, opts: { walls?: [number, number][]; bible?: 
     if (!r.ok) throw new Error(r.errors.join("; "));
     state = r.state;
   }
-  state = addMap(state, makeTestMap("m_lighthouse", opts.walls)).state;
+  const map = makeTestMap("m_lighthouse", opts.walls);
+  const objects = map.layers.find((l) => l.type === "objectgroup");
+  if (objects && objects.type === "objectgroup") objects.objects.push(...(opts.objects ?? []));
+  state = addMap(state, map).state;
   state = placePartyOnMap(state, "m_lighthouse").state;
   return { state, rng };
 }
@@ -74,6 +78,23 @@ export function withArchetype(state: GameState, enemy: Enemy = chorister): { sta
 }
 
 export const PARTY_IDS = fixtures.SPIKE_PARTY.map((c) => c.id);
+
+/** Move a creature to a tile (a test shortcut: no path, no events). */
+export function placeAt(state: GameState, id: string, x: number, y: number): GameState {
+  const s = cloneState(state);
+  const e = s.entities[id];
+  if (!e) throw new Error(`no entity ${id}`);
+  e.x = x;
+  e.y = y;
+  return s;
+}
+
+/** Copy the state, let `fn` change the copy, and return it. */
+export function withState(state: GameState, fn: (s: GameState) => void): GameState {
+  const s = cloneState(state);
+  fn(s);
+  return s;
+}
 
 /** Spawn `count` of an archetype through the real DM action path. */
 export function spawn(state: GameState, rng: Rng, archetypeId: string, x: number, y: number, count = 1): GameState {

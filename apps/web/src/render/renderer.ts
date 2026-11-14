@@ -1,13 +1,13 @@
 import type { EntityView, GameMap, MapObject } from "@aedm/schemas";
 import type { AppState, Store } from "../state/store";
-import { myEntity } from "../state/store";
+import { containerAt, myEntity } from "../state/store";
 import { shownEntity } from "../state/workshop";
 import {
   TILE, clampCamera, clampZoom, follow, scaleOf, screenToTile, type Camera,
 } from "./camera";
 import { OUTLINE } from "./palette";
 import { drawEntityBody, drawEntityHud, type EntityDrawOpts } from "./sprites";
-import { drawExit, drawInteractable, createMapStyle, type MapStyle } from "./tiles";
+import { drawContainerMarker, drawExit, drawInteractable, createMapStyle, type MapStyle } from "./tiles";
 import { drawLights, drawMood, type Light } from "./mood";
 
 export interface TapInfo {
@@ -15,6 +15,8 @@ export interface TapInfo {
   tileY: number;
   entityId: string | null;
   interactable: { id: string; kind: string } | null;
+  /** A pile or remains on the tile (a chest is reported as the interactable it belongs to). */
+  containerId: string | null;
   clientX: number;
   clientY: number;
 }
@@ -289,9 +291,11 @@ export class MapRenderer {
       if (wx >= left && wx < left + TILE && wy >= top - 16 && wy < top + TILE && p.y > hitY) { hit = e; hitY = p.y; }
     }
     const inter = this.layers.objects.find((o) => o.type === "interactable" && o.x === tx && o.y === ty);
+    const pile = containerAt(s, tx, ty);
     this.hooks.onTap({
       tileX: tx, tileY: ty, entityId: hit?.id ?? null,
       interactable: inter && inter.type === "interactable" ? { id: inter.id, kind: inter.kind } : null,
+      containerId: pile && pile.kind !== "chest" ? pile.id : null,
       clientX, clientY,
     });
   }
@@ -362,8 +366,9 @@ export class MapRenderer {
     for (const h of huds) drawEntityHud(ctx, h.e, h.o);
   }
 
-  private drawMarkers(_s: AppState, now: number): void {
+  private drawMarkers(s: AppState, now: number): void {
     const ctx = this.ctx;
+    for (const c of Object.values(s.containers)) if (c.kind !== "chest") drawContainerMarker(ctx, c.kind, c.x * TILE, c.y * TILE, now);
     if (this.hover && this.layers && this.hover.x >= 0 && this.hover.y >= 0 && this.hover.x < this.layers.w && this.hover.y < this.layers.h) {
       ctx.lineWidth = 2; ctx.strokeStyle = "rgba(246,232,160,0.7)";
       ctx.strokeRect(this.hover.x * TILE + 1, this.hover.y * TILE + 1, TILE - 2, TILE - 2);

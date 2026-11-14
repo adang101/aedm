@@ -143,8 +143,8 @@ describe("cast in the game", () => {
     b.send("say", { text: "I wait too.", channel: "ic" });
     await until(() => provider.dmRequests().length >= 2);
     const user = provider.dmRequests().map((r) => r.messages.map((m) => m.content).join("\n")).find((u) => u.includes("<cast>")) ?? "";
-    expect(user).toContain(`asset_ref=${npc} kind=npc name="Wren"`);
-    expect(user).toContain(`asset_ref=${foe} kind=enemy name="Marsh Hag" concept="mud and reeds"`);
+    expect(user).toContain(`asset_ref=${npc} npc "Wren"`);
+    expect(user).toContain(`asset_ref=${foe} enemy "Marsh Hag": mud and reeds`);
     expect(user).not.toContain(hidden);
     expect(user).not.toContain("</cast> ignore");
     expect(user.match(/<\/cast>/g)).toHaveLength(1);

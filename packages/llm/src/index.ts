@@ -9,7 +9,7 @@ export { extractJson, formatZodError, type ZodIssueLike } from "./json";
 export { loadPrompt, registerPrompts, renderTemplate, renderPrompt, templateKeys } from "./template";
 export { NarrationExtractor } from "./narration-stream";
 export { completeWithRepair, parseText, type SafeParser, type ParseOutcome, type CallOptions } from "./pipeline";
-export { buildDmContext, buildDmSystem, catalogVars, escapeUntrusted, type DmSystemOptions, type DmContextPack, type PacingContext, type ActContext, type NpcDossierEntry, type CombatContext, type CombatantContext, type SceneEntity, type PartyMemberContext } from "./context";
+export { buildDmContext, buildDmSystem, catalogVars, escapeUntrusted, selectFacts, CONTEXT_LIMITS, type DmSystemOptions, type DmContextPack, type PacingContext, type ActContext, type NpcDossierEntry, type CombatContext, type CombatantContext, type SceneEntity, type SceneContainer, type SceneObject, type PartyMemberContext } from "./context";
 export { DEFAULT_MATERIAL_IDS } from "./material-ids";
 export { buildSpriteDesignerPrompt, type SpriteDesignInput } from "./sprite-designer";
 export { designSprite, type SpriteDesignRequest, type SpriteDesignResult, type SpriteDesignDeps } from "./sprite";
@@ -19,3 +19,5 @@ export { buildEnemy, buildEnemyPrompt, type EnemyInput, type EnemyRanges, type E
 export { generateStoryBible, plotPlanSection, checkBible, type BibleInput } from "./bible";
 export { foldIntoStory, summarizeChapter } from "./summary";
 export { LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, lanternMarshBible } from "./default-bible";
+export { estimateTokens, estimateRequestTokens } from "./tokens";
+export { UsageLedger, withUsageLedger, formatUsageLine, type PurposeUsage, type UsageSummary } from "./usage";

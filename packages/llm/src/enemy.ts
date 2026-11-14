@@ -3,7 +3,7 @@ import { escapeUntrusted } from "./context";
 import { LlmError } from "./errors";
 import { abilitySchemaText } from "./forge";
 import { completeWithRepair, type CallOptions } from "./pipeline";
-import type { ModelProvider } from "./provider";
+import { MAX_OUTPUT_TOKENS, type ModelProvider } from "./provider";
 import { loadPrompt, renderTemplate } from "./template";
 
 export interface EnemyRanges {
@@ -61,7 +61,7 @@ export async function buildEnemy<T>(
   let final: Extract<EnemyFinalizeResult<T>, { ok: true }> | undefined;
   const outcome = await completeWithRepair(
     provider,
-    { tier: "fast", system, messages: [{ role: "user", content: user }], purpose: "enemy" },
+    { tier: "fast", system, messages: [{ role: "user", content: user }], purpose: "enemy", maxTokens: MAX_OUTPUT_TOKENS.enemy },
     EnemyDraftSchema,
     opts,
     (draft) => {

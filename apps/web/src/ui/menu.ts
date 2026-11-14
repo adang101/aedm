@@ -27,6 +27,7 @@ export function openMenu(title: string, items: MenuItem[], clientX: number, clie
     el.replaceChildren(
       h("div", { class: "ctx-title" }, back ? h("button", { type: "button", class: "ctx-back", onClick: back, "aria-label": "Back" }, "<") : null, heading),
       ...list.map((it) => h("button", {
+        title: it.disabled && it.hint ? it.hint : undefined,
         type: "button", role: "menuitem", class: "ctx-item", disabled: it.disabled,
         onClick: () => {
           if (it.children) show(it.label, it.children, () => show(title, items));
@@ -34,6 +35,7 @@ export function openMenu(title: string, items: MenuItem[], clientX: number, clie
         },
       }, h("span", null, it.label), it.hint ? h("small", null, it.hint) : null, it.children ? h("span", null, ">") : null)),
     );
+    if (el.isConnected) el.querySelector<HTMLButtonElement>(".ctx-item:not(:disabled)")?.focus();
   };
   show(title, items);
   document.body.appendChild(el);
@@ -43,8 +45,17 @@ export function openMenu(title: string, items: MenuItem[], clientX: number, clie
   const y = Math.max(8, Math.min(clientY + 6, window.innerHeight - r.height - 8));
   el.style.left = `${x}px`;
   el.style.top = `${y}px`;
+  el.querySelector<HTMLButtonElement>(".ctx-item:not(:disabled)")?.focus();
   const onDoc = (ev: Event) => { if (current && !current.contains(ev.target as Node)) closeMenu(); };
-  const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") closeMenu(); };
+  const onKey = (ev: KeyboardEvent) => {
+    if (ev.key === "Escape") { closeMenu(); return; }
+    if (ev.key !== "ArrowDown" && ev.key !== "ArrowUp") return;
+    const items = [...el.querySelectorAll<HTMLButtonElement>(".ctx-item:not(:disabled)")];
+    if (items.length === 0) return;
+    ev.preventDefault();
+    const i = items.indexOf(document.activeElement as HTMLButtonElement);
+    items[(i + (ev.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]!.focus();
+  };
   setTimeout(() => document.addEventListener("pointerdown", onDoc), 0);
   document.addEventListener("keydown", onKey);
   offKey = () => { document.removeEventListener("pointerdown", onDoc); document.removeEventListener("keydown", onKey); };

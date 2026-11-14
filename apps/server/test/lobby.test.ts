@@ -170,8 +170,8 @@ describe("story structure", () => {
     expect(bibleReq.messages[0]!.content).toContain("arc: rise_fall");
     const user = provider.dmRequests()[0]!.messages[0]!.content;
     expect(user).toContain("<pacing>");
-    expect(user).toContain("Plot: Tragedy. Emotional arc: Soaring, then falling.");
-    expect(user).toContain("Current stage 1 of 5: Anticipation");
+    expect(user).toContain("Plot: Tragedy, arc: Soaring, then falling.");
+    expect(user).toContain("Stage 1/5: Anticipation");
   });
   it("auto picks a valid plot", async () => {
     const provider = scriptedProvider();

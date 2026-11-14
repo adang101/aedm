@@ -5,6 +5,7 @@ import { combineAdvantage, rollDamage } from "./dice.ts";
 import { emit, sideOf, tileKey, type ConditionInstance, type Entity, type Mut, type TerrainTile, type GameState } from "./state.ts";
 import { abilityModifier, defense as defenseCalc, speed as speedCalc, weaponDice } from "./rules.ts";
 import { distance } from "./map/index.ts";
+import { dropRemainsM } from "./containers.ts";
 
 export function getEntity(s: GameState, id: string): Entity | undefined {
   return s.entities[id];
@@ -176,6 +177,7 @@ function defeat(m: Mut, t: Entity): void {
     m.s.facts.push({ subject: t.name, predicate: "is_alive", object: "false" });
     emit(m, { type: "npc_died", entityId: t.id, name: t.name });
   }
+  dropRemainsM(m, t);
   removeEntity(m, t.id);
   if (isLeader(m.s, t) && RULES.ai.morale.leaderDownBreaksMinions && m.s.combat) {
     const rest = Object.values(m.s.entities);

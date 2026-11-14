@@ -9,7 +9,7 @@ const view = { id: "ch_a", kind: "pc", name: "A", x: 1, y: 2, hp: 5, hp_max: 10,
 
 describe("ws constants", () => {
   it("exports", () => {
-    expect(WS_VERSION).toBe(6);
+    expect(WS_VERSION).toBe(7);
     expect(MAX_MESSAGE_BYTES).toBe(8192);
     expect(exceedsMaxBytes("x".repeat(8193))).toBe(true);
     expect(exceedsMaxBytes("x".repeat(8192))).toBe(false);
@@ -143,6 +143,64 @@ describe("level-up messages", () => {
     expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: true, message: "Learned it", forge_notes: ["a"], ability })).success).toBe(true);
     expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: false, message: "Finish the fight first.", forge_notes: [] })).success).toBe(true);
     expect(ServerMessageSchema.safeParse(env("level_up_result", { ok: true, message: "x" })).success).toBe(false);
+  });
+});
+
+describe("containers, locks and doors", () => {
+  const summary = { id: "cn_3", kind: "chest", x: 4, y: 5, item_count: 2, locked: true, open: false, object_id: "chest_1" };
+  const item = { id: "it_1", name: "Healing draught", kind: "consumable", value: 25 };
+
+  it("act takes the object verbs and nothing else", () => {
+    for (const verb of ["interact", "examine", "talk", "open", "close", "unlock", "pick_lock", "force", "pull", "read"]) {
+      expect(ClientMessageSchema.safeParse(env("act", { verb, target_id: "door_1" })).success, verb).toBe(true);
+    }
+    expect(ClientMessageSchema.safeParse(env("act", { verb: "smash", target_id: "door_1" })).success).toBe(false);
+    expect(ClientMessageSchema.safeParse(env("act", { verb: "open" })).success).toBe(false);
+  });
+
+  it("container_action: take needs an item, the others take none", () => {
+    const ok = (p: unknown) => ClientMessageSchema.safeParse(env("container_action", p)).success;
+    expect(ok({ verb: "open", container_id: "cn_3" })).toBe(true);
+    expect(ok({ verb: "close", container_id: "cn_3" })).toBe(true);
+    expect(ok({ verb: "take_all", container_id: "cn_3" })).toBe(true);
+    expect(ok({ verb: "take", container_id: "cn_3", item_id: "it_1" })).toBe(true);
+    expect(ok({ verb: "take", container_id: "cn_3" })).toBe(false);
+    expect(ok({ verb: "take_all", container_id: "cn_3", item_id: "it_1" })).toBe(false);
+    expect(ok({ verb: "steal", container_id: "cn_3" })).toBe(false);
+    expect(ok({ verb: "open", container_id: "cn_3", extra: 1 })).toBe(false);
+  });
+
+  it("inventory_action: give needs a recipient, drop takes none", () => {
+    const ok = (p: unknown) => ClientMessageSchema.safeParse(env("inventory_action", p)).success;
+    expect(ok({ verb: "drop", item_id: "it_1" })).toBe(true);
+    expect(ok({ verb: "give", item_id: "it_1", to_character_id: "ch_b" })).toBe(true);
+    expect(ok({ verb: "give", item_id: "it_1" })).toBe(false);
+    expect(ok({ verb: "drop", item_id: "it_1", to_character_id: "ch_b" })).toBe(false);
+    expect(ok({ verb: "toss", item_id: "it_1" })).toBe(false);
+  });
+
+  it("container_view hides nothing by itself: a locked container simply carries no items", () => {
+    const ok = (p: unknown) => ServerMessageSchema.safeParse(env("container_view", p, { ack_id: "c1" })).success;
+    expect(ok({ container_id: "cn_3", kind: "chest", items: [item], locked: false })).toBe(true);
+    expect(ok({ container_id: "cn_3", kind: "chest", label: "Chest", items: [], locked: true })).toBe(true);
+    expect(ok({ container_id: "cn_3", kind: "bag", items: [], locked: false })).toBe(false);
+    expect(ok({ container_id: "cn_3", kind: "pile", items: [{ ...item, value: -1 }], locked: false })).toBe(false);
+    expect(ok({ container_id: "cn_3", kind: "pile", items: [], locked: false, secret: 1 })).toBe(false);
+  });
+
+  it("snapshot and diff carry container summaries and interactable states", () => {
+    const { user_id: _u, campaign_id: _c, inventory: _i, ...pub } = BRINDLE;
+    const snap = { seq: 1, mode: "exploration", map: makeMap(), entities: [view], party: [pub], quests: [], containers: [summary] };
+    expect(ServerMessageSchema.safeParse(env("state_snapshot", snap)).success).toBe(true);
+    expect(ServerMessageSchema.safeParse(env("state_snapshot", { ...snap, containers: [{ ...summary, items: [item] }] })).success).toBe(false);
+    const diff = {
+      seq: 6, changed: [], removed: [], containers_changed: [{ ...summary, locked: false, open: true }], containers_removed: ["cn_9"],
+      interactables_changed: [{ map_id: "m_lighthouse", id: "door_1", state: "open" }],
+    };
+    expect(ServerMessageSchema.safeParse(env("state_diff", diff)).success).toBe(true);
+    expect(ServerMessageSchema.safeParse(env("state_diff", { ...diff, interactables_changed: [{ map_id: "m_lighthouse", id: "door_1", state: "ajar" }] })).success).toBe(false);
+    // a diff from before this version still parses
+    expect(ServerMessageSchema.safeParse(env("state_diff", { seq: 5, changed: [], removed: [] })).success).toBe(true);
   });
 });
 

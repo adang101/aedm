@@ -121,6 +121,11 @@ export const INTERACTABLE_STATES = ["open", "closed", "locked"] as const;
 export const InteractableStateSchema = z.enum(INTERACTABLE_STATES);
 export type InteractableState = z.infer<typeof InteractableStateSchema>;
 
+/** What holds items on the map: a chest (an interactable), a pile of dropped items, a defeated creature's remains, or an NPC's pockets. */
+export const CONTAINER_KINDS = ["chest", "pile", "remains", "pockets"] as const;
+export const ContainerKindSchema = z.enum(CONTAINER_KINDS);
+export type ContainerKind = z.infer<typeof ContainerKindSchema>;
+
 export const DIRECTIONS = ["n", "s", "e", "w"] as const;
 export const DirectionSchema = z.enum(DIRECTIONS);
 export type Direction = z.infer<typeof DirectionSchema>;
