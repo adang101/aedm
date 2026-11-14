@@ -108,6 +108,14 @@
     "sign": { "any": "A sign with writing on it." },
     "trap": { "armed": "A trap, set and ready to spring.", "sprung": "A trap, sprung or disarmed, harmless now." },
     "altar": { "any": "An altar, worn smooth by those who knelt here.", "used": "An altar, quiet now; it has given you what it had." },
+    "trap_event": {
+      "spotted": "{name} notices a trap ahead.",
+      "sprung": "{name} trips a hidden trap!",
+      "sprung_saved": "{name} trips a hidden trap but dodges the worst of it!",
+      "disarmed": "{name} disarms the trap.",
+      "disarm_failed": "{name} fumbles with the trap, which stays armed.",
+      "blocked": "A known trap blocks the only way there. Walk onto it on purpose, or disarm it first."
+    },
     "search": { "found": "{name} searches and finds {list}.", "nothing": "{name} searches carefully but finds nothing new." },
     "altar_use": { "mend": "{name} kneels at the altar, and their wounds ease.", "ward": "{name} touches the altar, and a faint ward settles over them.", "cleanse": "{name} rests a hand on the altar, and every ill leaves them.", "silent": "The altar is silent; it has nothing more for {name}." },
     "pile": { "any": "A pile of dropped items ({items}).", "empty": "A bare patch where items were dropped." },

@@ -1,7 +1,7 @@
 import {
   addAbilityToCharacter, addCharacter, aggroCheck, buildEnemyOffline, followStep, placePartyWithAllies, planAggroEngagement, addGrowth, addMap, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
   classifyIntent, closeContainer, computePartyLevel, containerDiff, containerForObject, containerView, createGameState, createRng, currentMap, describeEvent, digestEvents, getObjects, hasDramaticBeat,
-  creatureVoice, isDmVictoryRole, narrateCombatEnd, narrateCombatStart, planEngagement, startCombat, victoryNeedsDm,
+  altarText, creatureVoice, isContainerHidden, isDmVictoryRole, isHidden, knownTrapTiles, searchedText, spotCheck, tileKey, trapBlockedText, trapEventText, wakeIfWiped, narrateCombatEnd, narrateCombatStart, planEngagement, startCombat, victoryNeedsDm,
   narrateEvents, NARRATION, endCombat, endTurn, enemyRangesForLevel,
   dropItem, enemyTakeTurn, entitiesOnMap, giveItem, labelOf, openContainer, performAct, takeAll, takeItem, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
   pickPlot, placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
@@ -9,7 +9,7 @@ import {
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
   type ActResult, type BarkEvent, type CreatureVoice, type CheckRequest, type ClassifiedIntent, type CreateEnemyAction, type DramaLookup, type EngineEvent, type Entity, type GameState, type IntentContext,
 } from "@aedm/engine";
-import { describeInventory, describeScene, exitSide, RULES } from "@aedm/engine";
+import { describeInventory, describeScene, effectiveState, exitSide, RULES } from "@aedm/engine";
 import {
   buildEnemy, clampNarration, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
   type DmTurnResult,
@@ -68,11 +68,19 @@ function isReactionEvent(state: GameState, e: EngineEvent): boolean {
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 function humanLine(e: EngineEvent): string {
+  // what a search, an altar or a trap says to the table comes from engine data, and never from the event itself: `searched` carries the
+  // roll total and `nothingNew`, which a player must not learn
+  if (e.type === "searched") return searchedText(e);
+  if (e.type === "altar_used" || e.type === "altar_silent") return altarText(e);
+  if (e.type === "spotted" || e.type === "trap_sprung" || e.type === "trap_disarmed" || e.type === "disarm_failed") return trapEventText(e);
   if (e.type === "combat_started") return "Combat begins. Initiative is rolled.";
   if (e.type === "combat_ended") return `Combat ends (${e.reason}).`;
   if (e.type === "surrendered") return `${e.name} surrenders.`;
   return cap(describeEvent(e).replace(/^\[engine: /, "").replace(/\]$/, ""));
 }
+
+/** Events the DM must hear about even when they happen on a step of a walk (which is otherwise published without a DM line). */
+const STEP_NOTABLE = new Set<EngineEvent["type"]>(["trap_sprung", "spotted"]);
 
 const DIRS: Record<"n" | "s" | "e" | "w", [number, number]> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
 
@@ -236,6 +244,7 @@ export class GameSession {
     const map = generateMap(startBrief, { seed: rng.int(1, 0x7ffffffe), id: "m_start", generatedAt: new Date(deps.clock()).toISOString() }).map;
     state = addMap(state, map).state;
     state = placePartyOnMap(state, map.id, "party_start").state;
+    state = spotCheck(state).state; // what the party can already see at the start is known from the first snapshot
     this.state = state;
     this.sceneNote = startingNote(bible.digest, startBrief.setting.name);
     this.refreshAbsent();
@@ -466,6 +475,11 @@ export class GameSession {
     return lines;
   }
 
+  /** Events of one step of movement: quiet, unless a trap went off or was spotted (the DM hears of those like any engine event). */
+  private publishStep(events: EngineEvent[]): string[] {
+    return this.publish(events, { toDm: events.some((e) => STEP_NOTABLE.has(e.type)) });
+  }
+
   /** Remember engine lines for the DM's next turn (bounded). */
   private pushPending(lines: string[]): void {
     this.pendingLines.push(...lines);
@@ -616,17 +630,17 @@ export class GameSession {
   }
 
   /**
-   * `act`: the engine resolves it (`performAct`) with no DM call. Only what it cannot describe (an altar, `talk` and `interact`
-   * on a creature, NPC pockets) is recorded as an intent for the DM. In combat the verb goes through `combatAction`, so turns and costs are enforced.
+   * `act`: the engine resolves it (`performAct`) with no DM call, including searching (no target), disarming and altars. Only what it
+   * cannot describe (`talk` and `interact` on a creature, NPC pockets) is recorded as an intent for the DM. In combat the verb goes through `combatAction`, so turns and costs are enforced.
    */
-  handleAct(player: Player, verb: ActVerb, targetId: string, reply: Reply): void {
+  handleAct(player: Player, verb: ActVerb, targetId: string | undefined, reply: Reply): void {
     const ch = this.characterOf(player);
     if (!ch) return reply("error", "forbidden", "You have no character in this game.");
     if (!this.state.entities[ch.id]) return reply("error", "invalid_state", "Your character is not on the map.");
     const run = (id: string): ActResult => performAct(this.state, this.rng(), id, verb, targetId);
     const first = run(ch.id);
     if (first.narrative) {
-      const name = this.nameOfTarget(targetId);
+      const name = targetId === undefined ? undefined : this.nameOfTarget(targetId);
       if (!name) return reply("error", "not_found", "There is nothing like that here.");
       const phrase = verb === "talk" ? `I talk to ${name}` : verb === "examine" ? `I examine ${name}` : verb === "interact" ? `I interact with ${name}` : `I ${verb.replace("_", " ")} ${name}`;
       reply("ok");
@@ -638,6 +652,7 @@ export class GameSession {
     if (!first.ok) return reply("error", "invalid_state", cap(first.error ?? "That did not work."));
     this.commit(first.state);
     this.publish(first.events);
+    this.recoverIfWiped();
     after(first);
     reply("ok");
   }
@@ -647,10 +662,15 @@ export class GameSession {
     const ent = this.state.entities[targetId];
     if (ent) return ent.name;
     const map = currentMap(this.state);
-    const obj = map ? getObjects(map).find((o) => "id" in o && o.id === targetId) : undefined;
+    const obj = map ? this.visibleObjects(map).find((o) => "id" in o && o.id === targetId) : undefined;
     if (obj && "kind" in obj) return `the ${obj.kind}`;
     const c = this.state.containers[targetId];
-    return c ? `the ${labelOf(c).toLowerCase()}` : undefined;
+    return c && !isContainerHidden(this.state, c) ? `the ${labelOf(c).toLowerCase()}` : undefined;
+  }
+
+  /** The map's objects as the table knows them: a hidden trap or chest is not there until it is found. */
+  private visibleObjects(map: NonNullable<ReturnType<typeof currentMap>>): ReturnType<typeof getObjects> {
+    return getObjects(map).filter((o) => o.type !== "interactable" || !isHidden(this.state, map.id, o));
   }
 
   /** Show one player what is in a container (by container id or the id of the chest object it came from). */
@@ -658,7 +678,7 @@ export class GameSession {
     if (!player || !id) return;
     const mapId = (player.characterId ? this.state.entities[player.characterId]?.mapId : undefined) ?? this.state.currentMapId ?? "";
     const c = this.state.containers[id] ?? containerForObject(this.state, mapId, id);
-    const view = c ? containerView(this.state, c.id) : undefined;
+    const view = c && !isContainerHidden(this.state, c) ? containerView(this.state, c.id) : undefined;
     if (view) this.room.send(player.id, "container_view", view);
   }
 
@@ -735,12 +755,37 @@ export class GameSession {
    */
   private afterPartyMoved(): boolean {
     if (this.state.combat || this.closed) return false;
+    this.spotTraps();
     const f = followStep(this.state, this.rng());
     if (f.ok && f.events.length > 0) {
       this.commit(f.state);
-      this.publish(f.events, { toDm: false });
+      this.publishStep(f.events);
     }
+    this.recoverIfWiped();
     return this.checkAggro();
+  }
+
+  /** Passive spotting after the party moved or arrived. A trap noticed stops every walk in progress, so the player can decide. */
+  private spotTraps(): void {
+    if (this.state.combat) return;
+    const r = spotCheck(this.state);
+    if (r.events.length === 0) return;
+    this.commit(r.state);
+    this.publishStep(r.events);
+    this.walks.clear();
+  }
+
+  /**
+   * Outside combat nothing ends a party that is all down (a trap with no one left to heal them): the engine wakes them at the
+   * data wake HP, as the end of a fight does, and the DM is told.
+   */
+  private recoverIfWiped(): void {
+    if (this.state.combat) return;
+    const r = wakeIfWiped(this.state, this.rng());
+    if (r.events.length === 0) return;
+    this.commit(r.state);
+    this.publish(r.events);
+    this.pushPending([`[engine: every hero was down outside combat, so the engine woke them at ${RULES.downed.wakeHp} HP; there is no game over]`]);
   }
 
   private checkAggro(): boolean {
@@ -845,12 +890,12 @@ export class GameSession {
 
   private intentContext(actorId: string): IntentContext {
     const map = currentMap(this.state);
-    const objects = map ? getObjects(map) : [];
+    const objects = map ? this.visibleObjects(map) : [];
     const actor = this.state.entities[actorId];
     const dist = (o: { x: number; y: number }): number | undefined => (actor ? Math.max(Math.abs(actor.x - o.x), Math.abs(actor.y - o.y)) : undefined);
     const withDist = <T extends object>(d: number | undefined, v: T): T & { dist?: number } => (d === undefined ? v : { ...v, dist: d });
     const containers = map
-      ? Object.values(this.state.containers).filter((c) => c.map_id === map.id && c.kind !== "pockets" && (c.kind === "chest" || c.items.length > 0)).map((c) => {
+      ? Object.values(this.state.containers).filter((c) => c.map_id === map.id && c.kind !== "pockets" && (c.kind === "chest" || c.items.length > 0) && !isContainerHidden(this.state, c)).map((c) => {
           const open = !c.locked && (c.kind !== "chest" || c.opened === true);
           return withDist(dist(c), {
             id: c.id, kind: c.kind as "chest" | "pile" | "remains", label: labelOf(c),
@@ -862,7 +907,9 @@ export class GameSession {
     const ch = actor ? this.state.characters[actor.refId] : undefined;
     return {
       actorId,
-      objects: objects.flatMap((o) => (o.type === "interactable" ? [withDist(dist(o), { id: o.id, kind: o.kind })] : [])),
+      objects: objects.flatMap((o) => (o.type === "interactable"
+        ? [withDist(dist(o), { id: o.id, kind: o.kind, ...(o.kind === "trap" ? { state: effectiveState(this.state, map?.id ?? "", o) } : {}) })]
+        : [])),
       exits: objects.flatMap((o) => {
         if (o.type !== "exit") return [];
         const side = map ? exitSide(map, o) : undefined;
@@ -903,7 +950,7 @@ export class GameSession {
         const r = moveEntity(this.state, this.rng(), ent.id, { x: ent.x + dx, y: ent.y + dy });
         if (!r.ok) { narrative.push(i); lines.push(`[engine: ${ent.name} could not step ${verdict.direction}: ${r.error ?? "blocked"} (${quote})]`); continue; }
         this.commit(r.state);
-        this.publish(r.events, { toDm: false });
+        this.publishStep(r.events);
         lines.push(`[engine: ${ent.name} steps from (${from.x},${from.y}) to (${from.x + dx},${from.y + dy}) (${quote})]`);
         mechanical.push(i);
         this.afterPartyMoved();
@@ -928,7 +975,6 @@ export class GameSession {
         mechanical.push(i);
         continue;
       }
-      if (verdict.action === "search") { narrative.push(i); continue; } // phase 2 resolves a typed search in the engine; until then the DM hears it as before
       if (verdict.action === "attack") {
         if (this.engageFromIntent(ent.id, verdict.targetId, i.text)) { mechanical.push(i); engaged.add(i); continue; }
         narrative.push(i); // full mode, or the engine cannot start this fight: the DM decides
@@ -940,11 +986,19 @@ export class GameSession {
         if (!r.ok) { narrative.push(i); lines.push(`[engine: ${ent.name} could not do that: ${r.error ?? "it failed"} (${quote})]`); continue; }
         this.commit(r.state);
         lines.push(...this.publish(r.events, { toDm: false }));
+        this.recoverIfWiped();
         this.sendContainerView(this.ownerOf(i.characterId), r.containerId);
         mechanical.push(i);
         continue;
       }
       const dest = this.walkDestination(ent, map, verdict.target);
+      if (dest === "trap") {
+        const owner = this.ownerOf(i.characterId);
+        if (owner) this.sysTo(owner.id, trapBlockedText());
+        lines.push(`[engine: ${ent.name} did not walk toward ${verdict.label}: a known trap blocks the only way (${quote})]`);
+        mechanical.push(i);
+        continue;
+      }
       if (!dest) { narrative.push(i); lines.push(`[engine: ${ent.name} found no clear path to ${verdict.label} (${quote})]`); continue; }
       if (dest.path.length > 0) this.startWalk(ent.id, dest.path.slice(0, 60));
       lines.push(dest.path.length > 0
@@ -965,12 +1019,13 @@ export class GameSession {
   }
 
   /** The engine call for a typed command the router recognized. */
-  private typedAction(actorId: string, v: Exclude<ClassifiedIntent, { kind: "narrative" } | { action: "empty" | "ooc" | "move_dir" | "move_to" | "look" | "inventory" | "wait" | "attack" | "search" }>): ActResult {
+  private typedAction(actorId: string, v: Exclude<ClassifiedIntent, { kind: "narrative" } | { action: "empty" | "ooc" | "move_dir" | "move_to" | "look" | "inventory" | "wait" | "attack" }>): ActResult {
     const st = this.state;
     const rng = this.rng();
     const plain = (r: { state: GameState; events: EngineEvent[]; ok: boolean; error?: string }): ActResult => ({ ...r, narrative: false });
     switch (v.action) {
       case "act": return performAct(st, rng, actorId, v.verb, v.targetId);
+      case "search": return performAct(st, rng, actorId, "search");
       case "take": return plain(takeItem(st, rng, actorId, v.containerId, v.itemId));
       case "take_all": return plain(takeAll(st, rng, actorId, v.containerId));
       case "drop": return plain(dropItem(st, rng, actorId, v.itemId));
@@ -979,9 +1034,25 @@ export class GameSession {
     }
   }
 
-  /** Where a walk to an object, exit or entity ends: the tile itself for an exit, else the nearest reachable neighbour. */
-  private walkDestination(ent: Entity, map: NonNullable<ReturnType<typeof currentMap>>, target: { type: "object" | "exit" | "entity"; id: string }): { path: { x: number; y: number }[]; at: { x: number; y: number } } | null {
-    const objs = getObjects(map);
+  /**
+   * A path for the party that keeps off revealed, armed traps: it avoids them whenever any other way exists. When the only way crosses
+   * one the answer is "trap" (the walk is refused). A destination that is itself a trap tile is a deliberate step onto it, so that
+   * tile (and the one the walker stands on) never counts. Null when there is no path at all.
+   */
+  private partyPath(ent: Entity, map: NonNullable<ReturnType<typeof currentMap>>, to: { x: number; y: number }, occ: Set<string>): { x: number; y: number }[] | "trap" | null {
+    const from = { x: ent.x, y: ent.y };
+    const traps = knownTrapTiles(this.state, map.id);
+    traps.delete(tileKey(to.x, to.y));
+    traps.delete(tileKey(from.x, from.y));
+    if (traps.size === 0) return findPath(map, from, to, occ);
+    const safe = findPath(map, from, to, new Set([...occ, ...traps]));
+    if (safe) return safe;
+    return findPath(map, from, to, occ) ? "trap" : null;
+  }
+
+  /** Where a walk to an object, exit or entity ends: the tile itself for an exit, else the nearest reachable neighbour. "trap" when only a known trap is in the way. */
+  private walkDestination(ent: Entity, map: NonNullable<ReturnType<typeof currentMap>>, target: { type: "object" | "exit" | "entity"; id: string }): { path: { x: number; y: number }[]; at: { x: number; y: number } } | "trap" | null {
+    const objs = this.visibleObjects(map);
     let goal: { x: number; y: number } | undefined;
     if (target.type === "entity") goal = this.state.entities[target.id];
     else if (target.type === "exit") goal = objs.find((o) => o.type === "exit" && o.name === target.id);
@@ -990,17 +1061,21 @@ export class GameSession {
     const g = goal;
     const from = { x: ent.x, y: ent.y };
     const occ = occupiedTiles(this.state, map.id, { exceptId: ent.id });
+    const traps = knownTrapTiles(this.state, map.id);
     const cands = target.type === "exit"
       ? [{ x: g.x, y: g.y }]
       : [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy]) => ({ x: g.x + (dx as number), y: g.y + (dy as number) }));
     if (target.type !== "exit" && cands.some((c) => c.x === from.x && c.y === from.y)) return { path: [], at: from };
     let best: { x: number; y: number }[] | null = null;
+    let blocked = false;
     for (const c of cands) {
       if (!isWalkable(map, c.x, c.y) || occ.has(`${c.x},${c.y}`)) continue;
-      const path = findPath(map, from, c, occ);
+      if (target.type !== "exit" && traps.has(tileKey(c.x, c.y))) continue; // never end a walk beside the target by stepping on a trap
+      const path = this.partyPath(ent, map, c, occ);
+      if (path === "trap") { blocked = true; continue; }
       if (path && path.length > 0 && (!best || path.length < best.length)) best = path;
     }
-    if (!best) return null;
+    if (!best) return blocked ? "trap" : null;
     return { path: best, at: best[best.length - 1] as { x: number; y: number } };
   }
 
@@ -1021,7 +1096,7 @@ export class GameSession {
       const r = moveEntity(this.state, this.rng(), ent.id, { x: ent.x + dx, y: ent.y + dy });
       if (!r.ok) return reply("error", "invalid_state", cap(r.error ?? "You can't go that way."));
       this.commit(r.state);
-      this.publish(r.events, { toDm: false });
+      this.publishStep(r.events);
       reply("ok");
       this.afterPartyMoved();
       return;
@@ -1031,13 +1106,16 @@ export class GameSession {
       const r = moveEntity(this.state, this.rng(), ent.id, payload);
       if (!r.ok) return reply("error", "invalid_state", cap(r.error ?? "You can't reach that tile."));
       this.commit(r.state);
-      this.publish(r.events, { toDm: false });
+      this.publishStep(r.events);
       reply("ok");
+      // a trap can drop the last hero (the fight is lost) or be a dramatic beat: the combat loop decides, as after any other action
+      if (combatOutcome(this.state) !== null || this.reactionDue) this.enqueue(() => this.advanceCombat());
       return;
     }
 
     if (!isWalkable(map, payload.x, payload.y)) return reply("error", "invalid_state", "A wall blocks the way.");
-    const path = findPath(map, { x: ent.x, y: ent.y }, payload, occupiedTiles(this.state, map.id, { exceptId: ent.id }));
+    const path = this.partyPath(ent, map, payload, occupiedTiles(this.state, map.id, { exceptId: ent.id }));
+    if (path === "trap") return reply("error", "invalid_state", trapBlockedText());
     if (!path || path.length === 0) return reply("error", "invalid_state", "You can't reach that tile.");
     reply("ok");
     this.startWalk(ent.id, path.slice(0, 60));
@@ -1049,11 +1127,20 @@ export class GameSession {
     const step = (i: number): void => {
       if (this.walks.get(entityId) !== token || this.state.combat || i >= path.length) return;
       const next = path[i] as { x: number; y: number };
+      // a trap found since the walk began (spotted, searched out) stops it; only the last tile may be a trap, a deliberate step onto it
+      if (i + 1 < path.length && knownTrapTiles(this.state, this.state.entities[entityId]?.mapId ?? "").has(tileKey(next.x, next.y))) {
+        this.walks.delete(entityId);
+        const owner = this.ownerOf(entityId);
+        if (owner) this.sysTo(owner.id, trapBlockedText());
+        return;
+      }
       const r = moveEntity(this.state, this.rng(), entityId, next);
       if (!r.ok) { this.walks.delete(entityId); return; }
       this.commit(r.state);
-      this.publish(r.events, { toDm: false });
+      this.publishStep(r.events);
+      if (r.events.some((e) => e.type === "trap_sprung")) this.walks.delete(entityId); // springing a trap ends the walk
       if (this.afterPartyMoved()) return; // a fight began: afterPartyMoved already stopped every walk
+      if (this.walks.get(entityId) !== token) return; // stopped by a trap, or by something newly spotted
       if (i + 1 < path.length) this.later(() => step(i + 1), this.cfg.moveStepMs);
       else this.walks.delete(entityId);
     };
@@ -1826,6 +1913,7 @@ export class GameSession {
       this.publish(r.events);
     }
     this.pendingLines.push(`[engine: the party arrives at a new area, ${map?.meta.setting.name ?? "unknown"} (map ${map?.id ?? "?"})]`);
+    this.spotTraps(); // a trap the party can see on arrival is shown before anything walks into it
     this.checkAggro(); // the party arrived: creatures that see it may start the fight (no follow step, the allies came along)
   }
 

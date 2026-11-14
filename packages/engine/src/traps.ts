@@ -178,3 +178,21 @@ export function disarm(state: GameState, rng: Rng, actorId: string, objectId: st
     return undefined;
   });
 }
+
+// ---------- what the table is told ----------
+
+const fillText = (template: string, vars: Record<string, string>): string => template.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? "");
+
+/** The line the table gets for a trap event, from `data/interact.json` (`texts.trap_event`): no ids, coordinates or numbers. */
+export function trapEventText(e: Extract<EngineEvent, { type: "spotted" | "trap_sprung" | "trap_disarmed" | "disarm_failed" }>): string {
+  const T = INTERACT.texts.trap_event;
+  switch (e.type) {
+    case "spotted": return fillText(T?.spotted ?? "", { name: e.byName });
+    case "trap_sprung": return fillText((e.saved ? T?.sprung_saved : T?.sprung) ?? "", { name: e.victimName });
+    case "trap_disarmed": return fillText(T?.disarmed ?? "", { name: e.byName });
+    case "disarm_failed": return fillText(T?.disarm_failed ?? "", { name: e.byName });
+  }
+}
+
+/** Why a walk was refused: the only way there crosses a revealed, armed trap. */
+export const trapBlockedText = (): string => INTERACT.texts.trap_event?.blocked ?? "";
