@@ -161,6 +161,11 @@
       "{foes} bar the way, and the fight is on.",
       "The calm breaks as {foes} turn on the party."
     ],
+    "start_noticed": [
+      "{foes} spot the party and rush in to attack.",
+      "A shout goes up as {foes} notice the party and close in.",
+      "{foes} catch sight of the party, and the fight is on."
+    ],
     "start_opening_starter": [
       "{starter} moves against {foes}, and the fight is on.",
       "{starter} strikes first at {foes} and the fight begins.",

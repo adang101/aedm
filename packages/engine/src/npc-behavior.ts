@@ -3,7 +3,7 @@ import { act, type ActionResult } from "./combat.ts";
 import { RULES } from "./data.ts";
 import { canMove, hasCondition, isStanding, walkPath } from "./mutate.ts";
 import type { Rng } from "./rng.ts";
-import { currentMap, emit, occupiedTiles, sideOf, sightBlockers, tileKey, type Entity, type GameState, type Mut } from "./state.ts";
+import { currentMap, emit, occupiedTiles, placePartyInternal, rngFromState, run, sideOf, sightBlockers, tileKey, type Entity, type GameState, type Mut, type Result } from "./state.ts";
 import { findFreeTileNear, getSpawn, hasLineOfSight, isWalkable, type Point } from "./map/index.ts";
 
 // Out-of-combat behavior for hostile and allied creatures. Pure: nothing here reads a clock or rolls dice.
@@ -38,7 +38,8 @@ export interface Aggro {
  * Whether a fight should start by itself. True when no combat is active and a living hostile enemy on the current
  * map has a standing party character within `rules.ai.aggro.radius` tiles in line of sight (walls, smoke and closed
  * doors block it). Hostile enemies within `joinRadius` of one that noticed join (all of them when `joinAll`).
- * Creatures that surrendered are NPCs and never aggro. Returns null when nothing happens. Start the fight with
+ * Creatures that surrendered are NPCs and never aggro; neither do calm ones (`Entity.calm`, set on the survivors when a
+ * fight ends and cleared when a new fight starts with them), as noticers or as joiners. Returns null when nothing happens. Start the fight with
  * `startCombat(state, rng, participants, difficulty)`.
  */
 export function aggroCheck(state: GameState): Aggro | null {
@@ -50,7 +51,7 @@ export function aggroCheck(state: GameState): Aggro | null {
   const party = standingParty(state, mapId);
   if (party.length === 0) return null;
   const hostiles = Object.values(state.entities)
-    .filter((e) => e.kind === "enemy" && e.mapId === mapId && isStanding(e))
+    .filter((e) => e.kind === "enemy" && e.mapId === mapId && isStanding(e) && !e.calm)
     .sort((a, b) => a.id.localeCompare(b.id));
   const blockers = sightBlockers(state, mapId);
   const noticed = hostiles.filter((h) => party.some((p) => dist(h, p) <= cfg.radius && hasLineOfSight(map, h, p, blockers)));
@@ -158,4 +159,19 @@ export function moveAlliesToScene(m: Mut, allyIds: string[], mapId: string, spaw
     moved++;
   }
   return moved;
+}
+
+/**
+ * Put the party's tokens on a spawn of `mapId` and make it the current map, like `placePartyOnMap`, and bring along the
+ * allied NPCs that were within follow distance of the party (`alliesWithParty`, picked before the move). Returns false,
+ * and changes nothing, when the map or spawn does not exist.
+ */
+export function placePartyWithAllies(state: GameState, mapId: string, spawnName = "party_start", characterIds?: string[]): Result<boolean> {
+  return run(state, rngFromState(state), (m) => {
+    const allies = alliesWithParty(m.s, characterIds);
+    if (!placePartyInternal(m, mapId, spawnName, characterIds)) return false;
+    moveAlliesToScene(m, allies, mapId, spawnName);
+    m.s.currentMapId = mapId;
+    return true;
+  });
 }

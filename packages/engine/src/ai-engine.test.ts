@@ -304,6 +304,20 @@ describe("hazard-aware movement", () => {
     const r = turn(f.state, f.rng, f.ids[0]!);
     expect(onFire(r.state, f.ids[0]!)).toBe(false);
   });
+  it("crosses a band of fire wider than its speed instead of stalling at the edge", () => {
+    const brute = { ...foe("Brute", ["Closes to melee"]), stats: { ...chorister.stats, hp: 40, speed: 6 } };
+    const band: [number, number][] = [];
+    for (let x = 6; x <= 13; x++) band.push(...column(x, 0, 19));
+    const f = scene([{ enemy: brute, at: [4, 10], hp: 500 }], { ch_brindle: [16, 10], ch_tamsin: [17, 10], ch_orrin: [17, 11] }, { terrain: band });
+    let state = f.state;
+    const crossed: number[] = [];
+    for (let i = 0; i < 6 && dist(state.entities[f.ids[0]!]!, state.entities.ch_brindle!) > 1; i++) {
+      state = turn(state, f.rng, f.ids[0]!).state;
+      crossed.push(state.entities[f.ids[0]!]!.x);
+    }
+    expect(dist(state.entities[f.ids[0]!]!, state.entities.ch_brindle!)).toBeLessThanOrEqual(1);
+    expect(crossed.length).toBeLessThanOrEqual(4);
+  });
   it("does not end its move on a fire tile next to its target", () => {
     const f = scene([{ enemy: foe("Brute", ["Closes to melee"]), at: [4, 10] }], { ch_brindle: [7, 10] }, { terrain: [[6, 9], [6, 10], [6, 11]] });
     const r = turn(f.state, f.rng, f.ids[0]!);

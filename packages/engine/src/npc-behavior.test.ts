@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { MapObject } from "@aedm/schemas";
-import { aggroCheck, alliesWithParty, followStep, moveAlliesToScene } from "./npc-behavior.ts";
-import { enemyTakeTurn, startCombat } from "./combat.ts";
+import { aggroCheck, alliesWithParty, followStep, moveAlliesToScene, placePartyWithAllies } from "./npc-behavior.ts";
+import { endCombat, enemyTakeTurn, startCombat } from "./combat.ts";
 import { RULES } from "./data.ts";
 import { applyDmActions } from "./dm-actions.ts";
 import { addMap } from "./map-state.ts";
@@ -192,6 +192,45 @@ describe("followStep", () => {
   });
 });
 
+describe("calm creatures", () => {
+  function fought(reason: "truce" | "flee" | "defeat" | "victory") {
+    const f = withEnemy([8, 2]);
+    const started = startCombat(f.state, f.rng, aggroCheck(f.state)!.participants, "standard");
+    const ended = endCombat(started.state, f.rng, reason);
+    return { ...f, ended: ended.state };
+  }
+  it.each(["truce", "flee", "defeat"] as const)("a surviving enemy is calm after a %s and does not pull the party back in", (reason) => {
+    const f = fought(reason);
+    expect(f.ended.entities[f.enemyId]!.calm).toBe(true);
+    expect(aggroCheck(f.ended)).toBeNull();
+  });
+  it("a calm creature neither notices the party nor joins when another creature notices", () => {
+    const w = makeWorld(7);
+    const a = withArchetype(w.state);
+    let s = spawn(a.state, w.rng, a.id, 8, 2);
+    s = spawn(s, w.rng, a.id, 8, 3);
+    s = placeAt(placeAt(placeAt(s, "ch_brindle", 2, 2), "ch_tamsin", 2, 3), "ch_orrin", 3, 2);
+    const [first, second] = Object.values(s.entities).filter((e) => e.kind === "enemy").map((e) => e.id);
+    const calmed = withState(s, (x) => { x.entities[first!]!.calm = true; });
+    const r = aggroCheck(calmed)!;
+    expect(r.enemyIds).toEqual([second]);
+    expect(r.participants).not.toContain(first);
+  });
+  it("starting a new combat clears the flag on its participants", () => {
+    const f = fought("truce");
+    const bystander = withState(f.ended, (x) => { x.entities[f.enemyId]!.calm = true; });
+    const r = startCombat(bystander, f.rng, [...PARTY_IDS, f.enemyId], "standard");
+    expect(r.ok).toBe(true);
+    expect(r.state.entities[f.enemyId]!.calm).toBeUndefined();
+  });
+  it("the flag survives a save round trip", () => {
+    const f = fought("truce");
+    const back = JSON.parse(JSON.stringify(f.ended)) as GameState;
+    expect(aggroCheck(back)).toBeNull();
+    expect(back.entities[f.enemyId]!.calm).toBe(true);
+  });
+});
+
 describe("allies at a scene change", () => {
   function twoMaps() {
     const w = makeWorld(7);
@@ -220,6 +259,44 @@ describe("allies at a scene change", () => {
     const taken = Object.values(m.s.entities).filter((x) => x.mapId === "m_cellar").map((x) => `${x.x},${x.y}`);
     expect(new Set(taken).size).toBe(taken.length);
     expect(m.ev.some((x) => x.type === "moved" && x.entityId === t.near && x.reason === "scene")).toBe(true);
+  });
+});
+
+describe("allies and the change_scene action", () => {
+  function setup() {
+    const w = makeWorld(7);
+    const a = addNpc(w.state, w.rng, "Odalys", "ally", 5, 5);
+    const far = addNpc(a.state, w.rng, "Edda", "ally", 18, 18);
+    const s = placeAt(placeAt(placeAt(addMap(far.state, makeTestMap("m_cellar")).state, "ch_brindle", 4, 4), "ch_tamsin", 4, 5), "ch_orrin", 5, 4);
+    return { ...w, state: s, near: a.id, far: far.id };
+  }
+  it("a nearby ally comes along, a distant one stays, and the tiles are all distinct", () => {
+    const t = setup();
+    const r = applyDmActions(t.state, t.rng, [{ type: "change_scene", map_id: "m_cellar", entry: "party_start" }], CTX);
+    expect(r.applied).toHaveLength(1);
+    expect(r.state.entities[t.near]!.mapId).toBe("m_cellar");
+    expect(r.state.npcs[t.near]).toMatchObject({ map_id: "m_cellar" });
+    expect(r.state.entities[t.far]!.mapId).toBe("m_lighthouse");
+    const taken = Object.values(r.state.entities).filter((x) => x.mapId === "m_cellar").map((x) => `${x.x},${x.y}`);
+    expect(taken).toHaveLength(4);
+    expect(new Set(taken).size).toBe(4);
+  });
+  it("a refused scene change moves nobody", () => {
+    const t = setup();
+    const r = applyDmActions(t.state, t.rng, [{ type: "change_scene", map_id: "m_cellar", entry: "no_such_spawn" }], CTX);
+    expect(r.rejected).toHaveLength(1);
+    expect(r.state.entities[t.near]!.mapId).toBe("m_lighthouse");
+    expect(r.state.entities[t.near]).toMatchObject({ x: 5, y: 5 });
+  });
+  it("placePartyWithAllies does the same for a server-side move", () => {
+    const t = setup();
+    const r = placePartyWithAllies(t.state, "m_cellar", "party_start", PARTY_IDS);
+    expect(r.value).toBe(true);
+    expect(r.state.currentMapId).toBe("m_cellar");
+    expect(r.state.entities[t.near]!.mapId).toBe("m_cellar");
+    expect(r.state.entities[t.far]!.mapId).toBe("m_lighthouse");
+    expect(r.events.some((e) => e.type === "moved" && e.entityId === t.near && e.reason === "scene")).toBe(true);
+    expect(placePartyWithAllies(t.state, "m_cellar", "no_such_spawn", PARTY_IDS).value).toBe(false);
   });
 });
 

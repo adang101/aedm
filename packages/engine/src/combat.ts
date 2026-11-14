@@ -168,6 +168,7 @@ export function startCombatM(m: Mut, participantIds: string[], difficulty: Diffi
   const mapId = (ents[0] as Entity).mapId;
   if (ents.some((e) => e.mapId !== mapId)) return "participants are on different maps";
   if (!ents.some((e) => sideOf(e) === "party") || !ents.some((e) => sideOf(e) === "enemy")) return "combat needs both sides";
+  for (const e of ents) delete e.calm;
   if (opts.absentEntityIds) s.absentEntityIds = [...opts.absentEntityIds];
   const rolled = ents.map((e) => {
     const bonus = abilityModifier(dexScore(s, e)) + (e.kind === "pc" ? 0 : RULES.initiative.enemyBonus);
@@ -222,6 +223,7 @@ export function endCombatM(m: Mut, reason: "victory" | "flee" | "truce" | "defea
     e.checkBonuses = [];
     delete e.morale;
     delete e.bloodied;
+    if (e.kind === "enemy" && e.hp > 0 && sideOf(e) === "enemy") e.calm = true;
     if (e.kind === "pc" && (e.hp <= 0 || e.out)) {
       e.hp = RULES.downed.wakeHp;
       delete e.downedRounds;
@@ -1084,7 +1086,10 @@ function walkToward(m: Mut, e: Entity, target: Entity, desired: number): void {
     if (there(best[i] as Point)) { k = i + 1; break; }
   }
   k = Math.min(k, c.turn.movementLeft);
+  const untrimmed = k;
   while (k > 0 && hazards.has(tileKey((best[k - 1] as Point).x, (best[k - 1] as Point).y))) k--;
+  // A hazard stretch wider than one move would otherwise back it off to where it started every turn: with no progress left, take the step.
+  if (k === 0 && untrimmed > 0) k = untrimmed;
   if (k > 0) {
     const steps = walkPath(m, e, best, k);
     c.turn.movementLeft -= steps;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { planEngagement } from "./engage.ts";
+import { planAggroEngagement, planEngagement } from "./engage.ts";
+import { aggroCheck } from "./npc-behavior.ts";
 import { startCombat } from "./combat.ts";
 import { computePartyLevel } from "./dm-actions.ts";
 import { chorister, makeWorld, PARTY_IDS, spawn, withArchetype, withState } from "./testkit.ts";
@@ -12,6 +13,27 @@ function world(count = 2) {
   return { state, rng: w.rng, enemies };
 }
 const ctx = (state: ReturnType<typeof world>["state"]) => ({ presentCharacterIds: PARTY_IDS, partyLevel: computePartyLevel(state, PARTY_IDS) });
+
+describe("planAggroEngagement", () => {
+  it("turns an aggro result into participants, foe names and a difficulty startCombat accepts", () => {
+    const w = world(2);
+    const s = withState(w.state, (x) => { for (const [i, id] of PARTY_IDS.entries()) Object.assign(x.entities[id]!, { x: 5, y: 8 + i }); });
+    const aggro = aggroCheck(s)!;
+    expect(aggro).not.toBeNull();
+    const p = planAggroEngagement(s, aggro, ctx(s));
+    expect([...p.participants].sort()).toEqual([...aggro.participants].sort());
+    expect(p.foes).toHaveLength(2);
+    expect(["standard", "hard", "deadly"]).toContain(p.difficulty);
+    expect(startCombat(s, w.rng, p.participants, p.difficulty).ok).toBe(true);
+  });
+  it("uses the same difficulty as planEngagement for the same fight", () => {
+    const w = world(3);
+    const s = withState(w.state, (x) => { for (const [i, id] of PARTY_IDS.entries()) Object.assign(x.entities[id]!, { x: 5, y: 8 + i }); });
+    const viaAttack = planEngagement(s, PARTY_IDS[0]!, w.enemies[0]!.id, ctx(s));
+    if (!viaAttack.ok) throw new Error(viaAttack.reason);
+    expect(planAggroEngagement(s, aggroCheck(s)!, ctx(s)).difficulty).toBe(viaAttack.difficulty);
+  });
+});
 
 describe("planEngagement", () => {
   it("joins every party character and every living hostile enemy on the map", () => {

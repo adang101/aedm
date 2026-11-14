@@ -42,6 +42,30 @@ describe("narrateCombatStart", () => {
   });
 });
 
+describe("narrateCombatStart when the creatures noticed the party", () => {
+  it("says the foes noticed the party, with no attacker, and stays deterministic", () => {
+    const info = { foes: ["Marsh Brute A", "Marsh Brute B", "Wolf"], noticed: true, first: { name: "Tov", side: "party" as const } };
+    const outs = new Set<string>();
+    for (let seed = 0; seed < 30; seed++) {
+      const t = narrateCombatStart(info, createRng(seed));
+      expect(t).toBe(narrateCombatStart(info, createRng(seed)));
+      expect(t).toContain("Marsh Brute (x2)");
+      expect(t).toContain("Tov");
+      expect(t).not.toMatch(/[{}]/);
+      for (const n of t.match(/\d+/g) ?? []) expect(n).toBe("2");
+      outs.add(t);
+    }
+    expect(outs.size).toBeGreaterThan(1);
+    for (const line of COMBAT_VOICE.templates["start_noticed"] ?? []) expect(line).toContain("{foes}");
+    expect(COMBAT_VOICE.templates["start_noticed"]?.length).toBeGreaterThanOrEqual(3);
+  });
+  it("prefers the noticed opening over a starter's and ignores it for an empty foe list", () => {
+    const t = narrateCombatStart({ foes: ["Wolf"], starter: "Mara", noticed: true }, createRng(3));
+    expect(t).not.toContain("Mara");
+    expect(narrateCombatStart({ foes: [], noticed: true }, createRng(1))).toBe("");
+  });
+});
+
 describe("groupFoes", () => {
   it("strips spawn letters, groups and joins", () => {
     expect(groupFoes(["Rat A", "Rat B"])).toBe("Rat (x2)");
@@ -127,7 +151,7 @@ describe("barkFor", () => {
       expect(t, t).not.toMatch(/\d|[{}]|blood|gore|kill|die\b|dead/i);
     }
     const allowed: Record<string, string[]> = {
-      start_opening: ["foes"], start_opening_starter: ["starter", "foes"], start_first_party: ["first"], start_first_enemy: ["first"],
+      start_opening: ["foes"], start_noticed: ["foes"], start_opening_starter: ["starter", "foes"], start_first_party: ["first"], start_first_enemy: ["first"],
       end_cleared: [], end_fled_one: [], end_fled_many: ["count"], end_yield_one: [], end_yield_many: ["count"], end_downed: ["names"],
     };
     expect(Object.keys(COMBAT_VOICE.templates).sort()).toEqual(Object.keys(allowed).sort());

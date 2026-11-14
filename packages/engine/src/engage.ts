@@ -1,7 +1,8 @@
 /** Who fights when the engine itself starts a fight (a player attacks a hostile creature). Pure. */
 import { DIFFICULTIES, type Difficulty } from "@aedm/schemas";
 import { archetypeOf, isStanding } from "./mutate.ts";
-import { sideOf, type GameState } from "./state.ts";
+import type { Aggro } from "./npc-behavior.ts";
+import { sideOf, type Entity, type GameState } from "./state.ts";
 import { encounterBudget, enemyThreat } from "./threat.ts";
 
 export type EngagementPlan =
@@ -33,22 +34,42 @@ export function planEngagement(
   const foes = here.filter((e) => e.kind === "enemy" && e.disposition === "hostile");
   if (!foes.some((e) => e.id === target.id)) foes.unshift(target);
 
+  return {
+    ok: true,
+    participants: [...party, ...allies, ...foes].map((e) => e.id),
+    difficulty: difficultyFor(state, foes, party.length, ctx.partyLevel),
+    foes: foes.map((e) => e.name),
+    starter: attacker.name,
+  };
+}
+
+/** The lowest difficulty from `standard` up whose encounter budget covers the foes' threat (or the highest, if none does). */
+function difficultyFor(state: GameState, foes: readonly Entity[], partySize: number, partyLevel: number): Difficulty {
   const threat = foes.reduce((sum, e) => {
     const a = archetypeOf(state, e);
     return sum + (a ? a.threat ?? enemyThreat(a) : 0);
   }, 0);
   const boss = foes.some((e) => archetypeOf(state, e)?.role === "boss");
-  const size = Math.max(1, party.length);
+  const size = Math.max(1, partySize);
   const from = Math.max(0, DIFFICULTIES.indexOf("standard"));
-  let difficulty: Difficulty = DIFFICULTIES[DIFFICULTIES.length - 1] as Difficulty;
   for (const d of DIFFICULTIES.slice(from)) {
-    if (threat <= encounterBudget(size, ctx.partyLevel, d, { boss }) + 1e-9) { difficulty = d; break; }
+    if (threat <= encounterBudget(size, partyLevel, d, { boss }) + 1e-9) return d;
   }
+  return DIFFICULTIES[DIFFICULTIES.length - 1] as Difficulty;
+}
+
+export interface AggroPlan { participants: string[]; difficulty: Difficulty; foes: string[] }
+
+/**
+ * Plan the fight for a result of `aggroCheck` (creatures noticed the party): the same participants, the foes' names and the
+ * difficulty chosen exactly as `planEngagement` does (party size counts the party characters in the result).
+ */
+export function planAggroEngagement(state: GameState, aggro: Aggro, ctx: { partyLevel: number }): AggroPlan {
+  const ents = aggro.participants.map((id) => state.entities[id]).filter((e): e is Entity => !!e);
+  const foes = ents.filter((e) => e.kind === "enemy" && sideOf(e) === "enemy");
   return {
-    ok: true,
-    participants: [...party, ...allies, ...foes].map((e) => e.id),
-    difficulty,
+    participants: aggro.participants,
+    difficulty: difficultyFor(state, foes, ents.filter((e) => e.kind === "pc").length, ctx.partyLevel),
     foes: foes.map((e) => e.name),
-    starter: attacker.name,
   };
 }

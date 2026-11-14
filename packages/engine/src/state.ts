@@ -48,6 +48,8 @@ export interface Entity {
   morale?: "held" | "broken";
   /** Set once a boss or elite was reported as bloodied this fight. */
   bloodied?: true;
+  /** An enemy-side creature that survived a fight that ended without its defeat (truce, flight, party defeat). It does not aggro by itself until a new combat starts with it. */
+  calm?: true;
 }
 
 export interface TerrainTile {

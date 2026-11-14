@@ -18,6 +18,8 @@ export interface CombatStartInfo {
   foes: readonly string[];
   /** Name of the character who began the fight, if one did. */
   starter?: string;
+  /** The creatures noticed the party and attacked, rather than a character striking first. Takes precedence over `starter`. */
+  noticed?: boolean;
   /** Who has the first turn. */
   first?: { name: string; side: "party" | "enemy" };
 }
@@ -78,7 +80,7 @@ export function narrateCombatStart(info: CombatStartInfo, rng: Rng): string {
   const say = picker(rng, COMBAT_VOICE.templates);
   const foes = groupFoes(info.foes);
   const out: string[] = [];
-  out.push(info.starter ? say("start_opening_starter", { starter: info.starter, foes }) : say("start_opening", { foes }));
+  out.push(info.noticed ? say("start_noticed", { foes }) : info.starter ? say("start_opening_starter", { starter: info.starter, foes }) : say("start_opening", { foes }));
   if (info.first) out.push(say(info.first.side === "party" ? "start_first_party" : "start_first_enemy", { first: info.first.name }));
   return out.filter(Boolean).join(" ");
 }
