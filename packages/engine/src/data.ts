@@ -13,6 +13,7 @@ import pixelJson from "../data/pixel.json" with { type: "json" };
 import narrationJson from "../data/narration.json" with { type: "json" };
 import lootJson from "../data/loot.json" with { type: "json" };
 import interactJson from "../data/interact.json" with { type: "json" };
+import describeJson from "../data/describe.json" with { type: "json" };
 
 export interface ArmorInfo { name: string; dexCap: number | null; speedPenalty: number }
 
@@ -222,5 +223,36 @@ export interface InteractData {
   texts: Record<string, Record<string, string>>;
 }
 
+// ---------- engine-written descriptions (data/describe.json, see describe.ts) ----------
+
+export interface DescribeData {
+  version: number;
+  caps: { exits: number; objects: number; containers: number; creatures: number; party: number; inventory: number };
+  /** Template for a list's overflow; `{n}` is the count left out. */
+  more: string;
+  list: { sep: string; last: string };
+  /** An exit within this many tiles of a map edge counts as on that side. */
+  exitEdgeMargin: number;
+  sides: Record<"n" | "s" | "e" | "w", string>;
+  scene: {
+    placeMood: string; place: string; noPlace: string; exits: string; exit: string; exitSide: string; objects: string;
+    containers: string; creatures: string; party: string; nothing: string; moods: Record<string, string>;
+  };
+  /** By object kind, then state (or `any`). */
+  objectNames: Record<string, Record<string, string>>;
+  /** For an object kind with no entry above; `{kind}` is the kind. */
+  objectFallback: string;
+  containerNames: { pile: string; remains: string; remainsPlain: string };
+  tags: { hostile: string; downed: string; out: string };
+  /** Checked in order: the first band whose `minPct` the health percentage (rounded up) reaches. */
+  healthBands: { minPct: number; text: string }[];
+  creature: {
+    enemy: string; npc: string; pc: string; appearance: string; title: string; enemyConditions: string; pcConditions: string;
+    downed: string; dispositions: Record<string, string>; conditions: Record<string, string>;
+  };
+  inventory: { carrying: string; empty: string; count: string };
+}
+
+export const DESCRIBE = describeJson as unknown as DescribeData;
 export const LOOT = lootJson as unknown as LootData;
 export const INTERACT = interactJson as unknown as InteractData;

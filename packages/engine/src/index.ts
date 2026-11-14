@@ -23,5 +23,6 @@ export * from "./sprites.ts";
 export * from "./pixel.ts";
 export * from "./narrate.ts";
 export * from "./intents.ts";
-export { NARRATION, PIXEL_RULES, RULES, LEVELS, COSTS, ENEMY_DATA, CONDITION_META, PLOTS, LOOT, INTERACT } from "./data.ts";
+export * from "./describe.ts";
+export { DESCRIBE, NARRATION, PIXEL_RULES, RULES, LEVELS, COSTS, ENEMY_DATA, CONDITION_META, PLOTS, LOOT, INTERACT } from "./data.ts";
 export * from "./map/index.ts";
