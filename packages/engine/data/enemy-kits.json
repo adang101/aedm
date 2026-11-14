@@ -1,0 +1,190 @@
+{
+  "version": 1,
+  "maxConceptLength": 200,
+  "defaultConcept": "A nameless {role} foe with no known origin.",
+  "name": {
+    "maxLength": 40,
+    "maxWords": 3,
+    "refPrefix": "en_",
+    "articles": ["a", "an", "the", "some", "one", "two", "three", "this", "that"],
+    "clauseWords": ["who", "whom", "whose", "that", "which", "with", "without", "and", "or", "but", "from", "in", "on", "at", "by", "for", "to", "while", "when", "where", "because", "as", "has", "have", "carrying", "wielding", "wearing", "holding", "using"],
+    "trailingWords": ["of", "the", "a", "an", "in", "on", "at", "for", "to", "and", "or"],
+    "defaults": { "minion": "Lesser Foe", "standard": "Hostile Foe", "elite": "Hardened Foe", "boss": "Dread Overlord" }
+  },
+  "variation": { "startPct": 50, "jitterPct": 10, "speedJitterChancePct": 25 },
+  "traits": [
+    { "id": "armored", "keywords": ["armored", "armoured", "armor", "armour", "stone", "golem", "shell", "shelled", "plated", "iron", "steel", "bulwark", "carapace", "gargoyle", "statue", "shielded", "turtle", "crab"], "hpPct": 25, "defensePct": 45, "attackPct": 0, "damagePct": 0, "speed": -1 },
+    { "id": "swift", "keywords": ["swift", "quick", "fast", "wolf", "wolves", "bat", "bats", "nimble", "darting", "skittering", "rat", "rats", "hound", "jackal", "lunging", "agile", "cat", "panther", "hawk", "wasp"], "hpPct": -25, "defensePct": -10, "attackPct": 10, "damagePct": 0, "speed": 1 },
+    { "id": "brute", "keywords": ["brute", "ogre", "giant", "troll", "hulking", "massive", "huge", "bruiser", "colossus", "juggernaut", "berserker", "minotaur"], "hpPct": 15, "defensePct": 0, "attackPct": -35, "damagePct": 40, "speed": -1 },
+    { "id": "frail", "keywords": ["frail", "weak", "sickly", "starving", "feeble", "ghost", "wisp", "spectral", "phantom", "imp"], "hpPct": -30, "defensePct": -10, "attackPct": 0, "damagePct": -15, "speed": 0 },
+    { "id": "deadly", "keywords": ["deadly", "assassin", "duelist", "blademaster", "veteran", "ruthless", "savage", "fanged", "razor"], "hpPct": -10, "defensePct": 0, "attackPct": 30, "damagePct": 15, "speed": 0 }
+  ],
+  "spriteTags": [
+    { "keywords": ["robe", "robed", "cultist", "chorister", "priest", "acolyte", "monk"], "tags": ["robe", "hood"] },
+    { "keywords": ["wolf", "wolves", "hound", "jackal", "bear", "boar", "beast", "cat", "panther"], "tags": ["fur", "fangs"] },
+    { "keywords": ["bat", "bats", "wasp", "bird", "hawk", "harpy", "wyvern"], "tags": ["wings"] },
+    { "keywords": ["skeleton", "bone", "bones", "undead", "lich", "ghoul"], "tags": ["bones"] },
+    { "keywords": ["zombie", "rotting", "corpse", "husk"], "tags": ["rotting", "tattered"] },
+    { "keywords": ["golem", "stone", "statue", "gargoyle", "construct", "automaton"], "tags": ["stone", "gears"] },
+    { "keywords": ["armored", "armoured", "knight", "guard", "sentinel", "soldier", "bodyguard"], "tags": ["armor", "helmet"] },
+    { "keywords": ["goblin", "kobold", "imp"], "tags": ["small", "ears_pointed"] },
+    { "keywords": ["bandit", "thief", "rogue", "assassin", "cutpurse"], "tags": ["mask", "cloak"] },
+    { "keywords": ["archer", "bowman", "ranger", "sniper"], "tags": ["bow"] },
+    { "keywords": ["mage", "wizard", "witch", "caster", "warlock", "sorcerer"], "tags": ["staff", "hat"] },
+    { "keywords": ["ogre", "troll", "giant", "brute"], "tags": ["large", "club"] },
+    { "keywords": ["ooze", "slime", "jelly", "sludge"], "tags": ["slime", "drips"] },
+    { "keywords": ["spider", "spiders", "scorpion", "insect", "ant", "ants", "locust"], "tags": ["legs", "chitin"] },
+    { "keywords": ["fire", "flame", "ember", "burning", "magma", "lava", "cinder"], "tags": ["flames"] },
+    { "keywords": ["frost", "ice", "frozen", "snow", "cold"], "tags": ["frost"] },
+    { "keywords": ["shadow", "wraith", "ghost", "phantom", "specter", "spectre"], "tags": ["smoke", "glow"] }
+  ],
+  "behavior": {
+    "minLines": 2,
+    "maxLines": 3,
+    "families": [
+      { "id": "fearless", "tactic": "fearless", "group": "morale", "keywords": ["zombie", "skeleton", "construct", "golem", "ooze", "mindless", "undead", "automaton", "slime", "jelly", "husk", "statue", "ghoul", "gargoyle", "sludge", "fearless"],
+        "variants": [["Fearless, it fights to the death.", "Presses on whatever the cost."], ["Mindless and tireless, it never yields.", "Walks straight into harm."]] },
+      { "id": "cowardly", "tactic": "cowardly", "group": "morale", "keywords": ["goblin", "bandit", "thief", "sneak", "rogue", "cutpurse", "kobold", "imp", "coward", "cowardly", "skulker", "pickpocket"],
+        "variants": [["Cowardly; flees when badly hurt.", "Prefers to strike when foes look busy."], ["Skittish, it runs once the fight turns.", "Hangs back until the odds look good."]] },
+      { "id": "ranged", "tactic": "ranged", "keywords": ["archer", "bowman", "sniper", "caster", "mage", "wizard", "spitter", "slinger", "singer", "chorister", "spellcaster", "witch", "warlock", "sorcerer", "gunner", "thrower", "marksman", "ranged", "crossbowman", "cantor"],
+        "variants": [["Keeps its distance and shoots from afar.", "Stays behind its allies."], ["Hurls attacks from a distance.", "Backs off when foes close in."], ["Casts from afar, keeping its distance.", "Avoids being caught in melee."]] },
+      { "id": "pack", "tactic": "pack", "keywords": ["wolf", "wolves", "rat", "rats", "swarm", "pack", "hound", "hounds", "jackal", "bat", "bats", "gnat", "locust", "locusts", "insect", "flock", "horde", "mob", "ant", "ants", "vermin"],
+        "variants": [["Hunts in a pack and flanks its prey.", "Circles around a lone target."], ["Swarms its target alongside its kin.", "Surrounds whoever strays from the group."]] },
+      { "id": "guard", "tactic": "protect_leader", "keywords": ["guard", "bodyguard", "knight", "sentinel", "sentry", "warden", "protector", "paladin", "defender", "watchman", "escort", "guardian"],
+        "variants": [["Guards its leader and holds the line.", "Steps in front of the stronger allies."], ["Protects its allies from the front.", "Stays close to whoever commands it."]] },
+      { "id": "hunter", "tactic": "focus_weakest", "keywords": ["assassin", "ambusher", "predator", "stalker", "scavenger", "vulture", "reaver", "executioner", "hunter"],
+        "variants": [["Picks off the wounded first.", "Waits for a foe to falter."], ["Finishes off the weakest foe.", "Ignores those still fighting fit."]] },
+      { "id": "healhunter", "tactic": "target_healer", "keywords": ["inquisitor", "silencer", "spellbreaker", "witchhunter"],
+        "variants": [["Goes after healers and casters first.", "Cuts down support before the front line."]] }
+    ],
+    "fillers": {
+      "minion": ["Rushes the nearest foe.", "Attacks in a clumsy rush."],
+      "standard": ["Closes to melee and strikes the nearest foe.", "Holds its ground in a fight."],
+      "elite": ["Presses the attack with confidence.", "Drives straight at the nearest foe."],
+      "boss": ["Commands the fight from the front.", "Pushes the attack without pause."]
+    }
+  },
+  "abilities": {
+    "targetCount": { "minion": 0, "standard": 1, "elite": 2, "boss": 3 },
+    "rolePowerPct": { "minion": 0, "standard": 80, "elite": 100, "boss": 120 },
+    "fallback": {
+      "name": "Heavy Swing",
+      "description": "A hard, wild swing that hits one nearby foe.",
+      "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+      "effects": [{ "type": "damage", "shape": "single", "dicePct": 60, "damage_type": "blunt", "affects": "enemies" }]
+    }
+  },
+  "defaultTheme": "default",
+  "themes": [
+    { "id": "fire", "keywords": ["fire", "flame", "flames", "burn", "burning", "ember", "embers", "magma", "lava", "cinder", "cinders", "ash", "pyre", "infernal", "torch", "scorch", "scorched", "molten", "smoldering"],
+      "resistance": "fire", "weakness": "cold", "lootHint": "Scorched trinkets and warm coin.", "spriteTags": ["flames"],
+      "templates": [
+        { "name": "Searing Spit", "description": "Spits a glob of burning matter at a foe.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 5, "cooldown_turns": 2,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 90, "damage_type": "fire", "affects": "enemies" }] },
+        { "name": "Cinder Burst", "description": "A burst of hot cinders erupts at a chosen spot.", "tags": [], "action": "action", "target": "tile", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "burst", "radius_tiles": 1, "dicePct": 60, "damage_type": "fire", "save": { "ability": "dex", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }] },
+        { "name": "Ember Touch", "description": "A scorching strike that leaves the target alight.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 50, "damage_type": "fire", "affects": "enemies" }, { "type": "condition", "condition": "burning", "duration_turns": 1, "on": "hit", "affects": "enemies" }] }
+      ] },
+    { "id": "cold", "keywords": ["frost", "frozen", "ice", "icy", "cold", "snow", "winter", "chill", "chilling", "glacial", "rime", "blizzard", "freezing"],
+      "resistance": "cold", "weakness": "fire", "lootHint": "Frost-rimed odds and ends.", "spriteTags": ["frost"],
+      "templates": [
+        { "name": "Chilling Breath", "description": "A cone of biting cold washes over foes in front.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 3, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "cone", "length_tiles": 3, "dicePct": 55, "damage_type": "cold", "save": { "ability": "con", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }] },
+        { "name": "Numbing Touch", "description": "A freezing touch that slows the target.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 45, "damage_type": "cold", "affects": "enemies" }, { "type": "condition", "condition": "slowed", "duration_turns": 1, "on": "hit", "affects": "enemies" }] },
+        { "name": "Icicle Throw", "description": "Hurls a jagged shard of ice.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 6, "cooldown_turns": 2,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 85, "damage_type": "cold", "affects": "enemies" }] }
+      ] },
+    { "id": "poison", "keywords": ["poison", "poisonous", "venom", "venomous", "acid", "acidic", "toxic", "spider", "spiders", "serpent", "snake", "slime", "ooze", "spore", "spores", "rot", "rotting", "plague", "bile", "fungus", "blight", "scorpion", "sludge", "corrosive"],
+      "resistance": "acid", "weakness": "fire", "lootHint": "Stained vials and sticky scraps.", "spriteTags": ["drips"],
+      "templates": [
+        { "name": "Caustic Spit", "description": "Spits a stream of corrosive fluid.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 5, "cooldown_turns": 2,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 85, "damage_type": "acid", "affects": "enemies" }] },
+        { "name": "Venom Bite", "description": "A bite that leaves the target bleeding.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 45, "damage_type": "acid", "affects": "enemies" }, { "type": "condition", "condition": "bleeding", "duration_turns": 1, "on": "hit", "affects": "enemies" }] },
+        { "name": "Choking Cloud", "description": "A cloud of foul spores bursts at a chosen spot.", "tags": [], "action": "action", "target": "tile", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "burst", "radius_tiles": 1, "dicePct": 55, "damage_type": "acid", "save": { "ability": "con", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }] }
+      ] },
+    { "id": "shadow", "keywords": ["shadow", "shadows", "dark", "darkness", "psychic", "mind", "phantom", "ghost", "wraith", "whisper", "whispers", "nightmare", "void", "dream", "haunt", "haunted", "specter", "spectre", "mad", "madness", "cult", "cultist", "chorister", "drowned"],
+      "resistance": "psychic", "weakness": "radiant", "lootHint": "Pale keepsakes and cold silver.", "spriteTags": ["smoke"],
+      "templates": [
+        { "name": "Borrowed Voice", "description": "A stolen voice that rattles the mind and dazzles one foe.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 6, "cooldown_turns": 3,
+          "effects": [{ "type": "condition", "condition": "dazzled", "duration_turns": 1, "on": "failed_save", "save": { "ability": "wis", "dc": "caster_dc" }, "affects": "enemies" }] },
+        { "name": "Mind Spike", "description": "A sudden, piercing pain in the target's thoughts.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 6, "cooldown_turns": 2,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 80, "damage_type": "psychic", "save": { "ability": "wis", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }] },
+        { "name": "Creeping Dread", "description": "Dread washes over foes in a small area.", "tags": [], "action": "action", "target": "tile", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "burst", "radius_tiles": 1, "dicePct": 50, "damage_type": "psychic", "save": { "ability": "wis", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }] }
+      ] },
+    { "id": "radiant", "keywords": ["radiant", "holy", "light", "sun", "solar", "angel", "angelic", "celestial", "dawn", "divine", "sacred", "blessed", "glowing", "luminous"],
+      "resistance": "radiant", "weakness": "psychic", "lootHint": "Bright charms and temple coin.", "spriteTags": ["halo", "glow"],
+      "templates": [
+        { "name": "Blinding Flash", "description": "A flash of brilliant light that dazzles one foe.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 5, "cooldown_turns": 3,
+          "effects": [{ "type": "condition", "condition": "dazzled", "duration_turns": 1, "on": "failed_save", "save": { "ability": "con", "dc": "caster_dc" }, "affects": "enemies" }] },
+        { "name": "Searing Ray", "description": "A narrow beam of burning light.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 6, "cooldown_turns": 2,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 85, "damage_type": "radiant", "affects": "enemies" }] },
+        { "name": "Pulse of Light", "description": "A pulse of light bursts at a chosen spot.", "tags": [], "action": "action", "target": "tile", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "burst", "radius_tiles": 1, "dicePct": 55, "damage_type": "radiant", "save": { "ability": "dex", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }] }
+      ] },
+    { "id": "lightning", "keywords": ["lightning", "storm", "thunder", "spark", "sparks", "shock", "electric", "static", "tempest", "arc", "galvanic"],
+      "resistance": "lightning", "weakness": "acid", "lootHint": "Charred wire and humming stones.", "spriteTags": ["sparkles"],
+      "templates": [
+        { "name": "Arc Lash", "description": "A crackling whip of lightning strikes one foe.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 5, "cooldown_turns": 2,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 85, "damage_type": "lightning", "affects": "enemies" }] },
+        { "name": "Thunderclap", "description": "A deafening burst that throws foes back.", "tags": [], "action": "action", "target": "tile", "range_tiles": 3, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "burst", "radius_tiles": 1, "dicePct": 50, "damage_type": "lightning", "save": { "ability": "con", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }, { "type": "push", "tiles": 1, "affects": "enemies" }] },
+        { "name": "Static Grasp", "description": "A shocking touch that slows the target.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 45, "damage_type": "lightning", "affects": "enemies" }, { "type": "condition", "condition": "slowed", "duration_turns": 1, "on": "hit", "affects": "enemies" }] }
+      ] },
+    { "id": "brute", "keywords": ["brute", "ogre", "giant", "troll", "club", "hammer", "smash", "bruiser", "golem", "boulder", "hulking", "massive", "berserker", "minotaur", "juggernaut", "stone"],
+      "resistance": null, "weakness": "psychic", "lootHint": "Crude weapons and heavy coin.", "spriteTags": ["club"],
+      "templates": [
+        { "name": "Crushing Blow", "description": "A heavy overhead blow that flattens one foe.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 90, "damage_type": "blunt", "affects": "enemies" }] },
+        { "name": "Ground Slam", "description": "Pounds the ground and shakes foes nearby.", "tags": [], "action": "action", "target": "tile", "range_tiles": 2, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "burst", "radius_tiles": 1, "dicePct": 50, "damage_type": "blunt", "save": { "ability": "str", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }] },
+        { "name": "Shoulder Charge", "description": "Barrels forward and bowls a foe over.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "dash", "tiles": 3, "with_attack": true }, { "type": "damage", "shape": "single", "dicePct": 50, "damage_type": "blunt", "affects": "enemies" }, { "type": "push", "tiles": 1, "affects": "enemies" }] }
+      ] },
+    { "id": "blade", "keywords": ["blade", "blades", "sword", "swordsman", "knight", "bandit", "assassin", "duelist", "guard", "soldier", "dagger", "axe", "reaver", "warrior", "fencer", "raider", "mercenary", "thief", "cutpurse"],
+      "resistance": null, "weakness": null, "lootHint": "Good steel and a few coins.", "spriteTags": ["sword"],
+      "templates": [
+        { "name": "Cutting Flurry", "description": "A quick run of slashes that leaves the target bleeding.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 55, "damage_type": "sharp", "affects": "enemies" }, { "type": "condition", "condition": "bleeding", "duration_turns": 1, "on": "hit", "affects": "enemies" }] },
+        { "name": "Lunging Strike", "description": "Darts forward and stabs the first foe reached.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 4, "cooldown_turns": 2,
+          "effects": [{ "type": "dash", "tiles": 3, "with_attack": true }, { "type": "damage", "shape": "single", "dicePct": 60, "damage_type": "sharp", "affects": "enemies" }] },
+        { "name": "Sweeping Cut", "description": "A wide cut that catches foes in front.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "cone", "length_tiles": 2, "dicePct": 55, "damage_type": "sharp", "save": { "ability": "dex", "dc": "caster_dc" }, "on_save": "half", "affects": "enemies" }] }
+      ] },
+    { "id": "beast", "keywords": ["wolf", "wolves", "bat", "bats", "rat", "rats", "beast", "bear", "boar", "hound", "hounds", "claw", "claws", "fang", "fangs", "pack", "swarm", "jackal", "cat", "panther", "hawk", "wasp", "vermin", "lizard", "predator"],
+      "resistance": null, "weakness": "fire", "lootHint": "Pelts, teeth and little else.", "spriteTags": ["fur"],
+      "templates": [
+        { "name": "Savage Bite", "description": "A tearing bite that leaves the target bleeding.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 2,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 60, "damage_type": "sharp", "affects": "enemies" }, { "type": "condition", "condition": "bleeding", "duration_turns": 1, "on": "hit", "affects": "enemies" }] },
+        { "name": "Pouncing Leap", "description": "Springs on a foe and knocks it to the ground.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "dash", "tiles": 3, "with_attack": true }, { "type": "damage", "shape": "single", "dicePct": 50, "damage_type": "sharp", "affects": "enemies" }, { "type": "condition", "condition": "prone", "duration_turns": 1, "on": "hit", "affects": "enemies" }] },
+        { "name": "Rallying Howl", "description": "A cry that sends nearby allies into a frenzy.", "tags": [], "action": "quick", "target": "self", "range_tiles": 0, "cooldown_turns": 3,
+          "effects": [{ "type": "condition", "condition": "hasted", "duration_turns": 1, "on": "always", "affects": "allies" }] }
+      ] },
+    { "id": "healer", "keywords": ["healer", "shaman", "priest", "cleric", "medic", "mender", "druid", "witchdoctor", "acolyte", "chaplain", "herbalist"],
+      "resistance": null, "weakness": null, "lootHint": "Herbs, charms and small vials.", "spriteTags": ["staff"],
+      "templates": [
+        { "name": "Mending Chant", "description": "A low chant that closes the wounds of one ally.", "tags": [], "action": "action", "target": "ally", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "heal", "shape": "single", "dicePct": 70, "affects": "allies" }] },
+        { "name": "Warding Murmur", "description": "A murmured ward that shields one ally.", "tags": [], "action": "action", "target": "ally", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "shield", "absorbBase": 3, "absorbPerLevel": 1, "duration_turns": 2, "affects": "allies" }] },
+        { "name": "Withering Hex", "description": "A curse that saps and slows one foe.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 5, "cooldown_turns": 3,
+          "effects": [{ "type": "condition", "condition": "slowed", "duration_turns": 1, "on": "failed_save", "save": { "ability": "wis", "dc": "caster_dc" }, "affects": "enemies" }] }
+      ] },
+    { "id": "default", "keywords": [],
+      "resistance": null, "weakness": null, "lootHint": "Odds and ends.", "spriteTags": [],
+      "templates": [
+        { "name": "Heavy Swing", "description": "A hard, wild swing that hits one nearby foe.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 90, "damage_type": "blunt", "affects": "enemies" }] },
+        { "name": "Rattling Shout", "description": "A harsh shout that leaves one foe dazzled.", "tags": ["intimidation"], "action": "action", "target": "enemy", "range_tiles": 4, "cooldown_turns": 3,
+          "effects": [{ "type": "condition", "condition": "dazzled", "duration_turns": 1, "on": "failed_save", "save": { "ability": "wis", "dc": "caster_dc" }, "affects": "enemies" }] },
+        { "name": "Tripping Lunge", "description": "A low lunge that trips one foe.", "tags": [], "action": "action", "target": "enemy", "range_tiles": 1, "cooldown_turns": 3,
+          "effects": [{ "type": "damage", "shape": "single", "dicePct": 45, "damage_type": "sharp", "affects": "enemies" }, { "type": "condition", "condition": "prone", "duration_turns": 1, "on": "hit", "affects": "enemies" }] }
+      ] }
+  ]
+}

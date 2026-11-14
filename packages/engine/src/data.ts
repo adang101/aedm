@@ -13,6 +13,7 @@ import pixelJson from "../data/pixel.json" with { type: "json" };
 import narrationJson from "../data/narration.json" with { type: "json" };
 import lootJson from "../data/loot.json" with { type: "json" };
 import interactJson from "../data/interact.json" with { type: "json" };
+import enemyKitsJson from "../data/enemy-kits.json" with { type: "json" };
 
 export interface ArmorInfo { name: string; dexCap: number | null; speedPenalty: number }
 
@@ -224,3 +225,31 @@ export interface InteractData {
 
 export const LOOT = lootJson as unknown as LootData;
 export const INTERACT = interactJson as unknown as InteractData;
+
+// ---------- offline enemy builder (data/enemy-kits.json) ----------
+
+export interface KitTrait { id: string; keywords: string[]; hpPct: number; defensePct: number; attackPct: number; damagePct: number; speed: number }
+export interface KitBehaviorFamily { id: string; tactic: Tactic | "ranged"; group?: string; keywords: string[]; variants: string[][] }
+/** An ability as written in the data: effects may carry `dicePct` (percent of the level's maximum average) or `absorbBase` and `absorbPerLevel` instead of a final number. */
+export interface KitAbilityTemplate {
+  name: string; description: string; tags: string[]; action: string; target: string; range_tiles: number;
+  cooldown_turns?: number; uses_per_rest?: number; effects: Record<string, unknown>[];
+}
+export interface KitTheme {
+  id: string; keywords: string[]; resistance: DamageType | null; weakness: DamageType | null;
+  lootHint: string; spriteTags: string[]; templates: KitAbilityTemplate[];
+}
+export interface EnemyKitsData {
+  version: number;
+  maxConceptLength: number;
+  defaultConcept: string;
+  name: { maxLength: number; maxWords: number; refPrefix: string; articles: string[]; clauseWords: string[]; trailingWords: string[]; defaults: Record<EnemyRole, string> };
+  variation: { startPct: number; jitterPct: number; speedJitterChancePct: number };
+  traits: KitTrait[];
+  spriteTags: { keywords: string[]; tags: string[] }[];
+  behavior: { minLines: number; maxLines: number; families: KitBehaviorFamily[]; fillers: Record<EnemyRole, string[]> };
+  abilities: { targetCount: Record<EnemyRole, number>; rolePowerPct: Record<EnemyRole, number>; fallback: KitAbilityTemplate };
+  defaultTheme: string;
+  themes: KitTheme[];
+}
+export const ENEMY_KITS = enemyKitsJson as unknown as EnemyKitsData;
