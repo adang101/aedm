@@ -1,0 +1,205 @@
+{
+  "version": 1,
+  "defaultBody": "humanoid",
+  "talkingBodies": ["humanoid", "spirit"],
+  "emoteGroups": {
+    "humanoid": "animal", "spirit": "strange", "beast": "animal", "avian": "animal", "serpent": "animal",
+    "insectoid": "animal", "amorphous": "strange", "construct": "strange", "plant": "strange", "object": "strange"
+  },
+  "barkChancePct": { "morale_broken": 100, "surrendered": 100, "fled": 100, "bloodied": 50 },
+  "leaderRoles": ["boss", "elite"],
+  "victory": {
+    "dmRoles": ["boss", "elite"],
+    "dmWhenPartyDown": true
+  },
+  "listJoin": "and",
+  "say": {
+    "morale_broken": {
+      "default": [
+        "I can't take any more of this!",
+        "This is not worth it, fall back!",
+        "No more, get me out of here!",
+        "Run! Get out while you can!"
+      ],
+      "cowardly": [
+        "I never signed up for this!",
+        "Not today, I am leaving!",
+        "Please, I just want to get away!"
+      ],
+      "leader_down": [
+        "Our leader has fallen! Fall back!",
+        "Without a leader, I am out of here!",
+        "The leader is down, every one for themselves!"
+      ]
+    },
+    "surrendered": {
+      "default": [
+        "Enough! I give up, I give up!",
+        "Stop, please, I surrender!",
+        "Spare me and I will talk!",
+        "I yield, no more!"
+      ],
+      "cowardly": [
+        "Don't hurt me, I will tell you anything!",
+        "Mercy, I beg you, mercy!",
+        "I surrender, just let me live!"
+      ]
+    },
+    "fled": {
+      "default": [
+        "You have not seen the last of me!",
+        "This isn't over!",
+        "I'm getting out of here!"
+      ],
+      "cowardly": [
+        "Not worth it, not worth it!",
+        "Help! Somebody help me!",
+        "I'm done, I'm done, I'm gone!"
+      ]
+    },
+    "bloodied": {
+      "default": [
+        "Is that all you have got?",
+        "You will pay for that!",
+        "That stings, but I am still standing!",
+        "Lucky blow, that one!"
+      ],
+      "fearless": [
+        "Pain means nothing to me!",
+        "I will not fall to you!",
+        "Keep coming, I am not done!"
+      ],
+      "leader": [
+        "Hold fast, we are not beaten yet!",
+        "You will regret that, all of you!",
+        "Stand firm, we finish this!"
+      ]
+    }
+  },
+  "emote": {
+    "animal": {
+      "morale_broken": {
+        "default": [
+          "{name} gives a frightened cry and backs off.",
+          "{name} cringes and shrinks away from the fight.",
+          "{name} loses its nerve and starts to retreat."
+        ],
+        "cowardly": [
+          "{name} whimpers and looks for a way out.",
+          "{name} flattens itself and edges toward the exit."
+        ],
+        "leader_down": [
+          "{name} falters as its leader falls and begins to back away.",
+          "{name} flinches at the sight of its fallen leader and retreats."
+        ]
+      },
+      "surrendered": {
+        "default": [
+          "{name} stops and cowers, no longer a threat.",
+          "{name} lowers itself to the ground, trembling."
+        ]
+      },
+      "fled": {
+        "default": [
+          "{name} bolts out of sight.",
+          "{name} scrambles away and is gone."
+        ]
+      },
+      "bloodied": {
+        "default": [
+          "{name} makes a pained, angry sound.",
+          "{name} bristles, hurt but not beaten."
+        ],
+        "fearless": [
+          "{name} presses on, unfazed by its wounds."
+        ],
+        "leader": [
+          "{name} rears up with a furious cry.",
+          "{name} bellows, hurt but far from done."
+        ]
+      }
+    },
+    "strange": {
+      "morale_broken": {
+        "default": [
+          "{name} shudders and begins to withdraw.",
+          "{name} wavers and pulls back from the fight."
+        ],
+        "leader_down": [
+          "{name} stills as its leader falls, then drifts away."
+        ]
+      },
+      "surrendered": {
+        "default": [
+          "{name} goes still, no longer a threat.",
+          "{name} sags and stops moving."
+        ]
+      },
+      "fled": {
+        "default": [
+          "{name} withdraws and is gone.",
+          "{name} slips away out of sight."
+        ]
+      },
+      "bloodied": {
+        "default": [
+          "{name} lurches, damaged but still dangerous.",
+          "{name} shudders, worn down but not finished."
+        ],
+        "fearless": [
+          "{name} carries on, unmoved by the damage."
+        ],
+        "leader": [
+          "{name} surges forward, damaged but undaunted."
+        ]
+      }
+    }
+  },
+  "templates": {
+    "start_opening": [
+      "Steel is drawn as {foes} move to fight.",
+      "{foes} bar the way, and the fight is on.",
+      "The calm breaks as {foes} turn on the party."
+    ],
+    "start_opening_starter": [
+      "{starter} moves against {foes}, and the fight is on.",
+      "{starter} strikes first at {foes} and the fight begins.",
+      "{starter} charges in on {foes}."
+    ],
+    "start_first_party": [
+      "{first} is quickest and has the first move.",
+      "{first} reacts fastest and goes first.",
+      "{first} gets the first move."
+    ],
+    "start_first_enemy": [
+      "{first} is quicker and moves first.",
+      "{first} seizes the initiative.",
+      "{first} acts before anyone can set themselves."
+    ],
+    "end_cleared": [
+      "The last foe falls and the field goes quiet.",
+      "With the last of the enemy down, silence settles over the ground.",
+      "The fight is over, and no enemy stands."
+    ],
+    "end_fled_one": [
+      "One foe slips away into the distance.",
+      "One enemy has fled the field."
+    ],
+    "end_fled_many": [
+      "{count} foes scatter and flee.",
+      "{count} enemies have run from the field."
+    ],
+    "end_yield_one": [
+      "One foe has thrown down their weapon and yielded.",
+      "One enemy stands aside, beaten and willing to talk."
+    ],
+    "end_yield_many": [
+      "{count} foes have thrown down their weapons and yielded.",
+      "{count} enemies stand aside, beaten and willing to talk."
+    ],
+    "end_downed": [
+      "{names} will need a moment to recover.",
+      "{names} must catch their breath before moving on."
+    ]
+  }
+}

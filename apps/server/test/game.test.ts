@@ -257,7 +257,7 @@ describe("combat", () => {
 
   it("a reaction event earns one DM call per round; later triggers wait for the round narration", async () => {
     const provider = scriptedProvider();
-    h = await startHarness({ provider, random: constantRandom(0.5) });
+    h = await startHarness({ provider, random: constantRandom(0.5), config: { combatDm: "full" } });
     const t = await startedTable(h);
     const { enemy, mark } = await startFight(t, provider);
     await t.a.wait("turn_timer", () => true, { from: mark });
@@ -273,7 +273,7 @@ describe("combat", () => {
 
   it("a trigger since the last DM call runs a reaction before the next turn", async () => {
     const provider = scriptedProvider();
-    h = await startHarness({ provider, random: constantRandom(0.5) });
+    h = await startHarness({ provider, random: constantRandom(0.5), config: { combatDm: "full" } });
     const t = await startedTable(h);
     const { p1, enemy, mark } = await startFight(t, provider);
     const timer = await t.a.wait("turn_timer", () => true, { from: mark });

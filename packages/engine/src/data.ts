@@ -11,6 +11,7 @@ import enemiesJson from "../data/enemies.json" with { type: "json" };
 import plotsJson from "../data/plots.json" with { type: "json" };
 import pixelJson from "../data/pixel.json" with { type: "json" };
 import narrationJson from "../data/narration.json" with { type: "json" };
+import combatVoiceJson from "../data/combat-voice.json" with { type: "json" };
 import lootJson from "../data/loot.json" with { type: "json" };
 import interactJson from "../data/interact.json" with { type: "json" };
 import enemyKitsJson from "../data/enemy-kits.json" with { type: "json" };
@@ -181,6 +182,30 @@ export interface NarrationData {
   templates: Record<string, string[]>;
 }
 export const NARRATION = narrationJson as unknown as NarrationData;
+
+/** Engine-written combat openings, endings and short creature reactions (see combat-voice.ts). */
+export interface CombatVoiceData {
+  version: number;
+  /** Body plan assumed when a creature's sprite does not name one. */
+  defaultBody: string;
+  /** Body plans whose creatures speak words; the rest get a described reaction. */
+  talkingBodies: string[];
+  /** Body plan to emote group (a key of `emote`). */
+  emoteGroups: Record<string, string>;
+  /** Chance in percent that an event produces a bark at all. */
+  barkChancePct: Record<string, number>;
+  /** Enemy roles that count as a fight's leaders (a bloodied leader gets the `leader` flavor). */
+  leaderRoles: EnemyRole[];
+  /** An ordinary victory is engine-narrated unless one of these holds. */
+  victory: { dmRoles: EnemyRole[]; dmWhenPartyDown: boolean };
+  listJoin: string;
+  /** event, then flavor (`default` is the fallback), then phrasings. */
+  say: Record<string, Record<string, string[]>>;
+  /** emote group, then event, then flavor. */
+  emote: Record<string, Record<string, Record<string, string[]>>>;
+  templates: Record<string, string[]>;
+}
+export const COMBAT_VOICE = combatVoiceJson as unknown as CombatVoiceData;
 
 // ---------- containers, locks, doors and loot (data/interact.json, data/loot.json) ----------
 
