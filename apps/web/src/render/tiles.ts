@@ -257,7 +257,7 @@ export function createMapStyle(tiles: readonly TileDef[], ground: readonly numbe
 // ---------- interactables and exits (not part of the tileset) ----------
 
 const KIND_COLOR: Record<string, string> = {
-  chest: "#9a6a3f", door: "#9a6a3f", lever: "#8b93b0", sign: "#c99a3a", altar: "#9b72d8",
+  chest: "#9a6a3f", door: "#9a6a3f", lever: "#8b93b0", sign: "#c99a3a", altar: "#9b72d8", trap: "#6b4a4a",
 };
 const LOCK_RED = "#c0392b";
 const BRASS = "#e8c95a";
@@ -350,10 +350,32 @@ function drawAltar(p: Pen, state: string): void {
   p.ell(24, 10, 4, 4, state === "open" ? "#f6e8a0" : "#cbb0f0");
 }
 
+/**
+ * A trap is a flat plate set in the floor, low in the tile so a character standing on it stays visible.
+ * Armed ("closed"): dark plate, red rim and a ring of raised spikes. Harmless ("open"): grey plate, spikes withdrawn, holes showing.
+ */
+function drawTrap(p: Pen, state: string): void {
+  const armed = state !== "open";
+  const plate = tones(armed ? "#6b4a4a" : "#8b93b0");
+  p.rrect(8, 26, 32, 14, 3, OUTLINE);
+  p.rect(9, 27, 30, 12, plate.base); p.rect(9, 27, 30, 2, plate.hi); p.rect(9, 37, 30, 2, plate.sh);
+  if (armed) {
+    p.rect(9, 27, 30, 1, LOCK_RED); p.rect(9, 38, 30, 1, LOCK_RED);
+    for (const x of [13, 20, 27, 34]) {
+      p.rect(x, 29, 3, 8, OUTLINE);
+      p.rect(x + 1, 30, 1, 5, "#e6e9f5"); p.rect(x + 1, 29, 1, 1, "#ffffff");
+    }
+    p.rect(11, 33, 26, 1, "rgba(192,57,43,0.55)");
+  } else {
+    for (const x of [13, 20, 27, 34]) { p.rect(x, 32, 3, 3, OUTLINE); p.rect(x + 1, 33, 1, 1, "#2b2030"); }
+  }
+}
+
 export function drawInteractable(ctx: Ctx, kind: string, state: string, px: number, py: number): void {
   const p = new Pen(ctx);
   ctx.save();
   ctx.translate(px, py);
+  if (kind === "trap") { drawTrap(p, state); ctx.restore(); return; }
   p.ell(24, 41, 14, 4, "rgba(27,22,38,0.34)");
   switch (kind) {
     case "chest": drawChest(p, state); break;

@@ -196,6 +196,8 @@ function buildTown(): MockScene {
     { type: "interactable", id: "door_inn", kind: "door", state: "open", x: 5, y: 7 },
     { type: "interactable", id: "door_tower", kind: "door", state: "locked", lock: { dc: 12, key_item_name: "Tower key" }, x: 25, y: 5 },
     { type: "interactable", id: "lever_tower", kind: "lever", state: "closed", links: ["door_tower"], x: 21, y: 6 },
+    { type: "interactable", id: "trap_plaza", kind: "trap", state: "closed", x: 12, y: 11 },
+    { type: "interactable", id: "altar_shrine", kind: "altar", state: "closed", x: 17, y: 9 },
     { type: "trigger", id: "trg_marsh", radius: 2, on_enter: "marsh_whispers", x: 24, y: 14 },
   ];
   const map = finish("m_hollowmere", p, b, objects,

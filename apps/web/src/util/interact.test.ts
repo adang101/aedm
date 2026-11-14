@@ -1,6 +1,6 @@
 import type { CharacterView, ContainerSummary, EntityView, GameMap } from "@aedm/schemas";
 import { describe, expect, it } from "vitest";
-import { EXAMINE_REACH, REACH, itemActions, reachState, targetsOnMap, verbsFor, type Target } from "./interact";
+import { canSearch, EXAMINE_REACH, REACH, itemActions, reachState, targetsOnMap, targetTitle, verbsFor, type Target } from "./interact";
 
 const labels = (t: Target) => verbsFor(t).map((v) => v.label);
 const it_ = (kind: string, state: string, extra: Record<string, unknown> = {}): Target =>
@@ -28,14 +28,36 @@ describe("verbsFor", () => {
   it("levers pull, signs read, altars and people get their own", () => {
     expect(labels(it_("lever", "closed"))).toEqual(["Pull", "Examine"]);
     expect(labels(it_("sign", "closed"))).toEqual(["Read", "Examine"]);
-    expect(labels(it_("altar", "closed"))).toEqual(["Interact", "Examine"]);
+    expect(labels(it_("altar", "closed"))).toEqual(["Pray", "Examine"]);
     expect(labels({ type: "npc", id: "n", x: 0, y: 0 })).toEqual(["Talk", "Examine"]);
+  });
+
+  it("traps: an armed one can be disarmed, a harmless one only examined; altars pray through interact", () => {
+    expect(verbsFor(it_("trap", "closed")).map((v) => `${v.verb}:${v.label}`)).toEqual(["disarm:Disarm", "examine:Examine"]);
+    expect(labels(it_("trap", "open"))).toEqual(["Examine"]);
+    expect(verbsFor(it_("altar", "closed"))[0]).toMatchObject({ verb: "interact", label: "Pray", needsReach: true });
+    expect(verbsFor(it_("trap", "closed"))[0]!.needsReach).toBe(true);
+    expect(labels(it_("mystery", "closed"))).toEqual(["Interact", "Examine"]);
+  });
+
+  it("titles a trap by whether it is armed", () => {
+    expect(targetTitle(it_("trap", "closed"), {})).toBe("Trap");
+    expect(targetTitle(it_("trap", "open"), {})).toBe("Trap (harmless)");
   });
 
   it("piles open through container_action; pockets can only be examined", () => {
     const pile = verbsFor({ type: "container", id: "cn_1", kind: "pile", x: 0, y: 0, itemCount: 2 });
     expect(pile[0]).toMatchObject({ send: "container", verb: "open", target_id: "cn_1" });
     expect(labels({ type: "container", id: "c", kind: "pockets", x: 0, y: 0, itemCount: 1 })).toEqual(["Examine"]);
+  });
+});
+
+describe("canSearch", () => {
+  it("is always on outside combat and only on my turn inside it", () => {
+    expect(canSearch(false, undefined, "me")).toBe(true);
+    expect(canSearch(true, "me", "me")).toBe(true);
+    expect(canSearch(true, "bo", "me")).toBe(false);
+    expect(canSearch(true, "me", null)).toBe(false);
   });
 });
 
