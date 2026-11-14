@@ -23,5 +23,7 @@ export * from "./sprites.ts";
 export * from "./pixel.ts";
 export * from "./narrate.ts";
 export * from "./intents.ts";
+export * from "./npc-behavior.ts";
+export * from "./ai-nav.ts";
 export { NARRATION, PIXEL_RULES, RULES, LEVELS, COSTS, ENEMY_DATA, CONDITION_META, PLOTS, LOOT, INTERACT } from "./data.ts";
 export * from "./map/index.ts";
