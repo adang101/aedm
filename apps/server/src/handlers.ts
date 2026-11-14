@@ -70,7 +70,7 @@ export class Handlers {
       case "move_intent": game.handleMove(player, (msg as Msg<"move_intent">).payload, reply); return;
       case "act": {
         const p = (msg as Msg<"act">).payload;
-        game.handleAct(player, p.verb, p.target_id, reply);
+        game.handleAct(player, p.verb, p.target_id ?? "", reply);
         return;
       }
       case "container_action": game.handleContainerAction(player, (msg as Msg<"container_action">).payload, reply); return;

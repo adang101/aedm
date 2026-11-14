@@ -81,7 +81,7 @@ describe("act is resolved by the engine", () => {
     expect(provider.dmRequests().length).toBe(before);
   });
 
-  it("a refused verb is an error reply, and an altar is left to the DM", async () => {
+  it("a refused verb is an error reply, and an altar is resolved by the engine with no DM call", async () => {
     const provider = scriptedProvider();
     h = await startHarness({ provider });
     const t = await startedTable(h);
@@ -91,8 +91,8 @@ describe("act is resolved by the engine", () => {
     const before = provider.dmRequests().length;
     const ok = await t.a.request("act", { verb: "interact", target_id: "altar_t" });
     expect(ok.type).not.toBe("error");
-    await until(() => provider.dmRequests().length === before + 1);
-    expect(provider.dmRequests().at(-1)!.messages[0]!.content).toContain("I interact with the altar");
+    await sleep(150);
+    expect(provider.dmRequests().length).toBe(before);
   });
 });
 

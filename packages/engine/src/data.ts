@@ -248,9 +248,23 @@ export interface InteractData {
     force: { ability: "str" | "dex"; tag: string; dcBonus: number; noiseRadius: number };
     consumeKey: boolean;
   };
+  traps: {
+    /** A standing character passively notices a hidden trap this close (and in line of sight) when 10 plus the modifier reaches its DC. */
+    spotRadius: number;
+    dcByTier: Record<string, number>;
+    variance: number;
+    defaultTier: number;
+    diceByTier: Record<string, string>;
+    damageTypes: string[];
+    disarm: { ability: "str" | "dex" | "wis" | "int"; tag: string; failSpringMargin: number };
+    save: { ability: "str" | "dex" | "wis" | "int"; tag: string; halfOnSuccess: boolean };
+    generated: { enabled: boolean; countByHazardLevel: Record<string, number>; hiddenPct: number; minSpawnDistance: number };
+  };
+  search: { radius: number; ability: "wis" | "int"; tag: string; cacheDcByTier: Record<string, number> };
+  altars: { boons: { mend: { percentMaxHp: number }; ward: { absorb: number; turns: number }; cleanse: Record<string, never> } };
   doors: { blockWhenClosed: boolean; generated: { enabled: boolean; closedPct: number; lockedPct: Record<string, number> } };
   levers: { maxLinks: number };
-  chest: { budgetPct: number; maxItems: number };
+  chest: { budgetPct: number; maxItems: number; /** Percent of generated chests that start hidden. */ hiddenPct: number };
   slot: { budgetPct: number; itemsPerCount: number };
   remains: {
     dropWeights: Record<string, { nothing: number; loot: number }>;

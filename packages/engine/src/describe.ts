@@ -11,7 +11,7 @@ import { labelOf } from "./containers.ts";
 import { DESCRIBE } from "./data.ts";
 import { getObjects, hasLineOfSight } from "./map/index.ts";
 import {
-  effectiveState, entitiesOnMap, interactablesOf, sightBlockers,
+  effectiveState, entitiesOnMap, interactablesOf, isHidden, sightBlockers,
   type Entity, type GameState,
 } from "./state.ts";
 
@@ -129,7 +129,10 @@ export function describeScene(state: GameState, actorId: string): string {
   const mapObjectIds = new Set<string>();
   for (const o of interactablesOf(map)) {
     mapObjectIds.add(o.id);
-    objects.push(objectName(o.kind, effectiveState(state, map.id, o)));
+    if (isHidden(state, map.id, o)) continue; // not found yet: the table does not know it is there
+    const st = effectiveState(state, map.id, o);
+    if (o.kind === "trap" && st !== "closed") continue; // a sprung or disarmed trap is not worth a mention
+    objects.push(objectName(o.kind, st));
   }
   // chests that exist only as containers
   for (const c of Object.values(state.containers)) {

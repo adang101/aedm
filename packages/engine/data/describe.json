@@ -24,7 +24,8 @@
     "chest": { "open": "an open chest", "closed": "a closed chest", "locked": "a locked chest" },
     "lever": { "open": "a lever, pulled down", "closed": "a lever, pushed up" },
     "sign": { "any": "a sign" },
-    "altar": { "any": "an altar" }
+    "altar": { "any": "an altar" },
+    "trap": { "closed": "a trap, armed", "open": "a trap, harmless now" }
   },
   "objectFallback": "a {kind}",
   "containerNames": { "pile": "a pile of dropped items", "remains": "the remains of {name}", "remainsPlain": "remains" },

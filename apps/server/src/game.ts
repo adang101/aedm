@@ -928,6 +928,7 @@ export class GameSession {
         mechanical.push(i);
         continue;
       }
+      if (verdict.action === "search") { narrative.push(i); continue; } // phase 2 resolves a typed search in the engine; until then the DM hears it as before
       if (verdict.action === "attack") {
         if (this.engageFromIntent(ent.id, verdict.targetId, i.text)) { mechanical.push(i); engaged.add(i); continue; }
         narrative.push(i); // full mode, or the engine cannot start this fight: the DM decides
@@ -964,7 +965,7 @@ export class GameSession {
   }
 
   /** The engine call for a typed command the router recognized. */
-  private typedAction(actorId: string, v: Exclude<ClassifiedIntent, { kind: "narrative" } | { action: "empty" | "ooc" | "move_dir" | "move_to" | "look" | "inventory" | "wait" | "attack" }>): ActResult {
+  private typedAction(actorId: string, v: Exclude<ClassifiedIntent, { kind: "narrative" } | { action: "empty" | "ooc" | "move_dir" | "move_to" | "look" | "inventory" | "wait" | "attack" | "search" }>): ActResult {
     const st = this.state;
     const rng = this.rng();
     const plain = (r: { state: GameState; events: EngineEvent[]; ok: boolean; error?: string }): ActResult => ({ ...r, narrative: false });

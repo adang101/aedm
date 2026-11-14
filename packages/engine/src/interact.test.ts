@@ -374,12 +374,11 @@ describe("examine", () => {
     const remains = withState(dropped.state, (s) => { s.containers[pile.id]!.kind = "remains"; s.containers[pile.id]!.label = "Remains of Robed Chorister"; });
     expect(line(remains, pile.id).text).toBe("The remains of Robed Chorister (1 item).");
   });
-  it("hands anything else to the DM: altars and NPC pockets; a creature gets the engine's description", () => {
+  it("hands NPC pockets to the DM; an altar and a creature get the engine's description", () => {
     const s = placeAt(world().state, A, 4, 9);
     const altar = examine(s, rngFromState(s), A, "altar_1");
-    expect(altar).toMatchObject({ ok: true, narrative: true, events: [] });
-    expect(altar.text).toBeUndefined();
-    expect(altar.state).toEqual(s);
+    expect(altar).toMatchObject({ ok: true, narrative: false });
+    expect(altar.text).toBe(INTERACT.texts.altar!.any);
     const near = line(placeAt(s, B, 4, 10), B);
     expect(near).toMatchObject({ ok: true, narrative: false });
     expect(near.text).toContain(s.entities[B]!.name);
@@ -406,7 +405,7 @@ describe("performAct: the one call for the act message", () => {
     expect(doorState(performAct(opened.state, rng(), A, "interact", "door_1").state, "door_1")).toBe("closed");
     expect(doorState(performAct(s, rng(), A, "interact", "lever_1").state, "lever_1")).toBe("open");
     expect(types(performAct(placeAt(s, A, 4, 7), rng(), A, "interact", "sign_1"))).toEqual(["sign_read"]);
-    expect(performAct(placeAt(s, A, 4, 9), rng(), A, "interact", "altar_1")).toMatchObject({ ok: true, narrative: true });
+    expect(types(performAct(placeAt(s, A, 4, 9), rng(), A, "interact", "altar_1"))).toContain("altar_used");
     expect(performAct(s, rng(), A, "interact", B)).toMatchObject({ ok: true, narrative: true });
   });
   it("interact on a chest opens it and names the container for container_view", () => {

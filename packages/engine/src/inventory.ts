@@ -10,7 +10,7 @@ import { act, type ActionResult } from "./combat.ts";
 import { createContainerM, labelOf, pileWithRoom, stockMapM, tidyContainerM } from "./containers.ts";
 import { INTERACT, RULES } from "./data.ts";
 import type { Rng } from "./rng.ts";
-import { containerForObject, emit, type Entity, type GameState, type Mut } from "./state.ts";
+import { containerForObject, emit, isContainerHidden, type Entity, type GameState, type Mut } from "./state.ts";
 
 /**
  * Raise the character's weapon tier or armor bonus when the item is better than what they use. Returns true if it did.
@@ -43,7 +43,7 @@ export function packHasRoom(c: Character, extra = 1): boolean {
 function reachableContainer(m: Mut, actor: Entity, containerId: string): Container | string {
   stockMapM(m, actor.mapId);
   const c = m.s.containers[containerId] ?? containerForObject(m.s, actor.mapId, containerId);
-  if (!c) return "there is no such container";
+  if (!c || isContainerHidden(m.s, c)) return "there is no such container";
   const err = reachError(actor, c.map_id, c);
   if (err) return err;
   if (c.kind === "pockets") {

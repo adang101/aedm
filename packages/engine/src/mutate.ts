@@ -6,6 +6,7 @@ import { emit, sideOf, tileKey, type ConditionInstance, type Entity, type Mut, t
 import { abilityModifier, defense as defenseCalc, speed as speedCalc, weaponDice } from "./rules.ts";
 import { distance } from "./map/index.ts";
 import { dropRemainsM } from "./containers.ts";
+import { triggerMapTrapM } from "./traps.ts";
 
 export function getEntity(s: GameState, id: string): Entity | undefined {
   return s.entities[id];
@@ -304,7 +305,7 @@ export function weaponDamageDice(s: GameState, e: Entity): string {
 
 // ---------- terrain triggers ----------
 
-/** Called when an entity enters a tile. Returns true if movement should stop (trap sprung). */
+/** Called when an entity enters a tile. Returns true if movement should stop (a terrain or map trap sprung, or the creature fell). */
 export function enterTile(m: Mut, e: Entity): boolean {
   const s = m.s;
   let stop = false;
@@ -326,6 +327,7 @@ export function enterTile(m: Mut, e: Entity): boolean {
       }
     }
   }
+  if (triggerMapTrapM(m, e)) stop = true; // a map trap (an interactable): party and allies spring it, hidden or not
   return stop || e.hp <= 0;
 }
 

@@ -9,7 +9,8 @@
     "open": "action", "close": "action", "take": "action", "take_all": "action",
     "drop": "quick", "give": "quick",
     "door": "action", "lever": "action", "lock": "action",
-    "read": "free", "examine": "free"
+    "read": "free", "examine": "free",
+    "search": "action", "disarm": "action", "altar": "action"
   },
   "locks": {
     "dcByTier": { "1": 10, "2": 12, "3": 15, "4": 18, "5": 20 },
@@ -24,7 +25,7 @@
     "generated": { "enabled": true, "closedPct": 50, "lockedPct": { "1": 5, "2": 10, "3": 15, "4": 20, "5": 25 } }
   },
   "levers": { "maxLinks": 1 },
-  "chest": { "budgetPct": 40, "maxItems": 3 },
+  "chest": { "budgetPct": 40, "maxItems": 3, "hiddenPct": 0 },
   "slot": { "budgetPct": 30, "itemsPerCount": 2 },
   "remains": {
     "dropWeights": {
@@ -35,6 +36,35 @@
     },
     "budgetPct": { "minion": 15, "standard": 30, "elite": 50, "boss": 80 },
     "maxItems": { "minion": 1, "standard": 2, "elite": 3, "boss": 4 }
+  },
+  "traps": {
+    "spotRadius": 6,
+    "dcByTier": { "1": 12, "2": 14, "3": 16, "4": 18, "5": 20 },
+    "variance": 2,
+    "defaultTier": 1,
+    "diceByTier": { "1": "1d6", "2": "2d6", "3": "3d6", "4": "4d6", "5": "5d6" },
+    "damageTypes": ["sharp", "fire", "acid", "lightning"],
+    "disarm": { "ability": "dex", "tag": "tinkering", "failSpringMargin": 5 },
+    "save": { "ability": "dex", "tag": "speed", "halfOnSuccess": true },
+    "generated": {
+      "enabled": true,
+      "countByHazardLevel": { "0": 0, "1": 1, "2": 2, "3": 3 },
+      "hiddenPct": 60,
+      "minSpawnDistance": 6
+    }
+  },
+  "search": {
+    "radius": 4,
+    "ability": "wis",
+    "tag": "perception",
+    "cacheDcByTier": { "1": 10, "2": 12, "3": 14, "4": 16, "5": 18 }
+  },
+  "altars": {
+    "boons": {
+      "mend": { "percentMaxHp": 50 },
+      "ward": { "absorb": 8, "turns": 10 },
+      "cleanse": {}
+    }
   },
   "signs": {
     "templates": {
@@ -76,6 +106,10 @@
       "closed": "A lever, pushed up."
     },
     "sign": { "any": "A sign with writing on it." },
+    "trap": { "armed": "A trap, set and ready to spring.", "sprung": "A trap, sprung or disarmed, harmless now." },
+    "altar": { "any": "An altar, worn smooth by those who knelt here.", "used": "An altar, quiet now; it has given you what it had." },
+    "search": { "found": "{name} searches and finds {list}.", "nothing": "{name} searches carefully but finds nothing new." },
+    "altar_use": { "mend": "{name} kneels at the altar, and their wounds ease.", "ward": "{name} touches the altar, and a faint ward settles over them.", "cleanse": "{name} rests a hand on the altar, and every ill leaves them.", "silent": "The altar is silent; it has nothing more for {name}." },
     "pile": { "any": "A pile of dropped items ({items}).", "empty": "A bare patch where items were dropped." },
     "remains": { "any": "The remains of {name} ({items}).", "empty": "The remains of {name}, picked clean." }
   }

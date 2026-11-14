@@ -2,10 +2,12 @@ import type { GameMap } from "@aedm/schemas";
 import { RULES } from "./data.ts";
 import { sideOf, tileKey, type Entity, type GameState } from "./state.ts";
 import { findPath, type Point } from "./map/index.ts";
+import { knownTrapTiles } from "./traps.ts";
 
 /**
- * Tiles that hurt a creature standing on them and that it knows about: fire with damage dice, and visible
- * traps of the other side (a creature's own side's traps spare it, and hidden traps are not known).
+ * Tiles that hurt a creature standing on them and that it knows about: fire with damage dice, visible
+ * traps of the other side (a creature's own side's traps spare it, and hidden traps are not known), and the revealed, armed map
+ * traps (`knownTrapTiles`; enemies never spring them but keep clear of them too, as allies do).
  * Empty when `rules.ai.hazard.avoid` is off.
  */
 export function hazardTiles(s: GameState, e: Pick<Entity, "mapId" | "kind" | "disposition">): Set<string> {
@@ -15,6 +17,7 @@ export function hazardTiles(s: GameState, e: Pick<Entity, "mapId" | "kind" | "di
     if (t.mapId !== e.mapId || !t.dice) continue;
     if (t.kind === "fire" || (t.kind === "trap" && !t.hidden && t.side !== sideOf(e))) set.add(tileKey(t.x, t.y));
   }
+  for (const k of knownTrapTiles(s, e.mapId)) set.add(k);
   return set;
 }
 
