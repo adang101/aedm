@@ -1,4 +1,4 @@
-import { ContainerSummarySchema, MapSchema, type CharacterView, type EntityView } from "@aedm/schemas";
+import { ContainerSummarySchema, MapSchema, PublicInteractableObjectSchema, type CharacterView, type EntityView, type GameMap } from "@aedm/schemas";
 import { describe, expect, it } from "vitest";
 import { MockLoot, starterPack, type LootHost } from "./mock-loot";
 import { blockedAt, buildScenes } from "./mock-world";
@@ -11,11 +11,12 @@ function setup(at = { x: 19, y: 12 }, roll = true) {
   const mine = { id: "ch_me", name: "Me", inventory: starterPack() } as CharacterView;
   const sent: { type: string; payload: Record<string, unknown> }[] = [];
   const errors: string[] = [];
+  const lines: string[] = [];
   const host: LootHost = {
     map: () => map, me: () => me, mine: () => mine, party: () => [mine], entities: () => ({ ch_me: me }),
     emit: (type, payload) => sent.push({ type, payload: payload as Record<string, unknown> }),
     fail: (_c, m) => errors.push(m),
-    engine: () => {},
+    engine: (t) => lines.push(t),
     diff: (extra) => sent.push({ type: "state_diff", payload: extra }),
     snapshot: () => sent.push({ type: "state_snapshot", payload: {} }),
     roll: () => roll,
@@ -25,7 +26,7 @@ function setup(at = { x: 19, y: 12 }, roll = true) {
     for (const l of map.layers) if (l.type === "objectgroup") for (const o of l.objects) if (o.type === "interactable" && o.id === id) return o.state;
     return undefined;
   };
-  return { loot, me, mine, sent, errors, map, state };
+  return { loot, me, mine, sent, errors, lines, map, state };
 }
 
 describe("mock world", () => {
@@ -99,5 +100,66 @@ describe("mock containers", () => {
     expect(mine.inventory!.some((i) => i.id === potion.id)).toBe(false);
     expect(l2.summaries().some((c) => c.kind === "pile" && c.x === 14 && c.y === 12)).toBe(true);
     expect(sent.some((m) => m.type === "state_diff" && Array.isArray(m.payload.containers_changed))).toBe(true);
+  });
+});
+
+describe("mock traps, search and altars", () => {
+  const objectAt = (map: GameMap, id: string) =>
+    map.layers.flatMap((l) => (l.type === "objectgroup" ? l.objects : [])).find((o) => o.type === "interactable" && o.id === id);
+  type Revealed = { interactables_revealed: { map_id: string; object: { id: string; kind: string; state: string } }[] };
+
+  it("starts with one armed, revealed trap and the hidden one absent from the map", () => {
+    const { map, state } = setup();
+    expect(state("trap_plaza")).toBe("closed");
+    expect(objectAt(map, "trap_hidden")).toBeUndefined();
+    expect(MapSchema.safeParse(map).success).toBe(true);
+  });
+
+  it("search reveals the hidden trap through interactables_revealed, only when close, and only once", () => {
+    const far = setup({ x: 3, y: 12 });
+    far.loot.search();
+    expect(far.sent.some((m) => "interactables_revealed" in m.payload)).toBe(false);
+    expect(far.lines.at(-1)).toMatch(/nothing/i);
+
+    const { loot, sent, map, lines } = setup({ x: 16, y: 10 });
+    loot.search();
+    const diff = sent.find((m) => "interactables_revealed" in m.payload)!.payload as unknown as Revealed;
+    expect(diff.interactables_revealed).toHaveLength(1);
+    expect(diff.interactables_revealed[0]!).toMatchObject({ map_id: "m_hollowmere", object: { id: "trap_hidden", kind: "trap", state: "closed" } });
+    expect(PublicInteractableObjectSchema.safeParse(diff.interactables_revealed[0]!.object).success).toBe(true);
+    expect(objectAt(map, "trap_hidden")).toBeDefined();
+    expect(lines.at(-1)).toMatch(/trap/i);
+    loot.search();
+    expect(sent.filter((m) => "interactables_revealed" in m.payload)).toHaveLength(1);
+  });
+
+  it("disarm flips an armed trap to open on a success and leaves it armed on a failure", () => {
+    const bad = setup({ x: 12, y: 12 }, false);
+    bad.loot.act("disarm", "trap_plaza", "a1");
+    expect(bad.state("trap_plaza")).toBe("closed");
+    const good = setup({ x: 12, y: 12 });
+    good.loot.act("disarm", "trap_plaza", "a2");
+    expect(good.state("trap_plaza")).toBe("open");
+    expect(good.sent.find((m) => Array.isArray(m.payload.interactables_changed))!.payload.interactables_changed).toEqual([{ map_id: "m_hollowmere", id: "trap_plaza", state: "open" }]);
+    good.loot.act("disarm", "trap_plaza", "a3");
+    expect(good.lines.at(-1)).toMatch(/harmless/i);
+  });
+
+  it("an altar answers interact with a boon line, once per character", () => {
+    const { loot, lines, errors } = setup({ x: 17, y: 10 });
+    loot.act("interact", "altar_shrine", "a1");
+    expect(lines.at(-1)).toMatch(/warm/i);
+    loot.act("interact", "altar_shrine", "a2");
+    expect(lines.at(-1)).toMatch(/nothing more/i);
+    expect(errors).toEqual([]);
+  });
+
+  it("examine describes traps and altars", () => {
+    const { loot, lines } = setup({ x: 12, y: 12 });
+    loot.act("examine", "trap_plaza", "a1");
+    expect(lines.at(-1)).toMatch(/trap/i);
+    const near = setup({ x: 17, y: 10 });
+    near.loot.act("examine", "altar_shrine", "a2");
+    expect(near.lines.at(-1)).toMatch(/altar/i);
   });
 });

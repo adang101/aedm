@@ -3,7 +3,7 @@
  *
  * It recognizes only unambiguous mechanical commands (full-sentence matches, nothing extra) and treats everything
  * else as narrative, so free text always still reaches the DM: walking, the object verbs (open, close, unlock, pick the
- * lock, force, pull, read, examine an object or a uniquely named creature), taking from an adjacent container, dropping, giving,
+ * lock, force, pull, read, examine an object or a uniquely named creature, search the area, disarm the one known trap, pray at the one altar), taking from an adjacent container, dropping, giving,
  * using a carried item, attacking a uniquely named enemy, looking around, checking the pack and waiting. Extra clauses, adverbs
  * ("carefully", "while ..."), unknown names and ambiguity (two matching targets) all mean narrative.
  */
@@ -15,8 +15,11 @@ export type Direction = "n" | "s" | "e" | "w";
 export interface IntentContext {
   /** The speaking character's entity id; it is never a valid walk target for itself. */
   actorId?: string;
-  /** Interactable objects on the current map. */
-  objects: { id: string; kind: string; /** Chebyshev distance from the actor, in tiles. */ dist?: number }[];
+  /**
+   * Interactable objects on the current map, as the table knows them (hidden ones are not listed). `state` is the current state
+   * (`closed` or absent for a trap means armed, `open` sprung or disarmed); only traps and altars need it.
+   */
+  objects: { id: string; kind: string; /** Chebyshev distance from the actor, in tiles. */ dist?: number; state?: string }[];
   /** Exits of the current map, by name, and the map edge they are on when known. */
   exits: { name: string; side?: Direction }[];
   /** Entities on the current map. Enemies are never walk targets. */
@@ -44,6 +47,7 @@ export type ClassifiedIntent =
   | { kind: "mechanical"; action: "drop"; itemId: string; label: string }
   | { kind: "mechanical"; action: "give"; itemId: string; toId: string; label: string }
   | { kind: "mechanical"; action: "look" }
+  | { kind: "mechanical"; action: "search" }
   | { kind: "mechanical"; action: "inventory" }
   | { kind: "mechanical"; action: "wait" }
   | { kind: "mechanical"; action: "use_item"; itemId: string; targetId?: string; label: string }
@@ -67,6 +71,11 @@ const LOOK_RE = new RegExp(
 const INVENTORY_RE = new RegExp(
   `^${LEAD}(?:inventory|(?:check|open|view|show|list)\\s+(?:my\\s+)?(?:inventory|pack|bag|backpack|items|gear)|what\\s+(?:am\\s+i|are\\s+we)\\s+(?:carrying|holding)\\??|what\\s+do\\s+i\\s+(?:have|carry)\\??|what(?:'s|\\s+is)\\s+in\\s+my\\s+(?:pack|bag|backpack|inventory)\\??)$`,
 );
+const SEARCH_RE = new RegExp(
+  `^${LEAD}(?:search(?:\\s+(?:(?:the\\s+)?(?:room|area|place|surroundings)|here|around(?:\\s+here)?))?|(?:search|look|check)\\s+for\\s+(?:any\\s+|some\\s+)?(?:traps?|secrets?|hidden\\s+traps?))$`,
+);
+const DISARM_RE = new RegExp(`^${LEAD}(?:disarm|defuse)\\s+(.+)$`);
+const ALTAR_RE = new RegExp(`^${LEAD}(?:pray\\s+(?:at|to)|touch|use|kneel\\s+(?:at|before))\\s+(.+)$`);
 const WAIT_RE = new RegExp(`^${LEAD}(?:wait(?:\\s+here)?|do\\s+nothing|pass(?:\\s+(?:my\\s+)?turn)?)$`);
 const USE_RE = new RegExp(`^${LEAD}(?:drink|quaff|use)\\s+(.+?)(?:\\s+on\\s+(.+))?$`);
 const ATTACK_RE = new RegExp(`^${LEAD}(?:attack|fight|strike|hit|shoot|charge)(?:\\s+at)?\\s+(.+)$`);
@@ -103,7 +112,7 @@ function resolveTarget(name: string, kinds: readonly string[], ctx: IntentContex
 
 const OPENABLE = ["door", "chest", "pile", "remains"];
 const LOCKED = ["door", "chest"];
-const LOOKABLE = ["door", "chest", "lever", "sign", "altar", "pile", "remains"];
+const LOOKABLE = ["door", "chest", "lever", "sign", "altar", "trap", "pile", "remains"];
 const bare = (s: string): string => stripArticle(s.replace(/^(?:my|the|a|an)\s+/, "")).trim();
 const clean = (s: string): boolean => s !== "" && !/[,;:()?]/.test(s);
 
@@ -135,7 +144,33 @@ function partyMember(who: string, ctx: IntentContext): IntentContext["entities"]
   return pick.length === 1 ? pick[0] : undefined;
 }
 
+/** "disarm the trap" (exactly one armed trap in the scene, or its id) and "pray at / touch / use the altar" (exactly one altar). */
+function classifyTrapAndAltar(t: string, ctx: IntentContext): ClassifiedIntent | undefined {
+  const dis = DISARM_RE.exec(t);
+  if (dis) {
+    const name = bare(dis[1] as string);
+    const armed = ctx.objects.filter((o) => o.kind === "trap" && o.state !== "open");
+    const hit = clean(name) ? armed.filter((o) => name === "trap" || name === o.id.toLowerCase()) : [];
+    const only = hit[0];
+    if (hit.length !== 1 || !only) return NARRATIVE;
+    return { kind: "mechanical", action: "act", verb: "disarm", targetId: only.id, label: "the trap" };
+  }
+  const alt = ALTAR_RE.exec(t);
+  if (alt) {
+    const name = bare(alt[1] as string);
+    const altars = ctx.objects.filter((o) => o.kind === "altar");
+    const only = altars[0];
+    const carries = (ctx.inventory ?? []).some((i) => i.name.toLowerCase() === name);
+    if (!clean(name) || (name !== "altar" && name !== altars[0]?.id.toLowerCase())) return undefined; // not an altar: "use the potion" is for the item rules
+    if (altars.length !== 1 || !only || carries) return NARRATIVE;
+    return { kind: "mechanical", action: "act", verb: "interact", targetId: only.id, label: "the altar" };
+  }
+  return undefined;
+}
+
 function classifyInteraction(t: string, ctx: IntentContext): ClassifiedIntent | undefined {
+  const special = classifyTrapAndAltar(t, ctx);
+  if (special) return special;
   for (const v of OBJECT_VERBS) {
     const m = v.re.exec(t);
     if (!m) continue;
@@ -246,6 +281,7 @@ export function classifyIntent(text: string, ctx: IntentContext): ClassifiedInte
   if (LOOK_RE.test(t)) return { kind: "mechanical", action: "look" };
   if (INVENTORY_RE.test(t)) return { kind: "mechanical", action: "inventory" };
   if (WAIT_RE.test(t)) return { kind: "mechanical", action: "wait" };
+  if (SEARCH_RE.test(t)) return { kind: "mechanical", action: "search" };
   const dir = DIR_RE.exec(t);
   if (dir) return { kind: "mechanical", action: "move_dir", direction: DIRECTIONS[dir[1] as string] as Direction };
 

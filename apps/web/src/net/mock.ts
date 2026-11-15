@@ -239,7 +239,7 @@ export class MockServer {
       case "start_game": return this.onStart(ack);
       case "claim_character": return this.onClaim(m.payload as { character_id: string; character?: CharacterCreate; template_id?: string }, ack);
       case "move_intent": return this.onMove(p, ack);
-      case "act": return this.onAct(String(p.verb), String(p.target_id), ack);
+      case "act": return this.onAct(String(p.verb), typeof p.target_id === "string" ? p.target_id : undefined, ack);
       case "basic_attack": return this.onBasicAttack(String(p.target_id), ack);
       case "use_ability": return this.onAbility(String(p.ability_id), p.target as string | { x: number; y: number }, ack);
       case "container_action": return this.loot.containerAction(String(p.verb), String(p.container_id), p.item_id as string | undefined, ack);
@@ -810,8 +810,10 @@ export class MockServer {
     this.later(() => this.emit("chips", { chips: this.scene.id === FIRST_SCENE ? ["Talk to Odalys", "Check the chest", "Go to the crypt"] : this.scene.chips }), 1500);
   }
 
-  private onAct(verb: string, target: string, ack: string): void {
+  private onAct(verb: string, target: string | undefined, ack: string): void {
     this.emit("presence", { player_id: ME, status: "online" }, ack);
+    if (verb === "search") return this.loot.search();
+    if (target === undefined) return this.fail("invalid_payload", "That needs a target.", ack);
     if (this.loot.act(verb, target, ack)) return;
     const ent = this.ents[target];
     const obj = this.map.layers.flatMap((l) => (l.type === "objectgroup" ? l.objects : [])).find((o) => "id" in o && o.id === target);

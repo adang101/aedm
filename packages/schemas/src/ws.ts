@@ -7,7 +7,7 @@ import {
 } from "./enums";
 import { EntityIdSchema, MapIdSchema, text } from "./common";
 import { ContainerSummarySchema, ContainerViewPayload, InteractableViewSchema } from "./container";
-import { MapSchema } from "./map";
+import { MapSchema, PublicInteractableObjectSchema } from "./map";
 import { SpriteSpecSchema } from "./sprite";
 import {
   CastDecisionPayload, CastStatePayload, CustomCastSchema, DeleteSpriteAssetPayload, ListSpriteAssetsPayload, OfferToCastPayload,
@@ -16,6 +16,10 @@ import {
 import { QuestSchema } from "./world";
 
 /**
+ * 8: map traps, searching and altars: `act` gained the verbs search and disarm and `target_id` became optional (required for every
+ *    verb but search, forbidden for search); state_diff gained `interactables_revealed` (a trap or chest that was hidden and has been
+ *    found, as a public interactable map object). Interactables gained the kind `trap` and optional hidden, trap and altar fields; the
+ *    Map schema itself stays v2 because those are additive, and the table never receives hidden objects or trap and altar detail.
  * 7: containers, locks and doors: container_action, inventory_action (client), container_view (server); `act` gained the
  *    verbs open, close, unlock, pick_lock, force, pull and read; state_snapshot gained `containers`, state_diff gained
  *    `containers_changed`, `containers_removed` and `interactables_changed`. The map payload carries current interactable
@@ -27,7 +31,7 @@ import { QuestSchema } from "./world";
  * 3: room settings gained plot_pattern and plot_arc.
  * 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged.
  */
-export const WS_VERSION = 7;
+export const WS_VERSION = 8;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
@@ -112,12 +116,18 @@ export const MoveIntentPayload = z.union([
 ]);
 /**
  * Verbs on creatures and map objects. `interact` does the natural thing for the target (door: open or close, lever: pull,
- * sign: read, chest: open, altar or creature: left to the DM); the others are explicit. `target_id` is an entity id or an
- * interactable id on the current map (a container id also works for `open`).
+ * sign: read, chest: open, altar: take its boon, creature: left to the DM); the others are explicit. `target_id` is an entity id or an
+ * interactable id on the current map (a container id also works for `open`). `search` takes no target (it searches around the sender);
+ * `disarm` needs a revealed, armed trap.
  */
-export const ACT_VERBS = ["interact", "examine", "talk", "open", "close", "unlock", "pick_lock", "force", "pull", "read"] as const;
+export const ACT_VERBS = ["interact", "examine", "talk", "open", "close", "unlock", "pick_lock", "force", "pull", "read", "search", "disarm"] as const;
 export type ActVerb = (typeof ACT_VERBS)[number];
-export const ActPayload = z.strictObject({ verb: z.enum(ACT_VERBS), target_id: EntityIdSchema });
+export const ActPayload = z
+  .strictObject({ verb: z.enum(ACT_VERBS), target_id: EntityIdSchema.optional() })
+  .superRefine((p, ctx) => {
+    if (p.verb === "search" && p.target_id !== undefined) ctx.addIssue({ code: "custom", message: "search takes no target_id", path: ["target_id"] });
+    if (p.verb !== "search" && p.target_id === undefined) ctx.addIssue({ code: "custom", message: `${p.verb} needs a target_id`, path: ["target_id"] });
+  });
 
 /** Moving items between a container and the sender's pack. `open` replies with `container_view`; `take` needs `item_id`. */
 export const CONTAINER_VERBS = ["open", "close", "take", "take_all"] as const;
@@ -198,6 +208,8 @@ export const StateDiffPayload = z.strictObject({
   containers_changed: z.array(ContainerSummarySchema).max(200).optional(),
   containers_removed: z.array(EntityIdSchema).max(200).optional(),
   interactables_changed: z.array(InteractableViewSchema).max(100).optional(),
+  /** Traps and chests that were hidden and have just been found: the full public map object, so a client can add it to its map. */
+  interactables_revealed: z.array(z.strictObject({ map_id: MapIdSchema, object: PublicInteractableObjectSchema })).max(100).optional(),
 });
 export const NarrationChunkPayload = z.strictObject({ turn_id: id, text: z.string().max(4000), done: z.boolean() });
 export const RollResultPayload = z.strictObject({

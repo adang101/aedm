@@ -235,6 +235,28 @@ export function endCombatM(m: Mut, reason: "victory" | "flee" | "truce" | "defea
   emit(m, { type: "combat_ended", reason });
 }
 
+/**
+ * Outside combat, when no player character is left standing (a trap, a bleed) nobody can act and nothing would end it: everyone
+ * who is down wakes at `downed.wakeHp`, the same wake that ends a fight. The same state, with no events, when a hero still
+ * stands, nobody is down, or a fight is on (combat has its own rules for downed heroes).
+ */
+export function wakeIfWiped(state: GameState, rng: Rng): ActionResult {
+  const pcs = Object.values(state.entities).filter((e) => e.kind === "pc");
+  const none: ActionResult = { state, events: [], ok: true };
+  if (state.combat || pcs.length === 0 || pcs.some((e) => isStanding(e)) || !pcs.some((e) => e.hp <= 0)) return none;
+  return act(state, rng, "wake_party", (m) => {
+    for (const e of Object.values(m.s.entities)) {
+      if (e.kind !== "pc" || e.hp > 0) continue;
+      e.hp = RULES.downed.wakeHp;
+      e.conditions = e.conditions.filter((c) => c.condition !== "prone");
+      delete e.downedRounds;
+      delete e.out;
+      emit(m, { type: "woke", entityId: e.id, entityName: e.name, hp: e.hp });
+    }
+    return undefined;
+  });
+}
+
 export function endTurn(state: GameState, rng: Rng, entityId?: string): ActionResult {
   return act(state, rng, "end_turn", (m) => {
     const c = m.s.combat;

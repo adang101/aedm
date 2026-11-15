@@ -264,6 +264,42 @@ Loot (`rollLoot`): 1 to 3 items per roll, kinds weighted consumable 38, trinket 
 
 Remains loot counts against the encounter loot cap exactly like `grant_item` (and the cap resets when the next combat starts). Chest and slot stock is scenery: it does not count. Template values run from 2 (a river stone) to 105 (a master-made blade); the healing draught takes its name and value (25) from the Gear table above.
 
+**Traps, searching and altars** (added with the engine-resolved map traps; none of the numbers above change)
+
+Stored in `packages/engine/data/interact.json` (`traps`, `search`, `altars`, `chest.hiddenPct`, and three new `combatCost` entries). Every number here is an untuned first guess; simulation and playtests set them.
+
+| Rule | Value |
+| --- | --- |
+| `traps.spotRadius` | 6. A standing player character passively notices a hidden trap this many tiles away or closer, in line of sight, when 10 plus their WIS modifier (plus +2 with the perception tag and any check bonus) is at least the trap DC. No dice. Hidden chests are never found this way. |
+| `traps.dcByTier` | 12, 14, 16, 18, 20 for loot tiers 1 to 5. Used for finding (passive and searched), saving and disarming. Unlike lock DCs these start a little higher, so a trained eye is needed at tier 1. |
+| `traps.variance` | plus or minus 2, drawn when the map is built, kept within 5 to 30. |
+| `traps.defaultTier` | 1. The tier a trap made without details (a DM-made one) uses. |
+| `traps.diceByTier` | 1d6, 2d6, 3d6, 4d6, 5d6 for tiers 1 to 5. |
+| `traps.damageTypes` | sharp, fire, acid, lightning. A generated trap picks one. |
+| `traps.save` | DEX check (tag speed, +2 when the character has it) against the trap DC when a player character steps on a trap; success takes half the damage, rounded down (`halfOnSuccess`). An allied NPC rolls d20 plus its save modifier. Enemies never spring map traps. |
+| `traps.disarm` | DEX check (tag tinkering) against the trap DC. Success: harmless. Failing by 5 or more (`failSpringMargin`): the trap springs on the actor with no save. Any other failure: nothing happens and the actor may try again. |
+| `traps.generated.enabled` | true. Generated maps get trap objects. |
+| `traps.generated.countByHazardLevel` | 0, 1, 2, 3 traps for hazard density 0, 1, 2, 3 (fewer when no tile fits). |
+| `traps.generated.hiddenPct` | 60. Percent of generated traps that start hidden. |
+| `traps.generated.minSpawnDistance` | 6. A generated trap is at least this many tiles (Chebyshev) from the party start, on floor the party can reach without crossing a hazard, away from exits, doors, other objects, hazards and decor, and not beside another trap. |
+| `search.radius` | 4. One search tries every hidden trap or chest within this many tiles of the searcher. |
+| `search.ability`, `search.tag` | WIS, perception. One roll per search, compared with each object's DC. A character tries each object once. |
+| `search.cacheDcByTier` | 10, 12, 14, 16, 18 for tiers 1 to 5 (tier of the party level now). The DC of finding a hidden chest. |
+| `chest.hiddenPct` | 0. Percent of generated chests that start hidden (opt-in). |
+| `altars.boons.mend` | `percentMaxHp` 50: heals half of max HP (at least 1), rounded down. |
+| `altars.boons.ward` | `absorb` 8 for `turns` 10: a shield that absorbs 8 damage, with the shielded condition. |
+| `altars.boons.cleanse` | Ends every harmful condition (those the conditions table marks hostile). |
+
+Each character takes a given altar's boon once. An altar with no named boon gets one of mend, ward or cleanse, the same every time, by a hash of the map seed, map id and object id.
+
+In combat (only the active creature acts):
+
+| Verb | Cost |
+| --- | --- |
+| Search, disarm, take an altar's boon | Action |
+| A second try at an altar that has nothing more to give | Free (nothing happens) |
+| Walking onto a trap | Part of the move; the trap stops it |
+
 **Tuning plan**
 
 Run seeded battles nightly between generated parties and enemies. Starting targets: a standard encounter is won in 70 to 90% of runs and ends within about 8 rounds. If results fall outside that band, change the encounter budget multiplier first, then enemy damage, and keep the ability cost formula stable.

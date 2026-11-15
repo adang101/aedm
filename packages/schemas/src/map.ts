@@ -1,9 +1,9 @@
 import { z } from "zod";
 import {
-  EntitySlotRoleSchema, EnvironmentSchema, ExitSideSchema, InteractableKindSchema, InteractableStateSchema,
+  AltarBoonSchema, DamageTypeSchema, EntitySlotRoleSchema, EnvironmentSchema, ExitSideSchema, InteractableKindSchema, InteractableStateSchema,
   LayoutSchema, MoodSchema, RoomTypeSchema, SettingPresetSchema, SizeClassSchema, SizeSchema,
 } from "./enums";
-import { EntityIdSchema, HexColorSchema, MapIdSchema, TileCoord, shortWord, text } from "./common";
+import { DiceSchema, EntityIdSchema, HexColorSchema, MapIdSchema, TileCoord, shortWord, text } from "./common";
 import { MaterialIdSchema, MaterialRefSchema, MaterialRoleSchema, PatternSchema } from "./material";
 
 const localId = z.string().trim().min(1).max(32).regex(/^[A-Za-z0-9_-]+$/, "invalid id");
@@ -129,8 +129,19 @@ export type Lock = z.infer<typeof LockSchema>;
 export const SIGN_TEXT_MAX = 200;
 export const MAX_LEVER_LINKS = 4;
 
-/** `lock` is for chests and doors, `links` (door ids on the same map) for levers, `text` for signs. All optional and additive. */
-export const InteractableObjectSchema = z.strictObject({
+/** What a trap does when sprung: the DC of its save (and of finding and disarming it), the damage dice and the damage type. */
+export const TrapSchema = z.strictObject({
+  dc: z.number().int().min(5).max(30),
+  dice: DiceSchema,
+  damage_type: DamageTypeSchema,
+});
+export type Trap = z.infer<typeof TrapSchema>;
+
+/** What an altar gives. Optional: an altar without one gets a deterministic boon from the engine. */
+export const AltarSchema = z.strictObject({ boon: AltarBoonSchema });
+export type Altar = z.infer<typeof AltarSchema>;
+
+const interactableFields = {
   type: z.literal("interactable"),
   id: EntityIdSchema,
   kind: InteractableKindSchema,
@@ -139,7 +150,26 @@ export const InteractableObjectSchema = z.strictObject({
   links: z.array(EntityIdSchema).min(1).max(MAX_LEVER_LINKS).optional(),
   text: text(SIGN_TEXT_MAX).optional(),
   ...pos,
+};
+
+/**
+ * `lock` is for chests and doors, `links` (door ids on the same map) for levers, `text` for signs, `hidden` for traps and chests
+ * (unseen until found), `trap` for traps (`closed` is armed, `open` sprung or disarmed) and `altar` for altars. All optional and
+ * additive, so the Map schema itself stays v2 (as for lock, links and text before them).
+ */
+export const InteractableObjectSchema = z.strictObject({
+  ...interactableFields,
+  hidden: z.boolean().optional(),
+  trap: TrapSchema.optional(),
+  altar: AltarSchema.optional(),
 });
+
+/**
+ * An interactable as the table may see it: never `hidden`, never the secret detail of a trap (its DC and damage) or an altar (its boon).
+ * What a client receives in the map and in `interactables_revealed`.
+ */
+export const PublicInteractableObjectSchema = z.strictObject(interactableFields);
+export type PublicInteractableObject = z.infer<typeof PublicInteractableObjectSchema>;
 export const TriggerObjectSchema = z.strictObject({
   type: z.literal("trigger"),
   id: EntityIdSchema,
@@ -248,6 +278,9 @@ export const MapSchema = z
           if (o.lock && o.kind !== "chest" && o.kind !== "door") ctx.addIssue({ code: "custom", message: `a ${o.kind} cannot have a lock`, path: [...at, "lock"] });
           if (o.links && o.kind !== "lever") ctx.addIssue({ code: "custom", message: `only a lever has links, not a ${o.kind}`, path: [...at, "links"] });
           if (o.text && o.kind !== "sign") ctx.addIssue({ code: "custom", message: `only a sign has text, not a ${o.kind}`, path: [...at, "text"] });
+          if (o.hidden && o.kind !== "trap" && o.kind !== "chest") ctx.addIssue({ code: "custom", message: `a ${o.kind} cannot be hidden`, path: [...at, "hidden"] });
+          if (o.trap && o.kind !== "trap") ctx.addIssue({ code: "custom", message: `only a trap has trap details, not a ${o.kind}`, path: [...at, "trap"] });
+          if (o.altar && o.kind !== "altar") ctx.addIssue({ code: "custom", message: `only an altar has altar details, not a ${o.kind}`, path: [...at, "altar"] });
           for (const link of o.links ?? []) {
             if (!doors.has(link)) ctx.addIssue({ code: "custom", message: `lever ${o.id} links to ${link}, which is not a door on this map`, path: [...at, "links"] });
           }

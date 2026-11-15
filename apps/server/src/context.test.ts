@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  addCharacter, addMap, applyDmActions, createGameState, currentMap, findFreeTileNear, generateMap, occupiedTiles, placePartyOnMap,
+  restoreState, addCharacter, addMap, applyDmActions, createGameState, currentMap, findFreeTileNear, generateMap, occupiedTiles, placePartyOnMap,
   registerArchetype, rngFromState, RULES, startCombat, STARTER_BRIEFS, type GameState,
 } from "@aedm/engine";
 import { chorister } from "@aedm/engine/testkit";
@@ -216,5 +216,29 @@ describe("buildContextPack", () => {
     const scene = user.split("<scene")[1]!.split("</scene>")[0]!;
     expect(scene).toMatch(/- ch_brindle "[^"]+" character @\d+,\d+ hp 4\/12/);
     expect(scene).toMatch(/- ch_tamsin "[^"]+" character @\d+,\d+\n/);
+  });
+  it("keeps hidden objects in the DM's scene, marked hidden, with the trap's armed or harmless state", () => {
+    let s = world();
+    const mapId = s.currentMapId!;
+    const e = s.entities.ch_brindle!;
+    const map = s.maps[mapId]!;
+    const obj = (o: Record<string, unknown>) => ({ type: "interactable", ...o }) as never;
+    s = {
+      ...s,
+      maps: { ...s.maps, [mapId]: { ...map, layers: map.layers.map((l) => (l.type === "objectgroup" ? { ...l, objects: [...l.objects,
+        obj({ id: "trap_h", kind: "trap", state: "closed", hidden: true, x: e.x + 2, y: e.y }),
+        obj({ id: "trap_v", kind: "trap", state: "open", x: e.x + 3, y: e.y }),
+        obj({ id: "chest_h", kind: "chest", state: "closed", hidden: true, x: e.x + 4, y: e.y }),
+      ] } : l)) } },
+    };
+    s = restoreState(s as never);
+    const pack = buildContextPack({ state: s, players, intents: [] });
+    expect(pack.scene.objects?.find((o) => o.id === "trap_h")).toMatchObject({ kind: "trap", state: "closed", hidden: true });
+    expect(pack.scene.objects?.find((o) => o.id === "trap_v")?.hidden).toBeUndefined();
+    expect(pack.scene.containers?.find((c) => c.kind === "chest" && c.hidden)).toBeDefined();
+    const scene = buildDmContext(pack).user.split("<scene")[1]!.split("</scene>")[0]!;
+    expect(scene).toMatch(/- trap_h trap @\d+,\d+ armed hidden/);
+    expect(scene).toMatch(/- trap_v trap @\d+,\d+ harmless$/m);
+    expect(scene).toMatch(/chest @\d+,\d+ closed hidden/);
   });
 });

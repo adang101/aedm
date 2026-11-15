@@ -2,11 +2,13 @@
  * Doors, locks, levers, signs and examining: the mechanical parts of play that need no Dungeon Master call.
  * Every function returns the engine's usual `{ ok, state, events, error? }` and leaves the input state untouched.
  * Rolls (picking, forcing) use the seeded rng passed in and the same check machinery as DM checks.
- * What the engine cannot describe (an altar, a creature) comes back with `narrative: true` for the DM to handle.
+ * What the engine cannot describe (a creature, `talk`) comes back with `narrative: true` for the DM to handle.
+ * Hidden traps and chests do not exist for any of it until they are revealed (`findInteractable` skips them).
  */
 import type { ActVerb, CheckTag, Character, Container, Lock } from "@aedm/schemas";
 import { SIGN_TEXT_MAX } from "@aedm/schemas";
 import { actorOrError, chargeM, reachError } from "./actor.ts";
+import { altarUsedBy, useAltar } from "./altars.ts";
 import { clampDc, rollCharacterCheck } from "./checks.ts";
 import { act, type ActionResult } from "./combat.ts";
 import { labelOf, stockMapM } from "./containers.ts";
@@ -15,15 +17,17 @@ import { describeCreature } from "./describe.ts";
 import { closeContainer, openContainer } from "./inventory.ts";
 import { MapRng } from "./map/prng.ts";
 import { signText } from "./map/signs.ts";
+import { disarm, isArmedTrap } from "./traps.ts";
 import { fromState, hashSeed, type Rng } from "./rng.ts";
+import { search } from "./search.ts";
 import {
-  containerForObject, effectiveLock, effectiveState, effectiveText, emit, findInteractable, objectKey,
+  containerForObject, effectiveLock, effectiveState, effectiveText, emit, findInteractable, findInteractableAny, isContainerHidden, objectKey,
   type Entity, type GameState, type InteractableObject, type Mut,
 } from "./state.ts";
 
 /** An `ActionResult` plus what the table needs to know about an `act`. */
 export interface ActResult extends ActionResult {
-  /** The engine has nothing to say or do: hand the action to the DM (an altar, a creature, `talk`). The state is unchanged. */
+  /** The engine has nothing to say or do: hand the action to the DM (a creature, `talk`). The state is unchanged. */
   narrative: boolean;
   /** `examine`: the description line. */
   text?: string;
@@ -277,10 +281,10 @@ export function setSignText(state: GameState, mapId: string, objectId: string, t
 export function setLockM(m: Mut, mapId: string, targetId: string, lock: Lock): string | undefined {
   stockMapM(m, mapId);
   const s = m.s;
-  let obj = findInteractable(s, mapId, targetId);
+  let obj = findInteractableAny(s, mapId, targetId);
   if (!obj) {
     const c = s.containers[targetId];
-    if (c && c.map_id === mapId && c.object_id) obj = findInteractable(s, mapId, c.object_id);
+    if (c && c.map_id === mapId && c.object_id) obj = findInteractableAny(s, mapId, c.object_id);
   }
   if (!obj || (obj.kind !== "door" && obj.kind !== "chest")) return `there is no door or chest ${targetId} on ${mapId}`;
   const l: Lock = { dc: clampDc(lock.dc), ...(lock.key_item_name ? { key_item_name: lock.key_item_name } : {}) };
@@ -304,8 +308,9 @@ export function setLockM(m: Mut, mapId: string, targetId: string, lock: Lock): s
 /**
  * A deterministic description line for anything the engine understands: a chest, door, lever, sign, pile or remains, built from
  * its kind, state and (for an open container) how many items it holds. Closed containers never reveal contents. A creature
- * is described by `describeCreature` (no DM-only fields, no numbers). Altars and NPC pockets have nothing to say: the result is
- * `narrative: true`, no text, for the DM. Free in combat.
+ * is described by `describeCreature` (no DM-only fields, no numbers). An altar and a revealed trap have a line from data (the
+ * altar's differs once this character has used it; the trap's says armed or sprung). NPC pockets have nothing to say: the result is
+ * `narrative: true`, no text, for the DM. A hidden object is "nothing like that here". Free in combat.
  */
 export function examine(state: GameState, rng: Rng, actorId: string, targetId: string): ActResult {
   const out: Out = {};
@@ -327,7 +332,8 @@ export function examine(state: GameState, rng: Rng, actorId: string, targetId: s
     const o = findInteractable(s, actor.mapId, targetId);
     if (o) {
       const st = effectiveState(s, actor.mapId, o);
-      if (o.kind === "altar") { out.narrative = true; return undefined; }
+      if (o.kind === "altar") return say("altar", texts.altar?.[altarUsedBy(s, actor.mapId, o.id, actor.id) ? "used" : "any"] ?? "", o, actor.mapId);
+      if (o.kind === "trap") return say("trap", texts.trap?.[isArmedTrap(s, actor.mapId, o) ? "armed" : "sprung"] ?? "", o, actor.mapId);
       if (o.kind === "sign") return say("sign", texts.sign?.any ?? "", o, actor.mapId);
       if (o.kind === "lever") return say("lever", texts.lever?.[st === "open" ? "open" : "closed"] ?? "", o, actor.mapId);
       if (o.kind === "door") return say("door", texts.door?.[st] ?? "", o, actor.mapId);
@@ -336,7 +342,7 @@ export function examine(state: GameState, rng: Rng, actorId: string, targetId: s
       return say("chest", c.items.length === 0 ? (texts.chest?.empty ?? "") : fill(texts.chest?.open ?? "", { items: itemsText(c.items.length) }), o, actor.mapId);
     }
     const c = s.containers[targetId];
-    if (c) {
+    if (c && !isContainerHidden(s, c)) {
       if (c.kind === "pockets") { out.narrative = true; return undefined; }
       if (c.kind === "chest") {
         const st = c.locked ? "locked" : c.opened ? "open" : "closed";
@@ -357,13 +363,13 @@ export function examine(state: GameState, rng: Rng, actorId: string, targetId: s
 
 // ---------- the one entry point for `act` ----------
 
-type TargetKind = "door" | "chest" | "lever" | "sign" | "altar" | "container" | "creature" | "unknown";
+type TargetKind = "door" | "chest" | "lever" | "sign" | "altar" | "trap" | "container" | "creature" | "unknown";
 
 function targetKindOf(s: GameState, actor: Entity | undefined, targetId: string): TargetKind {
   const o = actor ? findInteractable(s, actor.mapId, targetId) : undefined;
   if (o) return o.kind;
   const c = s.containers[targetId];
-  if (c) return "container";
+  if (c) return isContainerHidden(s, c) ? "unknown" : "container";
   if (s.entities[targetId]) return "creature";
   return "unknown";
 }
@@ -376,11 +382,13 @@ function carriesKeyFor(s: GameState, actor: Entity | undefined, lock: Lock | und
 
 /**
  * Everything `act` can ask for, in one call: `interact` does the natural thing for the target (door: open or close, lever: pull, sign:
- * read, chest or pile: open, altar or creature: narrative; a locked door or chest is unlocked first when the actor carries its key),
- * the other verbs are explicit. Unknown or unsuitable targets come back as `ok: false` with a reason; `narrative: true` means the
- * engine did nothing and the DM should describe it.
+ * read, chest or pile: open, altar: take its boon, creature: narrative; a locked door or chest is unlocked first when the actor
+ * carries its key), the other verbs are explicit. `search` takes no target; `disarm` needs a revealed, armed trap. Unknown or
+ * unsuitable targets (and hidden objects) come back as `ok: false` with a reason; `narrative: true` means the engine did nothing
+ * and the DM should describe it.
  */
-export function performAct(state: GameState, rng: Rng, actorId: string, verb: ActVerb, targetId: string): ActResult {
+export function performAct(state: GameState, rng: Rng, actorId: string, verb: ActVerb, target?: string): ActResult {
+  const targetId = target ?? "";
   const actor = state.entities[actorId];
   const kind = targetKindOf(state, actor, targetId);
   const refuse = (error: string): ActResult => ({ state, events: [{ type: "action_rejected", action: verb, reason: error }], ok: false, error, narrative: false });
@@ -401,6 +409,8 @@ export function performAct(state: GameState, rng: Rng, actorId: string, verb: Ac
 
   switch (verb) {
     case "examine": return examine(state, rng, actorId, targetId);
+    case "search": return plain(search(state, rng, actorId));
+    case "disarm": return kind === "trap" ? plain(disarm(state, rng, actorId, targetId)) : refuse("there is no trap to disarm");
     case "talk": return kind === "creature" ? { state, events: [], ok: true, narrative: true } : refuse("there is no one to talk to there");
     case "unlock": return isLockable ? plain(unlock(state, rng, actorId, targetId)) : refuse("there is nothing here with a lock");
     case "pick_lock": return isLockable ? pickLock(state, rng, actorId, targetId) : refuse("there is nothing here with a lock");
@@ -414,7 +424,9 @@ export function performAct(state: GameState, rng: Rng, actorId: string, verb: Ac
       if (kind === "door") return plain(openDoor(state, rng, actorId, targetId));
       return isChest ? opened(openContainer(state, rng, actorId, targetId)) : refuse("that cannot be opened");
     case "interact": {
-      if (kind === "altar" || kind === "creature") return { state, events: [], ok: true, narrative: true };
+      if (kind === "creature") return { state, events: [], ok: true, narrative: true };
+      if (kind === "altar") return plain(useAltar(state, rng, actorId, targetId));
+      if (kind === "trap") return refuse("there is nothing to do with a trap but disarm it");
       if (kind === "lever") return plain(pullLever(state, rng, actorId, targetId));
       if (kind === "sign") return plain(readSign(state, rng, actorId, targetId));
       if (kind === "unknown") return refuse("there is nothing like that here");

@@ -49,16 +49,28 @@ export function clampDc(dc: number): number {
   return Math.min(RULES.checks.dcMax, Math.max(RULES.checks.dcMin, Math.trunc(dc)));
 }
 
+/**
+ * What a character adds to a check with these tags: the ability modifier, +2 when a tag matches their trait tags, and the best
+ * matching `check_bonus` effect. The one place the modifier is computed (rolled checks and passive scores both use it).
+ * Returns null for an unknown character.
+ */
+export function checkModifier(s: GameState, charId: string, ability: AbilityScoreKey, tags: readonly CheckTag[]): { modifier: number; tagBonus: number } | null {
+  const c = s.characters[charId];
+  if (!c) return null;
+  const ent = s.entities[charId];
+  const abilityMod = abilityModifier(c.scores[ability]);
+  const tagBonus = tags.some((t) => c.trait_tags.includes(t)) ? RULES.checks.tagBonus : 0;
+  let effectBonus = 0;
+  if (ent) for (const b of ent.checkBonuses) if (b.tags.some((t) => tags.includes(t))) effectBonus = Math.max(effectBonus, b.bonus);
+  return { modifier: abilityMod + tagBonus + effectBonus, tagBonus: tagBonus + effectBonus };
+}
+
 /** Roll one character's check inside a mutation context. */
 export function rollCharacterCheck(m: Mut, charId: string, req: Omit<CheckRequest, "target">, dc: number): CheckRoll | null {
   const c = m.s.characters[charId];
-  if (!c) return null;
-  const ent = m.s.entities[charId];
-  const abilityMod = abilityModifier(c.scores[req.ability]);
-  const tagBonus = req.tags.some((t) => c.trait_tags.includes(t)) ? RULES.checks.tagBonus : 0;
-  let effectBonus = 0;
-  if (ent) for (const b of ent.checkBonuses) if (b.tags.some((t) => req.tags.includes(t))) effectBonus = Math.max(effectBonus, b.bonus);
-  const modifier = abilityMod + tagBonus + effectBonus;
+  const mod = checkModifier(m.s, charId, req.ability, req.tags);
+  if (!c || !mod) return null;
+  const { modifier, tagBonus } = mod;
   const d = rollD20(m.rng, req.advantage);
   const total = d.kept + modifier;
   const success = total >= dc;
@@ -68,7 +80,7 @@ export function rollCharacterCheck(m: Mut, charId: string, req: Omit<CheckReques
     dice: d.dice, modifier, total, target: dc, outcome: success ? "success" : "failure",
   };
   emit(m, ev);
-  return { who: charId, whoName: c.name, dice: d.dice, kept: d.kept, modifier, tagBonus: tagBonus + effectBonus, total, success };
+  return { who: charId, whoName: c.name, dice: d.dice, kept: d.kept, modifier, tagBonus, total, success };
 }
 
 /**

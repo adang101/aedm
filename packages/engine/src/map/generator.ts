@@ -13,6 +13,8 @@ export interface GenerateOptions {
   tier?: number;
   /** Make the generator's door tiles real door objects. Default `interact.doors.generated.enabled` (on). */
   doorObjects?: boolean;
+  /** Add trap objects (and hide chests per `chest.hiddenPct`). Default `interact.traps.generated.enabled` (on). */
+  trapObjects?: boolean;
 }
 
 export const DEFAULT_GENERATED_AT = "1970-01-01T00:00:00Z";
@@ -77,6 +79,7 @@ export function generateMap(brief: MapBrief, opts: GenerateOptions): { map: Game
         id: opts.id, generatedAt,
         ...(opts.tier !== undefined ? { tier: opts.tier } : {}),
         ...(opts.doorObjects !== undefined ? { doorObjects: opts.doorObjects } : {}),
+        ...(opts.trapObjects !== undefined ? { trapObjects: opts.trapObjects } : {}),
       });
       const v = validateMap(map);
       if (v.ok) return { map, attempts: attempt };
