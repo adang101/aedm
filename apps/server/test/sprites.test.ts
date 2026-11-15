@@ -58,8 +58,9 @@ describe("sprites in the game", () => {
     const pc = snap.entities.find((e) => e.kind === "pc")!;
     provider.queueDm(dmReply(enemyActions(snap.map.id, pc.x + 2, pc.y + 2)));
     await beat(t);
-    await until(() => Object.values(stateOf(h!).entities).filter((e) => e.kind === "enemy").length === 1);
-    const enemies = Object.values(stateOf(h).entities).filter((e) => e.kind === "enemy");
+    const sailors = () => Object.values(stateOf(h!).entities).filter((e) => e.kind === "enemy" && e.refId === "en_sailor");
+    await until(() => sailors().length === 1);
+    const enemies = sailors();
     for (const e of enemies) {
       expect(e.sprite.kind).toBe("spec");
       expect(SpriteSpecSchema.safeParse(e.sprite).success).toBe(true);
@@ -76,9 +77,9 @@ describe("sprites in the game", () => {
     await beat(t);
     await until(() => !!stateOf(h!).archetypes["en_sailor2"]);
     expect(stateOf(h).archetypes["en_sailor2"]!.sprite).toEqual(arch.sprite);
-    const list = await assets.list("sprite");
+    // the plan's own cast and creatures have looks in the store too: look at the sailor's asset
+    const list = (await assets.list("sprite")).filter((a) => a.uses === 2);
     expect(list).toHaveLength(1);
-    expect(list[0]!.uses).toBe(2);
   });
 
   it("create_npc gets a spec sprite", async () => {
@@ -91,14 +92,14 @@ describe("sprites in the game", () => {
     const spot = findFreeTileNear(map, pc.x + 2, pc.y + 2, occupiedTiles(st, map.id))!;
     provider.queueDm(dmReply([{ type: "create_npc", name: "Old Marta", concept: "A robed ferry keeper", role: "merchant", map_id: map.id, x: spot.x, y: spot.y, sprite_tags: ["robe"], appearance: "hooded, carries a lantern" }]));
     await beat(t);
-    await until(() => Object.values(stateOf(h!).entities).some((e) => e.kind === "npc"));
-    const npc = Object.values(stateOf(h).entities).find((e) => e.kind === "npc")!;
+    await until(() => Object.values(stateOf(h!).entities).some((e) => e.name === "Old Marta"));
+    const npc = Object.values(stateOf(h).entities).find((e) => e.name === "Old Marta")!;
     expect(npc.sprite.kind).toBe("spec");
     if (npc.sprite.kind === "spec") {
       expect(npc.sprite.parts.map((p) => p.part)).toEqual(expect.arrayContaining(["hood"]));
       expect(npc.sprite.glyph).toBeTruthy();
     }
-    expect(Object.values(stateOf(h).npcs)[0]!.appearance).toBe("hooded, carries a lantern");
+    expect(Object.values(stateOf(h).npcs).find((n) => n.name === "Old Marta")!.appearance).toBe("hooded, carries a lantern");
   });
 
   it("a failing sprite model falls back to the offline designer, and the fallback is not cached", async () => {

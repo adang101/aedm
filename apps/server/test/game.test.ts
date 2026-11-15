@@ -332,7 +332,7 @@ describe("combat", () => {
     ]));
     const mark = await beat(t, "I attack the brute!", "I draw my weapon.");
     await t.a.wait("combat_state", () => true, { from: mark });
-    const ally = Object.values(stateOf(h).entities).find((e) => e.kind === "npc")!;
+    const ally = Object.values(stateOf(h).entities).find((e) => e.name === "Edda")!;
     expect(stateOf(h).npcs[ally.id]!.stats).toBeTruthy();
     expect(stateOf(h).combat!.order.map((o) => o.entity_id)).toContain(ally.id);
   });
