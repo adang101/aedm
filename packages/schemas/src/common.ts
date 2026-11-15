@@ -55,3 +55,6 @@ export const EnemyStatsSchema = z.strictObject({
   damage_dice: DiceSchema,
 });
 export type EnemyStats = z.infer<typeof EnemyStatsSchema>;
+
+/** A plot stage id (snake_case, from packages/engine/data/plots.json). */
+export const StageIdSchema = z.string().trim().min(1).max(40).regex(/^[a-z][a-z0-9_]*$/, "stage ids are snake_case");

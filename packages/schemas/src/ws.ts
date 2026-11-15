@@ -13,9 +13,13 @@ import {
   CastDecisionPayload, CastStatePayload, CustomCastSchema, DeleteSpriteAssetPayload, ListSpriteAssetsPayload, OfferToCastPayload,
   SaveSpriteAssetPayload, SpriteAssetsListPayload, SpriteRoleHintSchema,
 } from "./workshop";
+import { ObjectiveUpdatePayload, ObjectiveViewSchema } from "./campaign";
 import { QuestSchema } from "./world";
 
 /**
+ * 8: story objectives: state_snapshot gained the optional `objective` (ObjectiveView) and the server message `objective_update`
+ *    was added (a fresh ObjectiveView plus the milestones just completed). Story bible milestones gained optional `hint`
+ *    and `trigger`, and the bible gained the optional campaign plan; those are additive and do not change the envelope.
  * 7: containers, locks and doors: container_action, inventory_action (client), container_view (server); `act` gained the
  *    verbs open, close, unlock, pick_lock, force, pull and read; state_snapshot gained `containers`, state_diff gained
  *    `containers_changed`, `containers_removed` and `interactables_changed`. The map payload carries current interactable
@@ -27,7 +31,7 @@ import { QuestSchema } from "./world";
  * 3: room settings gained plot_pattern and plot_arc.
  * 2: the Map payload changed shape (v2 map with an inline tileset, meta.setting); envelopes are unchanged.
  */
-export const WS_VERSION = 7;
+export const WS_VERSION = 8;
 /** Maximum size of a client-to-server message in bytes. Larger messages are rejected. */
 export const MAX_MESSAGE_BYTES = 8192;
 
@@ -187,6 +191,8 @@ export const StateSnapshotPayload = z.strictObject({
   combat: CombatStateSchema.optional(),
   /** Every container on the current map (chests, piles, remains). Contents are only sent by `container_view`. */
   containers: z.array(ContainerSummarySchema).max(200).optional(),
+  /** The story's current objectives (absent for a campaign without a plot). */
+  objective: ObjectiveViewSchema.optional(),
 });
 export const StateDiffPayload = z.strictObject({
   seq: z.number().int().min(0),
@@ -440,6 +446,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   server("log", LogPayload),
   server("state_snapshot", StateSnapshotPayload),
   server("state_diff", StateDiffPayload),
+  server("objective_update", ObjectiveUpdatePayload),
   server("narration_chunk", NarrationChunkPayload),
   server("roll_result", RollResultPayload),
   server("combat_state", CombatStatePayload),
