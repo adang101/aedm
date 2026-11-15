@@ -150,6 +150,8 @@ export function createGameCore(opts: GameCoreOptions): GameCore {
     async shutdown() {
       for (const c of conns) c.close();
       await handlers.shutdown();
+      // a cache hit bumps a use count with a write nobody awaits: let queued asset writes finish before the data folder may go away
+      await opts.assets.flush?.();
     },
   };
 }
