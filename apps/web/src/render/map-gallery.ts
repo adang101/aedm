@@ -2,13 +2,17 @@
  * Map QA gallery (?mock=1&gallery=maps): engine-generated maps for every setting preset, every layout and a few
  * free-text settings, each as a downscaled full-map thumbnail plus one 1:1 crop. Optional `&seed=N`. Not used by the game.
  */
-import { SETTING_PRESETS, type GameMap, type Layout, type MapBrief } from "@aedm/schemas";
+import { SETTING_PRESETS, type GameMap, type Layout, type MapBrief, type TileDef } from "@aedm/schemas";
 import { STARTER_BRIEFS, generateMap, getSpawn } from "@aedm/engine";
 import { h } from "../util/dom";
 import { TILE } from "./camera";
 import { drawLights, drawMood, type Light } from "./mood";
 import { extractLayers, paintMapLayers } from "./renderer";
 import { makeCanvas } from "./px";
+import { TerrainCache } from "./terrain-chunks";
+import { TerrainGrid } from "./terrain-grid";
+import { createMapStyle } from "./tiles";
+import { materialKey } from "./terrain-math";
 
 const THUMB_W = 520;
 const CROP_W = 14, CROP_H = 9;
@@ -107,6 +111,39 @@ function card(e: Entry, seed: number, id: number): HTMLElement {
     h("div", { class: "mapcard-row" }, thumb, crop));
 }
 
+/**
+ * Every pair of neighbouring ground materials from the preset maps (floor, path, liquid, hazard), each on a small
+ * synthetic map with a straight border, an island and an inlet, drawn by the real terrain renderer.
+ */
+function transitionStrip(seed: number): HTMLElement {
+  const mats = new Map<string, TileDef>();
+  for (const p of ["forest", "dungeon", "swamp", "desert", "snowfield", "temple", "cave", "town"] as const) {
+    try {
+      const m = generateMap(STARTER_BRIEFS[p], { seed, id: "m_pairs" }).map;
+      for (const t of m.tileset.tiles) if (["floor", "path", "liquid", "hazard"].includes(t.role) && !mats.has(materialKey(t))) mats.set(materialKey(t), t);
+    } catch { /* skip a preset that fails */ }
+  }
+  const list = [...mats.values()];
+  const box = h("div", { class: "pairstrip" });
+  const W = 10, H = 5;
+  for (let i = 0; i + 1 < list.length && i < 36; i += 1) {
+    const a = { ...list[i]!, gid: 1 }, b = { ...list[(i * 7 + 3) % list.length]!, gid: 2 };
+    if (materialKey(a) === materialKey(b)) continue;
+    const ground = new Array<number>(W * H).fill(1);
+    for (let y = 0; y < H; y++) for (let x = 5; x < W; x++) ground[y * W + x] = 2;
+    ground[1 * W + 3] = 2; ground[2 * W + 3] = 2; ground[3 * W + 6] = 1; ground[2 * W + 6] = 1; ground[4 * W + 4] = 2;
+    const style = createMapStyle([a, b], ground);
+    const grid = new TerrainGrid({ mapId: `pair${i}`, w: W, h: H, ground, walls: new Array<number>(W * H).fill(0), decor: new Array<number>(W * H).fill(0), defs: style.defs, underlay: style.underlay });
+    const cache = new TerrainCache(grid, style);
+    const c = makeCanvas(W * TILE, H * TILE);
+    const g = c.getContext("2d")!;
+    g.imageSmoothingEnabled = false;
+    cache.draw(g, { x0: 0, y0: 0, x1: W - 1, y1: H - 1 }, 0);
+    box.append(h("figure", { class: "pair" }, c, h("figcaption", { class: "muted" }, `${a.material_id} (${a.role}) | ${b.material_id} (${b.role})`)));
+  }
+  return h("section", { class: "mapsection", id: "pairs" }, h("h2", null, "Material transitions"), box);
+}
+
 export function mountMapGallery(root: HTMLElement): void {
   document.body.style.overflow = "auto";
   const params = new URLSearchParams(location.search);
@@ -117,7 +154,7 @@ export function mountMapGallery(root: HTMLElement): void {
   const page = h("div", { class: "gallery-page maps" },
     h("h1", null, "Map gallery"),
     h("p", { class: "muted" }, `Engine-generated maps, seed ${seed}. Left: whole map downscaled. Right: 1:1 crop at the party start.`),
-    section("Presets", presetEntries()), section("Layouts", layoutEntries()), section("Free-text settings", freeEntries()));
+    section("Presets", presetEntries()), section("Layouts", layoutEntries()), section("Free-text settings", freeEntries()), transitionStrip(seed));
   root.replaceChildren(page);
   (window as unknown as { __galleryReady: boolean }).__galleryReady = true;
 }
