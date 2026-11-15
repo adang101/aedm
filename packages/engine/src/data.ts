@@ -13,6 +13,7 @@ import pixelJson from "../data/pixel.json" with { type: "json" };
 import narrationJson from "../data/narration.json" with { type: "json" };
 import lootJson from "../data/loot.json" with { type: "json" };
 import interactJson from "../data/interact.json" with { type: "json" };
+import campaignJson from "../data/campaign.json" with { type: "json" };
 
 export interface ArmorInfo { name: string; dexCap: number | null; speedPenalty: number }
 
@@ -224,3 +225,34 @@ export interface InteractData {
 
 export const LOOT = lootJson as unknown as LootData;
 export const INTERACT = interactJson as unknown as InteractData;
+
+// ---------- campaign plan (data/campaign.json) ----------
+
+export interface CampaignGroupData { role: EnemyRole; count: number }
+export interface CampaignData {
+  version: number;
+  /** Thresholds `validateCampaign` checks. */
+  limits: {
+    minLocations: number; maxLocations: number; maxConnections: number; maxCast: number; maxCastPerLocation: number;
+    maxEncounters: number; maxKeyItems: number; maxUnitsPerEncounter: number; maxBossCount: number;
+  };
+  /** Share (percent) of milestones that must be machine-checkable, and how many the final stage needs. */
+  checkable: { minPct: number; finalStageMin: number };
+  /** How a plan location becomes a map brief. */
+  map: { defaultSizeClass: "small" | "medium" | "large"; forwardSides: string[]; backSides: string[]; maxSlotCount: number };
+  /** Content for the deterministic offline plan (`buildFallbackCampaign`). */
+  fallback: {
+    lairFromPct: number;
+    presets: Record<"hub" | "wild" | "lair", string[]>;
+    namePrefixes: string[];
+    castFirstNames: string[];
+    castLastNames: string[];
+    castRoles: Record<"hub" | "mid", { role: string; concept: string; voice: string }>;
+    keyItemNames: string[];
+    encounterNames: Record<EnemyRole, string>;
+    enemyConcepts: Record<EnemyRole, string>;
+    groups: Record<Difficulty | "final", CampaignGroupData[]>;
+    ending: { success: string; failure: string };
+  };
+}
+export const CAMPAIGN = campaignJson as unknown as CampaignData;

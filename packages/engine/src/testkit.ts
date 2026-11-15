@@ -102,3 +102,47 @@ export function spawn(state: GameState, rng: Rng, archetypeId: string, x: number
   if (r.rejected.length > 0) throw new Error(r.rejected.map((x) => x.reason).join("; "));
   return r.state;
 }
+
+const SETTLEMENT = { name: "Hollowmere square", preset: "town", layout: "settlement", environment: "outdoor", mood: "neutral" } as const;
+const MARSH = { name: "Marsh", preset: "swamp", layout: "open_field", environment: "outdoor", mood: "eerie" } as const;
+const CRYPT = { name: "Drowned crypt", preset: "crypt", layout: "rooms_and_corridors", environment: "underground", mood: "dark" } as const;
+
+/**
+ * A bible with a hand-written campaign plan over the overcoming-the-monster pattern: five locations in a chain, two cast
+ * members, two encounters, two key items and one milestone per stage (the third stage has a second, `story` one).
+ */
+export const CAMPAIGN_BIBLE: StoryBible = (() => {
+  const stages = ["call", "early_success", "frustration", "nightmare", "final_confrontation"];
+  return {
+    ...BIBLE,
+    plot: { pattern: "overcoming_the_monster", arc: "fall_rise", stages: stages.map((id) => ({ id, title: `Stage ${id}`, goal: `Goal of ${id}.` })) },
+    locations: [
+      { id: "l_square", name: "Hollowmere Square", summary: "A fogbound village square.", stage: "call", connects_to: ["l_dock"], setting: SETTLEMENT, features: ["well", "sign"] },
+      { id: "l_dock", name: "The Rotting Dock", summary: "A pier where the ferry no longer runs.", stage: "early_success", connects_to: ["l_square", "l_marsh"], setting: { ...MARSH, name: "Dock", preset: "beach", layout: "trail" } },
+      { id: "l_marsh", name: "Lantern Marsh", summary: "Reeds, fog and sleepwalkers.", stage: "frustration", connects_to: ["l_dock", "l_crypt"], setting: MARSH, theme_tags: ["marsh", "fog"] },
+      { id: "l_crypt", name: "The Drowned Crypt", summary: "Where the Choir sings.", stage: "nightmare", connects_to: ["l_marsh", "l_lair"], setting: CRYPT },
+      { id: "l_lair", name: "The Choir's Heart", summary: "The source of the voices.", stage: "final_confrontation", connects_to: ["l_crypt"], setting: { ...CRYPT, name: "Choir heart", layout: "arena" } },
+    ],
+    cast: [
+      { id: "c_tam", name: "Old Tam", concept: "A ferryman who saw Edda leave.", role: "quest_giver", location: "l_square", voice: "gruff, nautical" },
+      { id: "c_wren", name: "Wren Ashby", concept: "A marsh guide, wary of strangers.", role: "ally", location: "l_marsh" },
+    ],
+    encounters: [
+      { id: "e_sentries", name: "Marsh sentries", location: "l_marsh", stage: "frustration", groups: [{ concept: "A cultist who borrows the voices of the drowned", role: "minion", count: 2 }, { concept: "A choir sentry in drowned robes", role: "standard", count: 1 }] },
+      { id: "e_boss", name: "The Choirmaster", location: "l_lair", stage: "final_confrontation", groups: [{ concept: "The Choirmaster, who sings with a hundred borrowed voices", role: "boss", count: 1 }] },
+    ],
+    key_items: [
+      { id: "k_lens", name: "Lantern Lens", location: "l_dock" },
+      { id: "k_signet", name: "Choir Signet", location: "l_marsh", held_by: { kind: "cast", id: "c_wren" } },
+    ],
+    ending: { goal: "Silence the Quiet Choir.", success: "The sleepers wake.", failure: "The marsh keeps them." },
+    milestones: [
+      { id: "m1", description: "The party hears Tam's story.", completed: false, stage: "call", trigger: { type: "talk_to", cast: "c_tam" } },
+      { id: "m2", description: "The party finds the lens.", completed: false, stage: "early_success", trigger: { type: "obtain_item", item: "k_lens" } },
+      { id: "m3", description: "The party drives off the sentries.", completed: false, stage: "frustration", hint: "Clear the sentries from the marsh", trigger: { type: "defeat_encounter", encounter: "e_sentries" } },
+      { id: "m4", description: "The party decides who to trust.", completed: false, stage: "frustration" },
+      { id: "m5", description: "The party enters the crypt.", completed: false, stage: "nightmare", trigger: { type: "reach_location", location: "l_crypt" } },
+      { id: "m6", description: "The party ends the Choir.", completed: false, stage: "final_confrontation", trigger: { type: "defeat_encounter", encounter: "e_boss" } },
+    ],
+  };
+})();

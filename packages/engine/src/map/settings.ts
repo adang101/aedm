@@ -71,12 +71,13 @@ const ACCENT_MATCHERS = ACCENTS.map((a) => ({ a, match: keywordMatcher(a.keyword
 
 const padded = (text: string): string => ` ${words(text).join(" ")} `;
 
-/** The preset whose keywords best match free text (a setting name plus tags, or a campaign pitch), if any. */
-export function inferPreset(text: string): SettingPreset | undefined {
+/** The preset whose keywords best match free text (a setting name plus tags, or a campaign pitch), if any. With `among`, only those presets compete. */
+export function inferPreset(text: string, among?: readonly SettingPreset[]): SettingPreset | undefined {
   const t = padded(text);
   let best: SettingPreset | undefined;
   let bestScore = 0;
   for (const { p, match } of PRESET_MATCHERS) {
+    if (among && !among.includes(p)) continue;
     const score = match(t);
     if (score > bestScore) {
       bestScore = score;

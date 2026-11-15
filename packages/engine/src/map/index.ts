@@ -6,7 +6,7 @@ export {
   isWalkable, hasLineOfSight, findPath, reachableTiles, distance, findFreeTileNear, getSpawn, getObjects, serializeSize, inBounds,
 } from "./nav";
 export type { Point } from "./nav";
-export { STARTER_BRIEFS } from "./briefs";
+export { STARTER_BRIEFS, PLANS as LAYOUT_PLANS } from "./briefs";
 export { renderAscii } from "./ascii";
 export { MATERIALS, MATERIAL_IDS, getMaterial, findMaterial, resolveMaterial, closestPattern } from "./materials";
 export type { MaterialContext } from "./materials";
