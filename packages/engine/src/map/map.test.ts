@@ -166,12 +166,12 @@ describe("generateMap", () => {
   });
 
   it("scales obstacles, liquid and hazards with density 0 to 3", () => {
-    const run = (d: number) => {
+    const run = (d: number, wet = d) => {
       let obstacle = 0;
       let liquid = 0;
       let hazard = 0;
       for (const seed of SEEDS) {
-        const b = brief({ setting: { name: "Test field", preset: "forest", layout: "open_field", environment: "outdoor", mood: "neutral", density: { obstacles: d, liquid: d, hazards: d } }, size_class: "medium" });
+        const b = brief({ setting: { name: "Test field", preset: "forest", layout: "open_field", environment: "outdoor", mood: "neutral", density: { obstacles: d, liquid: wet, hazards: d } }, size_class: "medium" });
         const m = generateMap(b, { seed, id: "m_x" }).map;
         const t = defs(m);
         for (const g of layer(m, "walls")) {
@@ -187,8 +187,11 @@ describe("generateMap", () => {
     // the border of an outdoor map is always obstacle; liquid and hazards are zero at density 0
     expect(d0.liquid).toBe(0);
     expect(d0.hazard).toBe(0);
-    expect(d3.obstacle).toBeGreaterThan(d1.obstacle);
-    expect(d1.obstacle).toBeGreaterThan(d0.obstacle);
+    // water takes land from trees, so the obstacle scale is read with the water held at none
+    const [o0, o1, o2, o3] = [run(0, 0), run(1, 0), run(2, 0), run(3, 0)] as const;
+    expect(o3.obstacle).toBeGreaterThan(o1.obstacle);
+    expect(o2.obstacle).toBeGreaterThan(o1.obstacle);
+    expect(o1.obstacle).toBeGreaterThan(o0.obstacle);
     expect(d3.liquid).toBeGreaterThan(d1.liquid);
     expect(d3.hazard).toBeGreaterThan(d1.hazard);
     expect(d2.obstacle).toBeGreaterThan(d0.obstacle);
