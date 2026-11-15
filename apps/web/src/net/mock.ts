@@ -4,6 +4,7 @@ import {
   type CastEntry, type ServerMessageType, type WorkshopAsset, WORKSHOP_MAX_ASSETS, WORKSHOP_MAX_BYTES,
 } from "@aedm/schemas";
 import type { Transport, TransportFactory, TransportHandlers } from "./transport";
+import { MockObjective } from "./mock-objective";
 import { FIRST_SCENE, NARRATION_OPENING, blockedAt, buildScenes, sceneFromText, type MockScene } from "./mock-world";
 import { designSpriteOffline } from "@aedm/engine";
 import { PREMADE_SPECS } from "../state/sprite-builder";
@@ -125,6 +126,7 @@ export class MockServer {
   private turnTick: ReturnType<typeof setInterval> | undefined;
   private voteId = 0;
   private turnN = 0;
+  private objective = new MockObjective();
   private loot = new MockLoot({
     map: () => this.map,
     me: () => this.ents[ME_CHAR],
@@ -146,6 +148,19 @@ export class MockServer {
 
   /** Pass to GameClient. */
   readonly factory: TransportFactory = (h) => this.connect(h);
+
+  /** Dev helper: complete the first open objective (advances the stage when it was the last of its stage). */
+  advanceObjective(): void {
+    if (this.phase !== "playing") return;
+    const change = this.objective.completeNext();
+    if (change) this.emit("objective_update", { ...change.view, completed: change.completed });
+  }
+
+  /** Complete a milestone by id when it is open in the current stage; tells the client. */
+  private trackObjective(id: string): void {
+    const change = this.objective.complete(id);
+    if (change) this.emit("objective_update", { ...change.view, completed: change.completed });
+  }
 
   /** Dev helper: drop the current connection so the client's reconnect path runs. */
   simulateDisconnect(): void {
@@ -587,6 +602,7 @@ export class MockServer {
     const myChar = this.myChar!;
     this.party.push({ ...myChar, inventory: starterPack() });
     this.loot.reset();
+    this.objective.reset();
     this.addPc(myChar, ME, { x: 13, y: 10 });
     for (const pl of squad) {
       const f = Object.values(FAKES).find((x) => x.id === pl.player_id);
@@ -611,6 +627,7 @@ export class MockServer {
     this.emit("state_snapshot", {
       seq: ++this.seq, mode: this.mode, map: this.map, entities: Object.values(this.ents), party: this.party,
       containers: this.loot.summaries(),
+      objective: this.objective.view(),
       quests: [{ id: "q_lantern", title: "The Drowned Lantern", status: "active", notes: ["Odalys says three villagers sleepwalk toward the marsh."] },
         { id: "q_choir", title: "Who hired the choir?", status: "new", notes: [] }],
       ...(this.combat ? { combat: this.combatState() } : {}),
@@ -783,6 +800,7 @@ export class MockServer {
     for (const e of next.entities) this.ents[e.id] = structuredClone(e);
     this.sendSnapshot();
     this.sys(`The party arrives at ${next.title}.`);
+    if (id === "m_crypt" || id === "m_trail") this.trackObjective(id);
     this.narrate(next.arrival, () => this.emit("chips", { chips: next.chips }));
   }
 
@@ -799,9 +817,11 @@ export class MockServer {
     if (/vote/i.test(text)) return this.startVote();
     const dest = /\b(go|travel|head|walk|descend|enter|return|take us|back)\b/i.test(text) ? sceneFromText(text) : null;
     if (dest) return this.travel(dest);
+    if (/\b(light|kindle)\b/i.test(text) && this.scene.id === "m_crypt") this.trackObjective("m_light");
     if (/attack|fight|chorister|battle|strike/i.test(text)) {
       this.narrate("You step toward the grey-robed figures. Their heads turn in perfect unison, and the humming stops. Then it begins again, higher, and wrong.", () => this.startCombat());
     } else if (/odalys|inn|talk|ask/i.test(text)) {
+      this.trackObjective("m_odalys");
       this.later(() => this.chat("npc_odalys", "Odalys", "ic", "Three of my regulars walked into the marsh last night, humming. Please, find out why."), 500);
       this.narrate("Odalys sets her broom against the porch rail and wipes her hands on her apron, glancing toward the reeds.");
     } else {
@@ -825,6 +845,7 @@ export class MockServer {
     }
     if (verb === "talk" && ent) {
       if (ent.kind === "enemy") return this.chat(ent.id, ent.name, "ic", "...hhhmmmmm...");
+      if (ent.id === "npc_odalys") this.trackObjective("m_odalys");
       return this.chat(ent.id, ent.name, "ic", ent.kind === "npc" ? "Mind the marsh road after dark, friends." : "Hm?");
     }
     this.engine(`You ${verb} ${ent?.name ?? "it"}. Nothing obvious happens.`);
@@ -955,6 +976,7 @@ export class MockServer {
     this.mode = "exploration";
     this.diff([], [], { mode: "exploration" });
     this.engine("Combat ends: victory.");
+    this.trackObjective("m_choir");
     this.narrate("The last chorister folds like wet paper, and the humming stops. In the silence, the marsh exhales. Odalys lets out a long, shaky breath from the porch.", () => {
       this.emit("chips", { chips: ["Search the robes", "Talk to Odalys", "Head for the marsh"] });
       this.grantLevelUps();
