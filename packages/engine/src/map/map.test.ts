@@ -374,7 +374,9 @@ describe("fuzz", () => {
     if (process.env.FUZZ_STATS) console.log("fuzz fallbacks", stats.fallback, genMs.toFixed(0) + "ms gen", JSON.stringify(stats));
     // the fallback chain should be rare
     expect(stats.fallback).toBeLessThan(75);
-  });
+    // 500 maps: natural terrain costs about 6.5 ms a map here (it was 2.4), which a slower CI runner stretches past the 5 s default.
+    // The per-map speed budget is asserted in terrain.test.ts.
+  }, 30_000);
 });
 
 // ---------- navigation and validation ----------
