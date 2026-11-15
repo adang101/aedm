@@ -1,7 +1,7 @@
 import { spriteSwatch, type EntityView } from "@aedm/schemas";
 import { MapRenderer, type TapInfo } from "../render/renderer";
 import { myCharacter, myEntity, pendingLevelUp, type AppState } from "../state/store";
-import { targetsOnMap, targetTitle } from "../util/interact";
+import { canSearch, targetsOnMap, targetTitle } from "../util/interact";
 import { h, replaceChildren } from "../util/dom";
 import { createHud, type Pending } from "./hud";
 import { createContainerPanel } from "./container";
@@ -27,10 +27,15 @@ export function mountGame(ctx: Ctx): Screen {
   const levelUpModal = createLevelUpModal(ctx);
 
   // ---------- canvas ----------
-  const canvas = h("canvas", { class: "map-canvas", tabindex: 0, "aria-label": "Game map. Press E to use things next to you." });
+  const canvas = h("canvas", { class: "map-canvas", tabindex: 0, "aria-label": "Game map. Press E to use things next to you, F to search." });
   const loading = h("div", { class: "loading" }, "Loading the world...");
   const zoomIn = h("button", { type: "button", class: "btn tiny", "aria-label": "Zoom in" }, "+");
   const zoomOut = h("button", { type: "button", class: "btn tiny", "aria-label": "Zoom out" }, "-");
+
+  const searchBtn = h("button", {
+    type: "button", class: "btn tiny search-btn", title: "Search nearby for hidden traps and chests (F)", "aria-label": "Search (F)",
+    onClick: () => doSearch(),
+  }, "Search (F)");
 
   const hud = createHud({
     onAttack() { pending = pending?.kind === "attack" ? null : { kind: "attack" }; refresh(); },
@@ -44,7 +49,7 @@ export function mountGame(ctx: Ctx): Screen {
     onLevelUp() { levelUpModal.open(); },
   });
 
-  const mapWrap = h("div", { class: "map-wrap" }, canvas, hud.top, hud.bottom, hud.levelUp, h("div", { class: "zoom" }, zoomIn, zoomOut), loading);
+  const mapWrap = h("div", { class: "map-wrap" }, canvas, hud.top, hud.bottom, hud.levelUp, h("div", { class: "zoom" }, searchBtn, zoomIn, zoomOut), loading);
 
   const renderer = new MapRenderer(canvas, store, {
     onTap: (info) => handleTap(info),
@@ -61,6 +66,15 @@ export function mountGame(ctx: Ctx): Screen {
     if (t === "enemy") return e.kind === "enemy";
     if (t === "ally") return e.kind === "pc";
     return t === "any";
+  }
+
+  function searchAllowed(s: AppState): boolean {
+    return canSearch(!!s.combat, s.combat?.active_id, myEntity(s)?.id);
+  }
+
+  function doSearch(): void {
+    if (!searchAllowed(store.state)) { ctx.toast("You can search on your turn.", "info"); return; }
+    client.send("act", { verb: "search" });
   }
 
   // ---------- interaction ----------
@@ -130,6 +144,7 @@ export function mountGame(ctx: Ctx): Screen {
       openMenu("Nearby", items, r.left + r.width / 2 - 90, r.top + r.height / 2);
       return;
     }
+    if (ev.key.toLowerCase() === "f") { ev.preventDefault(); if (!ev.repeat) doSearch(); return; }
     const dir = DIRS[ev.key.toLowerCase()];
     if (!dir) return;
     ev.preventDefault();
@@ -221,6 +236,7 @@ export function mountGame(ctx: Ctx): Screen {
     loading.hidden = !!s.map;
     if (pending && !s.combat) pending = null;
     hud.update(s, pending);
+    searchBtn.disabled = !s.map || !searchAllowed(s);
     canvas.classList.toggle("targeting", pending !== null);
     updateParty(s);
     updateQuests(s);

@@ -161,6 +161,48 @@ Interpolate between rows. The enemy builder's allowed ranges are HP and damage w
 - **Roles:** a minion has half the standard HP, 75% of the damage and no abilities. An elite may have up to 1.5 times standard HP and damage and 1 to 2 abilities. A boss may have up to 2 times HP, 1.5 times damage and 1 to 3 abilities, and one boss may spend up to 1.5 times the standard budget alone. Minions come out of the remaining budget.
 - **Worked example:** a robed chorister at level 1 has HP 10, Defense 12, attack +3, damage 4 per round, and Borrowed Voice (dazzled 1 turn, save, range 6, cooldown 3: 2 x0.75 x1.10 x0.85 = 1.40, costs 2). With a 1d6 basic attack (average 3.5): threat = 2.5 + 4 + 5.25 + 1 = 12.75. Two of them total 25.5, inside the budget of 39. (The table's "damage per round 4" is a target for the enemy builder, not a fixed value.)
 
+**Out-of-combat and tactical AI (`rules.ai`, added with the engine-led play work)**
+
+Stored in `packages/engine/data/rules.json` under `ai`. These are untuned first guesses. The morale, tactics and `healBelowPct` keys that were there before are unchanged.
+
+| Key | Value | Meaning |
+| --- | --- | --- |
+| `areaAllyPenalty` | 1 | An area ability is scored as foes caught minus this times allies caught. It is never used when it would catch as many allies as foes, or no foe. |
+| `kite.enabled` | true | A ranged creature may step away from a foe next to it and still shoot. |
+| `kite.triggerDistance` | 1 | It kites when a foe is this close or closer (in tiles). |
+| `kite.minFoeDistance` | 2 | The tile it steps to must be at least this far from every foe. |
+| `finish.enabled` | true | A foe the creature can plausibly drop this turn is targeted first. |
+| `finish.damagePct` | 100 | A foe counts as droppable when its HP plus shield is at most this percent of the creature's average hit (average basic damage plus key modifier, at least the minimum damage). |
+| `hazard.avoid` | true | Creatures walk around fire with damage dice and visible traps of the other side. |
+| `hazard.detourAllowance` | 3 | A path around hazards is taken when it is at most this many tiles longer. A step that would end on a hazard is cut short unless that leaves no progress at all, in which case the whole step is taken. |
+| `aggro.enabled` | true | Out of combat, hostile creatures can start a fight by noticing the party. |
+| `aggro.radius` | 8 | A hostile creature notices a standing party character within this many tiles and in line of sight (walls, smoke and closed doors block it). |
+| `aggro.joinRadius` | 6 | Other hostiles within this many tiles of one that noticed join the fight. |
+| `aggro.joinAll` | false | When true every hostile on the map joins. |
+| `aggro.includeAllies` | true | Allied NPCs on the map fight beside the party. |
+| `follow.enabled` | true | Allied NPCs follow the party outside combat and at scene changes. |
+| `follow.maxDistance` | 4 | An ally farther than this from the nearest standing party character walks toward them; at a scene change, allies within this distance come along. |
+| `follow.stopDistance` | 2 | A following ally stops within this many tiles of the character. |
+| `follow.stepTiles` | 6 | At most this many tiles per follow step (one step after each party move). |
+
+Creatures that survive a fight that ends without their defeat (truce, flight, party defeat) are marked calm and never aggro until a new combat starts with them. This is a flag on the entity, not a number.
+
+**Engine data files for text and offline building** (all numbers below are first guesses; phrasings are in the files)
+
+- `packages/engine/data/enemy-kits.json` (the offline enemy builder). Names: at most 3 words and 40 characters, from an `en_` ref or the concept (concept text is cut to 200 characters). Each stat is placed inside the allowed range for the party level (the ranges in Enemy numbers; 0% is the lowest value, 100% the highest). It starts at 50%, moves by a random plus or minus 10 points, and by the trait shifts below (percentage points of the range; speed in tiles, with a 25% chance of one more or one less):
+
+| Trait | HP | Defense | Attack | Damage | Speed |
+| --- | --- | --- | --- | --- | --- |
+| armored | +25% | +45% | +0% | +0% | -1 |
+| swift | -25% | -10% | +10% | +0% | +1 |
+| brute | +15% | +0% | -35% | +40% | -1 |
+| frail | -30% | -10% | +0% | -15% | +0 |
+| deadly | -10% | +0% | +30% | +15% | +0 |
+
+  Behavior is 2 to 3 short lines that the `rules.ai.tactics` patterns read. Element themes (fire, cold, poison, shadow, radiant, lightning, brute, blade, beast, healer, default) carry a resistance, a weakness, a loot hint, sprite tags and ability templates; the result is always clamped and validated like a model enemy. Ability count by role: minion 0, standard 1, elite 2, boss 3. Ability dice power as a percent of the template by role: minion 0, standard 80, elite 100, boss 120. Every ability goes through `clampAbilityToLevel`, so costs stay in integer hundredths.
+- `packages/engine/data/describe.json` (scene, creature and pack descriptions). Health words from the percentage of HP, rounded up, so only a creature at full health is unhurt: unhurt (from 100%), scratched (from 75%), wounded (from 50%), badly wounded (from 25%), barely standing (from 1%), downed (from 0%). List caps in a description: exits 4, objects 6, containers 4, creatures 8, party 6, inventory 24. Descriptions never print hit points as numbers.
+- `packages/engine/data/combat-voice.json` (fight openings, barks, victory close). Bark chance by event, in percent: morale broken 100, surrendered 100, fled 100, bloodied 50 (a roll of d100 above the number means a quiet moment). Body plans that speak aloud: humanoid, spirit; the others get a described reaction. A won fight needs the DM when a boss or elite was involved (roles: boss, elite) or, with `dmWhenPartyDown` set to true, a party member is still down. The `start_noticed` templates open a fight that creatures started by noticing the party.
+
 **Growth**
 
 - Level cap 10 in the MVP. 100 growth points per level, and any overflow carries over.
@@ -221,6 +263,42 @@ Loot (`rollLoot`): 1 to 3 items per roll, kinds weighted consumable 38, trinket 
 | Boss | 0 | 100 | 80 | 4 |
 
 Remains loot counts against the encounter loot cap exactly like `grant_item` (and the cap resets when the next combat starts). Chest and slot stock is scenery: it does not count. Template values run from 2 (a river stone) to 105 (a master-made blade); the healing draught takes its name and value (25) from the Gear table above.
+
+**Traps, searching and altars** (added with the engine-resolved map traps; none of the numbers above change)
+
+Stored in `packages/engine/data/interact.json` (`traps`, `search`, `altars`, `chest.hiddenPct`, and three new `combatCost` entries). Every number here is an untuned first guess; simulation and playtests set them.
+
+| Rule | Value |
+| --- | --- |
+| `traps.spotRadius` | 6. A standing player character passively notices a hidden trap this many tiles away or closer, in line of sight, when 10 plus their WIS modifier (plus +2 with the perception tag and any check bonus) is at least the trap DC. No dice. Hidden chests are never found this way. |
+| `traps.dcByTier` | 12, 14, 16, 18, 20 for loot tiers 1 to 5. Used for finding (passive and searched), saving and disarming. Unlike lock DCs these start a little higher, so a trained eye is needed at tier 1. |
+| `traps.variance` | plus or minus 2, drawn when the map is built, kept within 5 to 30. |
+| `traps.defaultTier` | 1. The tier a trap made without details (a DM-made one) uses. |
+| `traps.diceByTier` | 1d6, 2d6, 3d6, 4d6, 5d6 for tiers 1 to 5. |
+| `traps.damageTypes` | sharp, fire, acid, lightning. A generated trap picks one. |
+| `traps.save` | DEX check (tag speed, +2 when the character has it) against the trap DC when a player character steps on a trap; success takes half the damage, rounded down (`halfOnSuccess`). An allied NPC rolls d20 plus its save modifier. Enemies never spring map traps. |
+| `traps.disarm` | DEX check (tag tinkering) against the trap DC. Success: harmless. Failing by 5 or more (`failSpringMargin`): the trap springs on the actor with no save. Any other failure: nothing happens and the actor may try again. |
+| `traps.generated.enabled` | true. Generated maps get trap objects. |
+| `traps.generated.countByHazardLevel` | 0, 1, 2, 3 traps for hazard density 0, 1, 2, 3 (fewer when no tile fits). |
+| `traps.generated.hiddenPct` | 60. Percent of generated traps that start hidden. |
+| `traps.generated.minSpawnDistance` | 6. A generated trap is at least this many tiles (Chebyshev) from the party start, on floor the party can reach without crossing a hazard, away from exits, doors, other objects, hazards and decor, and not beside another trap. |
+| `search.radius` | 4. One search tries every hidden trap or chest within this many tiles of the searcher. |
+| `search.ability`, `search.tag` | WIS, perception. One roll per search, compared with each object's DC. A character tries each object once. |
+| `search.cacheDcByTier` | 10, 12, 14, 16, 18 for tiers 1 to 5 (tier of the party level now). The DC of finding a hidden chest. |
+| `chest.hiddenPct` | 0. Percent of generated chests that start hidden (opt-in). |
+| `altars.boons.mend` | `percentMaxHp` 50: heals half of max HP (at least 1), rounded down. |
+| `altars.boons.ward` | `absorb` 8 for `turns` 10: a shield that absorbs 8 damage, with the shielded condition. |
+| `altars.boons.cleanse` | Ends every harmful condition (those the conditions table marks hostile). |
+
+Each character takes a given altar's boon once. An altar with no named boon gets one of mend, ward or cleanse, the same every time, by a hash of the map seed, map id and object id.
+
+In combat (only the active creature acts):
+
+| Verb | Cost |
+| --- | --- |
+| Search, disarm, take an altar's boon | Action |
+| A second try at an altar that has nothing more to give | Free (nothing happens) |
+| Walking onto a trap | Part of the move; the trap stops it |
 
 **Tuning plan**
 

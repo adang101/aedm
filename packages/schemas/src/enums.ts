@@ -113,13 +113,18 @@ export const ENTITY_SLOT_ROLES = ["enemy", "npc", "boss", "loot"] as const;
 export const EntitySlotRoleSchema = z.enum(ENTITY_SLOT_ROLES);
 export type EntitySlotRole = z.infer<typeof EntitySlotRoleSchema>;
 
-export const INTERACTABLE_KINDS = ["chest", "door", "lever", "sign", "altar"] as const;
+export const INTERACTABLE_KINDS = ["chest", "door", "lever", "sign", "altar", "trap"] as const;
 export const InteractableKindSchema = z.enum(INTERACTABLE_KINDS);
 export type InteractableKind = z.infer<typeof InteractableKindSchema>;
 
 export const INTERACTABLE_STATES = ["open", "closed", "locked"] as const;
 export const InteractableStateSchema = z.enum(INTERACTABLE_STATES);
 export type InteractableState = z.infer<typeof InteractableStateSchema>;
+
+/** What an altar can give each character once: heal a share of max HP, a damage-absorbing shield, or end every harmful condition. */
+export const ALTAR_BOONS = ["mend", "ward", "cleanse"] as const;
+export const AltarBoonSchema = z.enum(ALTAR_BOONS);
+export type AltarBoon = z.infer<typeof AltarBoonSchema>;
 
 /** What holds items on the map: a chest (an interactable), a pile of dropped items, a defeated creature's remains, or an NPC's pockets. */
 export const CONTAINER_KINDS = ["chest", "pile", "remains", "pockets"] as const;

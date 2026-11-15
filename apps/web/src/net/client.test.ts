@@ -139,6 +139,19 @@ describe("GameClient sprite designer", () => {
     expect((got as ServerMessage | null)?.type).toBe("sprite_designed");
   });
 
+  it("sends a search without a target_id, and refuses one that has a target or a disarm that has none", () => {
+    const t = setup();
+    t.client.connect();
+    t.open();
+    expect(t.client.send("act", { verb: "search" })).not.toBeNull();
+    const sent = t.sent.find((m) => m.type === "act")!;
+    expect(sent).toMatchObject({ v: WS_VERSION, payload: { verb: "search" } });
+    expect("target_id" in sent.payload).toBe(false);
+    expect(t.client.send("act", { verb: "search", target_id: "trap_1" })).toBeNull();
+    expect(t.client.send("act", { verb: "disarm" })).toBeNull();
+    expect(t.client.send("act", { verb: "disarm", target_id: "trap_1" })).not.toBeNull();
+  });
+
   it("refuses to send an over-long prompt", () => {
     const t = setup();
     t.client.connect();

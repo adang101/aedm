@@ -30,6 +30,8 @@ export interface SceneContainer {
   open: boolean;
   itemCount: number;
   items?: string[] | undefined;
+  /** Not found yet (the players do not know this chest exists). */
+  hidden?: boolean | undefined;
 }
 
 /** A door, lever, sign or altar on the map (chests are containers). */
@@ -42,6 +44,8 @@ export interface SceneObject {
   state: string;
   /** The lock's DC when locked. */
   dc?: number | undefined;
+  /** Not found yet: the players cannot see or use it, the DM knows it is there. */
+  hidden?: boolean | undefined;
 }
 
 export interface PartyMemberContext {
@@ -380,12 +384,12 @@ function renderContainer(c: SceneContainer): string {
     const more = c.items.length - shown.length;
     state = `open: ${shown.join(", ")}${more > 0 ? ` +${more} more` : ""}`;
   }
-  return `- ${attr(c.id)} ${c.kind}${label} @${c.x},${c.y} ${state}`;
+  return `- ${attr(c.id)} ${c.kind}${label} @${c.x},${c.y} ${state}${c.hidden ? " hidden" : ""}`;
 }
 
 function renderObject(o: SceneObject): string {
-  const state = o.kind === "sign" || o.kind === "altar" ? "" : o.state === "locked" ? ` locked${o.dc !== undefined ? ` dc${o.dc}` : ""}` : o.kind === "lever" ? (o.state === "open" ? " pulled" : "") : ` ${o.state}`;
-  return `- ${attr(o.id)} ${attr(o.kind)} @${o.x},${o.y}${state}`;
+  const state = o.kind === "sign" || o.kind === "altar" ? "" : o.kind === "trap" ? (o.state === "open" ? " harmless" : " armed") : o.state === "locked" ? ` locked${o.dc !== undefined ? ` dc${o.dc}` : ""}` : o.kind === "lever" ? (o.state === "open" ? " pulled" : "") : ` ${o.state}`;
+  return `- ${attr(o.id)} ${attr(o.kind)} @${o.x},${o.y}${state}${o.hidden ? " hidden" : ""}`;
 }
 
 function renderThings(sc: DmContextPack["scene"]): string[] {

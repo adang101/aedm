@@ -1,4 +1,4 @@
-import type { Condition, DamageType, Difficulty } from "@aedm/schemas";
+import type { AltarBoon, Condition, DamageType, Difficulty } from "@aedm/schemas";
 
 /** Narratable facts produced by the engine. Every state-changing function returns a list of these. */
 export type EngineEvent =
@@ -58,6 +58,13 @@ export type EngineEvent =
   | { type: "sign_written"; mapId: string; objectId: string; text: string }
   | { type: "container_stocked"; containerId: string; label: string; count: number; value: number }
   | { type: "lock_set"; mapId: string; objectId: string; kind: string; dc: number; keyed: boolean }
+  | { type: "trap_sprung"; mapId: string; objectId: string; x: number; y: number; victim: string; victimName: string; amount: number; saved: boolean }
+  | { type: "trap_disarmed"; mapId: string; objectId: string; x: number; y: number; by: string; byName: string }
+  | { type: "disarm_failed"; mapId: string; objectId: string; x: number; y: number; by: string; byName: string }
+  | { type: "spotted"; mapId: string; by: string; byName: string; objectId: string; kind: string; x: number; y: number }
+  | { type: "searched"; mapId: string; by: string; byName: string; /** Absent when nothing was left to roll against. Never show it to players. */ total?: number; found: { objectId: string; kind: string; x: number; y: number }[]; /** Nothing was left to roll against (no die was rolled). Never show it to players. */ nothingNew?: true }
+  | { type: "altar_used"; mapId: string; by: string; byName: string; objectId: string; boon: AltarBoon; amount?: number }
+  | { type: "altar_silent"; mapId: string; by: string; byName: string; objectId: string }
   | { type: "examined"; targetId: string; kind: string; text: string }
   | { type: "quest_updated"; questId: string; title: string; status: string; note: string }
   | { type: "fact_set"; subject: string; predicate: string; object: string }
@@ -140,6 +147,17 @@ export function describeEvent(e: EngineEvent): string {
     case "sign_written": return wrap(`sign ${e.objectId} now reads: ${e.text}`);
     case "container_stocked": return wrap(`${e.label} (${e.containerId}) now holds ${e.count} more item${e.count === 1 ? "" : "s"}`);
     case "lock_set": return wrap(`${e.kind} ${e.objectId} is now locked (DC ${e.dc}${e.keyed ? ", has a key" : ""})`);
+    case "trap_sprung": return wrap(`${e.victimName} sets off a trap at (${e.x},${e.y}) and takes ${e.amount} damage${e.saved ? " (half, after dodging)" : ""}`);
+    case "trap_disarmed": return wrap(`${e.byName} disarms the trap at (${e.x},${e.y})`);
+    case "disarm_failed": return wrap(`${e.byName} fails to disarm the trap at (${e.x},${e.y}); it is still armed`);
+    case "spotted": return wrap(`${e.byName} notices a ${e.kind} at (${e.x},${e.y})`);
+    case "searched": {
+      // the same words whether the roll failed or there was nothing to roll against: a search never shows what is not there
+      const list = e.found.map((f) => `a ${f.kind} at (${f.x},${f.y})`).join(", ");
+      return wrap(e.found.length > 0 ? `${e.byName} searches and finds ${list}` : `${e.byName} searches carefully but finds nothing new`);
+    }
+    case "altar_used": return wrap(`${e.byName} takes the boon of altar ${e.objectId}: ${e.boon}${e.amount !== undefined ? ` (${e.amount})` : ""}`);
+    case "altar_silent": return wrap(`altar ${e.objectId} has nothing more for ${e.byName}`);
     case "examined": return wrap(`${e.targetId}: ${e.text}`);
     case "quest_updated": return wrap(`quest "${e.title}" is now ${e.status}${e.note ? `: ${e.note}` : ""}`);
     case "fact_set": return wrap(`fact recorded: ${e.subject} ${e.predicate} ${e.object}`);

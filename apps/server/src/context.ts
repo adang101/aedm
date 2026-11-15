@@ -2,7 +2,7 @@ import type { CombatContext, DmContextPack, NpcDossierEntry, ObjectiveContext, S
 import type { MilestoneTrigger, NpcRecord } from "@aedm/schemas";
 import {
   MATERIAL_IDS, RULES, campaignOf, computePartyLevel, currentAct, currentMap, currentStage, effectiveLock, effectiveState, entitiesOnMap, getObjects,
-  hasCampaignPlan, isMachineTrigger, locationExits, lootCap, milestoneHint, pacingBlock, sideOf as combatSide, triggerBlocked, triggerOf, triggerSatisfied,
+  hasCampaignPlan, isContainerHidden, isHidden, isMachineTrigger, locationExits, lootCap, milestoneHint, pacingBlock, sideOf as combatSide, triggerBlocked, triggerOf, triggerSatisfied,
   type GameState,
 } from "@aedm/engine";
 
@@ -167,7 +167,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
         if (o.kind === "chest") continue; // listed once, as its container
         const st = effectiveState(state, map.id, o);
         const lock = st === "locked" ? effectiveLock(state, map.id, o) : undefined;
-        objects.push({ id: o.id, kind: o.kind, x: o.x, y: o.y, state: st, ...(lock ? { dc: lock.dc } : {}) });
+        objects.push({ id: o.id, kind: o.kind, x: o.x, y: o.y, state: st, ...(lock ? { dc: lock.dc } : {}), ...(isHidden(state, map.id, o) ? { hidden: true } : {}) });
       } else if (o.type === "exit") {
         const side = sideOf(map, o.x, o.y);
         exits.push({ label: o.name, ...(side ? { side } : {}), ...(o.to !== "pending" ? { to: o.to } : {}) });
@@ -190,6 +190,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
         id: c.id, kind: c.kind as SceneContainer["kind"], x: c.x, y: c.y, open: c.kind === "chest" ? c.opened === true : true, itemCount: c.items.length,
         ...(c.kind === "remains" && c.label ? { label: c.label.replace(/^Remains of /, "") } : {}),
         ...(c.locked ? { locked: c.lock?.dc ?? 10 } : {}),
+        ...(isContainerHidden(state, c) ? { hidden: true } : {}),
         ...(opened ? { items: c.items.map((i) => i.name) } : {}),
       });
     }

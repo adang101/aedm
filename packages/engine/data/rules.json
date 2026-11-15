@@ -236,7 +236,13 @@
       "leaderDownBreaksMinions": true,
       "fleeDistance": 8,
       "bloodiedPct": 50
-    }
+    },
+    "areaAllyPenalty": 1,
+    "kite": { "enabled": true, "triggerDistance": 1, "minFoeDistance": 2 },
+    "finish": { "enabled": true, "damagePct": 100 },
+    "hazard": { "avoid": true, "detourAllowance": 3 },
+    "aggro": { "enabled": true, "radius": 8, "joinRadius": 6, "joinAll": false, "includeAllies": true },
+    "follow": { "enabled": true, "maxDistance": 4, "stopDistance": 2, "stepTiles": 6 }
   },
   "sprites": {
     "shapes": [

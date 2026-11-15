@@ -175,6 +175,8 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent);
 .map-canvas.targeting { cursor: crosshair; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); background: #1b1626; }
 .zoom { position: absolute; right: 8px; bottom: 8px; display: flex; flex-direction: column; gap: 4px; }
+.zoom { align-items: flex-end; }
+.zoom .search-btn { width: auto; padding: 0 10px; }
 .zoom .btn { width: 32px; min-height: 32px; padding: 0; background: rgba(39, 31, 58, .85); }
 .hud-top { position: absolute; left: 0; right: 0; top: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px; pointer-events: none; background: linear-gradient(#150f20e6, #150f2000); }
 .hud-top > * { pointer-events: auto; }

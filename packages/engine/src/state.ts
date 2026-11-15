@@ -2,7 +2,7 @@ import {
   CharacterCreateSchema, CharacterSchema,
   type Ability, type AbilityDraft, type AbilityScoreKey, type Character, type CharacterCreate, type CharacterView,
   type CheckTag, type Condition, type Container, type ContainerSummary, type ContentRating, type Difficulty, type Disposition,
-  type Enemy, type EntityView, type GameMap, type InteractableState, type Item, type Lock, type MapBrief, type MapObject,
+  type Enemy, type EntityView, type GameMap, type InteractableState, type Item, type Lock, type MapBrief, type MapObject, type PublicInteractableObject,
   type NpcRecord, type ObjectiveView, type Quest, type StoryThread, type SpriteRecipe, type StoryBible, type TerrainKind, type WorldFact, type DamageType,
 } from "@aedm/schemas";
 import type { EngineEvent } from "./events.ts";
@@ -49,6 +49,8 @@ export interface Entity {
   morale?: "held" | "broken";
   /** Set once a boss or elite was reported as bloodied this fight. */
   bloodied?: true;
+  /** An enemy-side creature that survived a fight that ended without its defeat (truce, flight, party defeat). It does not aggro by itself until a new combat starts with it. */
+  calm?: true;
 }
 
 export interface TerrainTile {
@@ -95,6 +97,12 @@ export interface InteractableOverride {
   /** `null`: the lock is gone (opened with a key, picked or broken). Absent: the map object's own lock stands. */
   lock?: Lock | null;
   text?: string;
+  /** A hidden trap or chest that has been found (searched out, spotted or sprung). Absent in older saves. */
+  revealed?: true;
+  /** Character ids that searched for this hidden object and failed, so each tries once. */
+  searchedBy?: string[];
+  /** Character ids that already took this altar's boon. */
+  usedBy?: string[];
 }
 
 /**
@@ -306,9 +314,28 @@ export function interactablesOf(map: GameMap): InteractableObject[] {
   return getObjects(map).filter((o): o is InteractableObject => o.type === "interactable");
 }
 
-export function findInteractable(s: GameState, mapId: string, objectId: string): InteractableObject | undefined {
+/** Any interactable by id, found or not. Engine internals only: a player-initiated action uses `findInteractable`. */
+export function findInteractableAny(s: GameState, mapId: string, objectId: string): InteractableObject | undefined {
   const map = s.maps[mapId];
   return map ? interactablesOf(map).find((o) => o.id === objectId) : undefined;
+}
+
+/** A hidden trap or chest that has not been found: the object has `hidden: true` and no `revealed` override. */
+export function isHidden(s: GameState, mapId: string, o: InteractableObject): boolean {
+  return o.hidden === true && s.interactables[objectKey(mapId, o.id)]?.revealed !== true;
+}
+
+/** An interactable by id as the table knows it: a hidden object does not exist (undefined) until it is revealed. */
+export function findInteractable(s: GameState, mapId: string, objectId: string): InteractableObject | undefined {
+  const o = findInteractableAny(s, mapId, objectId);
+  return o && !isHidden(s, mapId, o) ? o : undefined;
+}
+
+/** True for a chest container whose map object is still hidden: the table does not know it exists. */
+export function isContainerHidden(s: GameState, c: Container): boolean {
+  if (!c.object_id) return false;
+  const o = findInteractableAny(s, c.map_id, c.object_id);
+  return !!o && isHidden(s, c.map_id, o);
 }
 
 /** The container made from a map object (a chest or a loot slot), if it has been stocked. */
@@ -353,21 +380,37 @@ export function closedDoorTiles(s: GameState, mapId: string): Set<string> {
   return set;
 }
 
-/** The map as the table should draw it: interactable states, locks and sign text brought up to date. The same object when nothing changed. */
+/**
+ * An interactable as the table may see it now: its current state, lock and sign text, and never `hidden`, `trap` or `altar`
+ * detail. The same object when it already has nothing to strip and nothing changed.
+ */
+export function publicObject(s: GameState, mapId: string, o: InteractableObject): PublicInteractableObject {
+  const state = effectiveState(s, mapId, o);
+  const lock = state === "locked" ? effectiveLock(s, mapId, o) : undefined;
+  const text = o.kind === "sign" ? effectiveText(s, mapId, o) : undefined;
+  const { lock: _l, text: _t, hidden: _h, trap: _tr, altar: _a, ...rest } = o;
+  return { ...rest, state, ...(lock ? { lock } : {}), ...(text !== undefined ? { text } : {}) };
+}
+
+/**
+ * The map as the table should draw it: interactable states, locks and sign text brought up to date, hidden objects left out and
+ * `hidden`, `trap` and `altar` detail removed from the rest. The same object when nothing changed.
+ */
 export function effectiveMap(s: GameState, mapId: string): GameMap | null {
   const map = s.maps[mapId];
   if (!map) return null;
   let changed = false;
-  const objects = getObjects(map).map((o): MapObject => {
-    if (o.type !== "interactable") return o;
+  const objects = getObjects(map).flatMap((o): MapObject[] => {
+    if (o.type !== "interactable") return [o];
+    if (isHidden(s, mapId, o)) { changed = true; return []; }
     const state = effectiveState(s, mapId, o);
     const lock = state === "locked" ? effectiveLock(s, mapId, o) : undefined;
     const text = o.kind === "sign" ? effectiveText(s, mapId, o) : undefined;
-    const same = state === o.state && (lock?.dc ?? 0) === (o.lock?.dc ?? 0) && (lock !== undefined) === (o.lock !== undefined) && text === o.text;
-    if (same) return o;
+    const same = state === o.state && (lock?.dc ?? 0) === (o.lock?.dc ?? 0) && (lock !== undefined) === (o.lock !== undefined) && text === o.text
+      && o.hidden === undefined && o.trap === undefined && o.altar === undefined;
+    if (same) return [o];
     changed = true;
-    const { lock: _l, text: _t, ...rest } = o;
-    return { ...rest, state, ...(lock ? { lock } : {}), ...(text !== undefined ? { text } : {}) };
+    return [publicObject(s, mapId, o)];
   });
   if (!changed) return map;
   return { ...map, layers: map.layers.map((l) => (l.type === "objectgroup" ? { ...l, objects } : l)) };
@@ -388,6 +431,7 @@ export function toContainerSummary(c: Container): ContainerSummary {
  */
 export function containerDiff(before: GameState, after: GameState, mapId: string): {
   containers_changed?: ContainerSummary[]; containers_removed?: string[]; interactables_changed?: { map_id: string; id: string; state: InteractableState }[];
+  interactables_revealed?: { map_id: string; object: PublicInteractableObject }[];
 } {
   const was = new Map(containerSummaries(before, mapId).map((c) => [c.id, c]));
   const now = containerSummaries(after, mapId);
@@ -395,8 +439,14 @@ export function containerDiff(before: GameState, after: GameState, mapId: string
   const nowIds = new Set(now.map((c) => c.id));
   const removed = [...was.keys()].filter((id) => !nowIds.has(id));
   const map = after.maps[mapId];
+  const revealed: { map_id: string; object: PublicInteractableObject }[] = [];
   const states = map
     ? interactablesOf(map).flatMap((o) => {
+        if (isHidden(after, mapId, o)) return [];
+        if (before.maps[mapId] && isHidden(before, mapId, o)) {
+          revealed.push({ map_id: mapId, object: publicObject(after, mapId, o) });
+          return [];
+        }
         const s = effectiveState(after, mapId, o);
         const old = before.maps[mapId] ? effectiveState(before, mapId, o) : undefined;
         return s === old ? [] : [{ map_id: mapId, id: o.id, state: s }];
@@ -406,6 +456,7 @@ export function containerDiff(before: GameState, after: GameState, mapId: string
     ...(changed.length > 0 ? { containers_changed: changed } : {}),
     ...(removed.length > 0 ? { containers_removed: removed } : {}),
     ...(states.length > 0 ? { interactables_changed: states } : {}),
+    ...(revealed.length > 0 ? { interactables_revealed: revealed } : {}),
   };
 }
 
@@ -415,7 +466,7 @@ export function containerDiff(before: GameState, after: GameState, mapId: string
  */
 export function containerSummaries(s: GameState, mapId: string): ContainerSummary[] {
   return Object.values(s.containers)
-    .filter((c) => c.map_id === mapId && c.kind !== "pockets" && (c.kind === "chest" || c.items.length > 0))
+    .filter((c) => c.map_id === mapId && c.kind !== "pockets" && (c.kind === "chest" || c.items.length > 0) && !isContainerHidden(s, c))
     .map(toContainerSummary);
 }
 

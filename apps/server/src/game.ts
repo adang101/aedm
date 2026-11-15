@@ -1,15 +1,17 @@
 import {
-  addAbilityToCharacter, addCharacter, addGrowth, addMap, advanceBeat, applyDmActions, basicAttack, campaignNeighbors, campaignOf, clampEnemy, cloneState, combatOutcome, combatRefusal,
+  addAbilityToCharacter, addCharacter, aggroCheck, buildEnemyOffline, followStep, placePartyWithAllies, planAggroEngagement, addGrowth, addMap, campaignNeighbors, campaignOf, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
   classifyIntent, closeContainer, computePartyLevel, containerDiff, containerForObject, containerView, createGameState, createRng, currentMap, describeEvent, digestEvents, getObjects, hasDramaticBeat,
+  altarText, creatureVoice, isContainerHidden, isDmVictoryRole, isHidden, knownTrapTiles, searchedText, spotCheck, tileKey, trapBlockedText, trapEventText, wakeIfWiped, narrateCombatEnd, narrateCombatStart, planEngagement, startCombat, victoryNeedsDm,
   narrateEvents, NARRATION, endCombat, endTurn, enemyRangesForLevel,
   dropItem, enemyTakeTurn, ensureCampaignPlan, entitiesOnMap, giveItem, hasCampaignPlan, locationEnemyRequests, milestoneHint, objectiveView, resolveExit, startLocation, trackObjectives, validateCampaign, labelOf, openContainer, performAct, takeAll, takeItem, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
   pickPlot, placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
   skipAbilityPick, spendScorePoint, STARTER_BRIEFS, toCharacterView,
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
-  type ActResult, type CheckRequest, type ClassifiedIntent, type CreateEnemyAction, type DramaLookup, type EngineEvent, type Entity, type GameState, type IntentContext,
+  type ActResult, type BarkEvent, type CreatureVoice, type CheckRequest, type ClassifiedIntent, type CreateEnemyAction, type DramaLookup, type EngineEvent, type Entity, type GameState, type IntentContext,
 } from "@aedm/engine";
+import { describeInventory, describeScene, effectiveState, exitSide, RULES } from "@aedm/engine";
 import {
-  buildEnemy, clampNarration, createFakeProvider, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
+  buildEnemy, clampNarration, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
   type DmTurnResult,
 } from "@aedm/llm";
 import type { Ability, ActVerb, DmAction, DmResponse, Enemy, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe, StoryBible } from "@aedm/schemas";
@@ -53,7 +55,10 @@ const DM_SKIP_EVENTS = new Set<EngineEvent["type"]>([
   "examined", "container_stocked", "lock_set", "sign_written",
 ]);
 
-/** Engine events that earn a DM reaction at the next turn boundary of a fight. */
+/** Events that get an engine bark in lean mode instead of a DM reaction. */
+const BARK_EVENTS = new Set<EngineEvent["type"]>(["morale_broken", "surrendered", "fled", "bloodied"]);
+
+/** Engine events that earn a DM reaction at the next turn boundary of a fight ("full" mode; lean mode keeps only dramatic beats). */
 const REACTION_EVENTS = new Set<EngineEvent["type"]>(["morale_broken", "surrendered", "fled", "bloodied", "downed"]);
 
 /** A dramatic beat: morale, surrender, a bloodied leader, a hero downed or an allied NPC defeated. Call after the state is committed. */
@@ -64,13 +69,28 @@ function isReactionEvent(state: GameState, e: EngineEvent): boolean {
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 function humanLine(e: EngineEvent): string {
+  // what a search, an altar or a trap says to the table comes from engine data, and never from the event itself: `searched` carries the
+  // roll total and `nothingNew`, which a player must not learn
+  if (e.type === "searched") return searchedText(e);
+  if (e.type === "altar_used" || e.type === "altar_silent") return altarText(e);
+  if (e.type === "spotted" || e.type === "trap_sprung" || e.type === "trap_disarmed" || e.type === "disarm_failed") return trapEventText(e);
   if (e.type === "combat_started") return "Combat begins. Initiative is rolled.";
   if (e.type === "combat_ended") return `Combat ends (${e.reason}).`;
   if (e.type === "surrendered") return `${e.name} surrenders.`;
   return cap(describeEvent(e).replace(/^\[engine: /, "").replace(/\]$/, ""));
 }
 
+/** Events the DM must hear about even when they happen on a step of a walk (which is otherwise published without a DM line). */
+const STEP_NOTABLE = new Set<EngineEvent["type"]>(["trap_sprung", "spotted"]);
+
 const DIRS: Record<"n" | "s" | "e" | "w", [number, number]> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
+
+/** A small stable text hash (FNV-1a), for seeds derived from ids. */
+function hashText(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return h | 0;
+}
 
 export class GameSession {
   state!: GameState;
@@ -100,6 +120,10 @@ export class GameSession {
   private vote: Vote | null = null;
   private voteN = 0;
   private lastNarratedRound = 1;
+  /** Lean mode: bark-worthy events waiting for the combat loop (the creature's facts are captured when the event is published). */
+  private barkQueue: { event: BarkEvent; entityId: string; info: CreatureVoice }[] = [];
+  /** What happened in the current fight, for the engine's closing narration and the "does the DM close this?" decision. */
+  private fight = { fell: 0, fled: 0, surrendered: 0, leaderInvolved: false };
   /** Combat events since the last narration or DM call; the deterministic narrator and the round digest read them. */
   private combatEvents: EngineEvent[] = [];
   /** Index in pendingLines where the current round's lines begin (they may be collapsed into one digest line). */
@@ -275,6 +299,7 @@ export class GameSession {
       this.state = state;
       this.sceneNote = startingNote(bible.digest, startBrief.setting.name);
     }
+    state = spotCheck(state).state; // what the party can already see at the start is known from the first snapshot
     this.state = state;
     this.refreshAbsent();
   }
@@ -328,13 +353,8 @@ export class GameSession {
       await Promise.all([
         ...locationEnemyRequests(ctx.bible, locationId).map(async (r) => {
           const req = { concept: r.concept, role: r.role, setting_notes: notes };
-          let enemy: Enemy;
-          try {
-            enemy = await this.designEnemy(req, ctx.level);
-          } catch (err) {
-            this.deps.logger.warn("[campaign] enemy builder failed, using the offline builder:", err instanceof LlmError ? err.kind : (err as Error)?.name);
-            enemy = await this.designEnemy(req, ctx.level, createFakeProvider());
-          }
+          // a seed of its own (game seed, encounter and group), so background work never reads the live state
+          const enemy = await this.designEnemy(req, ctx.level, Math.imul(ctx.seed | 0, 2654435761) ^ hashText(`${r.encounterId}:${r.group}`));
           (groups[r.encounterId] ??= [])[r.group] = { enemy, count: r.count };
         }),
         ...(ctx.bible.cast ?? []).filter((c) => c.location === locationId).map(async (c) => {
@@ -621,8 +641,17 @@ export class GameSession {
       this.walkEpoch++;
       this.lastNarratedRound = next.combat.round;
       this.reactions = { round: 0, n: 0 };
+      this.barkQueue = [];
+      this.fight = {
+        fell: 0, fled: 0, surrendered: 0,
+        leaderInvolved: next.combat.order.some((o) => {
+          const e = next.entities[o.entity_id];
+          return e?.kind === "enemy" && isDmVictoryRole(next.archetypes[e.refId]?.role);
+        }),
+      };
       this.room.broadcast("combat_state", toWsCombat(next.combat));
     } else if (prev.combat && !next.combat) {
+      this.barkQueue = [];
       this.clearTurnTimer();
       if (this.vote) { this.finishVoteUi(this.vote, 0); this.clearLater(this.vote.timer); this.vote = null; }
     } else if (prev.combat && next.combat && (prev.combat.active_id !== next.combat.active_id || prev.combat.round !== next.combat.round)) {
@@ -676,12 +705,21 @@ export class GameSession {
         const real = events.filter((e) => !DM_SKIP_EVENTS.has(e.type));
         this.combatEvents.push(...real);
         if (this.combatEvents.length > MAX_COMBAT_EVENTS) this.combatEvents.splice(0, this.combatEvents.length - MAX_COMBAT_EVENTS);
-        // reactions: morale, surrender, a bloodied leader, a hero downed, an ally or a boss/elite defeated
-        if (events.some((e) => isReactionEvent(this.state, e)) || hasDramaticBeat(events, this.dramaLookup())) this.reactionDue = true;
+        // reactions: lean mode keeps only dramatic beats (a hero downed, a boss or elite defeated); full mode also reacts to
+        // morale, surrender, flight, a bloodied leader and a defeated ally
+        const lean = this.cfg.combatDm === "lean";
+        if ((!lean && events.some((e) => isReactionEvent(this.state, e))) || hasDramaticBeat(events, this.dramaLookup())) this.reactionDue = true;
+        this.tallyFight(events);
+        if (lean) this.queueBarks(events);
       }
       this.pushPending(lines);
     }
     return lines;
+  }
+
+  /** Events of one step of movement: quiet, unless a trap went off or was spotted (the DM hears of those like any engine event). */
+  private publishStep(events: EngineEvent[]): string[] {
+    return this.publish(events, { toDm: events.some((e) => STEP_NOTABLE.has(e.type)) });
   }
 
   /** Remember engine lines for the DM's next turn (bounded). */
@@ -692,6 +730,69 @@ export class GameSession {
       this.pendingLines.splice(0, over);
       this.roundLineStart = Math.max(0, this.roundLineStart - over);
     }
+  }
+
+  /** An enemy as it stood before the latest commit (a fled or surrendered creature is gone or changed now), with the state that knows its archetype. */
+  private enemyBefore(id: string): { state: GameState; entity: Entity } | undefined {
+    for (const state of [this.lastPrev, this.state]) {
+      const entity = state?.entities[id];
+      if (state && entity?.kind === "enemy") return { state, entity };
+    }
+    return undefined;
+  }
+
+  /** Count who fell, fled or yielded, and whether a boss or elite was among them. */
+  private tallyFight(events: EngineEvent[]): void {
+    for (const e of events) {
+      if (e.type !== "defeated" && e.type !== "fled" && e.type !== "surrendered") continue;
+      const f = this.enemyBefore(e.entityId);
+      if (!f) continue;
+      if (e.type === "defeated") this.fight.fell++;
+      else if (e.type === "fled") this.fight.fled++;
+      else this.fight.surrendered++;
+      if (isDmVictoryRole(f.state.archetypes[f.entity.refId]?.role)) this.fight.leaderInvolved = true;
+    }
+  }
+
+  private queueBarks(events: EngineEvent[]): void {
+    for (const e of events) {
+      if (!BARK_EVENTS.has(e.type)) continue;
+      const event = e as BarkEvent;
+      const entityId = event.entityId;
+      const f = this.enemyBefore(entityId);
+      const info = f && creatureVoice(f.state, f.entity);
+      if (info) this.barkQueue.push({ event, entityId, info });
+    }
+  }
+
+  private flavorRng() {
+    return createRng(Math.imul(this.state.seed | 0, 31) ^ Math.imul(++this.turnN, 2654435761));
+  }
+
+  /**
+   * Lean mode: show the engine's barks. Spoken lines go through the engine's `npc_say` (so a surrendered creature's dossier
+   * remembers them) and reach players as chat; creatures that cannot talk get a narration line. Both land in the DM's recent turns.
+   */
+  private flushBarks(): void {
+    if (this.barkQueue.length === 0) return;
+    for (const q of this.barkQueue.splice(0)) {
+      const bark = barkFor(q.event, q.info, this.flavorRng());
+      if (!bark) continue;
+      if (bark.kind === "emote") {
+        this.room.broadcast("narration_chunk", { turn_id: `n${++this.turnN}`, text: bark.text, done: true });
+        this.recent.push({ speaker: "DM", text: bark.text, kind: "dm" });
+        continue;
+      }
+      const r = applyDmActions(this.state, this.rng(), [{ type: "npc_say", entity_id: q.entityId, text: bark.text }], this.dmContext());
+      if (r.applied.length > 0) {
+        this.commit(r.state);
+        this.publish(r.events);
+      } else {
+        // the creature has already left the scene (fled): the words still reach the table
+        this.publish([{ type: "npc_said", entityId: q.entityId, name: q.info.name, text: bark.text }]);
+      }
+    }
+    this.trimRecent();
   }
 
   private dramaLookup(): DramaLookup {
@@ -771,21 +872,21 @@ export class GameSession {
   }
 
   /**
-   * `act`: the engine resolves it (`performAct`) with no DM call. Only what it cannot describe (an altar, a creature, `talk`)
-   * is recorded as an intent for the DM. In combat the verb goes through `combatAction`, so turns and costs are enforced.
+   * `act`: the engine resolves it (`performAct`) with no DM call, including searching (no target), disarming and altars. Only what it
+   * cannot describe (`talk` and `interact` on a creature, NPC pockets) is recorded as an intent for the DM. In combat the verb goes through `combatAction`, so turns and costs are enforced.
    */
-  handleAct(player: Player, verb: ActVerb, targetId: string, reply: Reply): void {
+  handleAct(player: Player, verb: ActVerb, targetId: string | undefined, reply: Reply): void {
     const ch = this.characterOf(player);
     if (!ch) return reply("error", "forbidden", "You have no character in this game.");
     if (!this.state.entities[ch.id]) return reply("error", "invalid_state", "Your character is not on the map.");
     const run = (id: string): ActResult => performAct(this.state, this.rng(), id, verb, targetId);
     const first = run(ch.id);
     if (first.narrative) {
-      const name = this.nameOfTarget(targetId);
+      const name = targetId === undefined ? undefined : this.nameOfTarget(targetId);
       if (!name) return reply("error", "not_found", "There is nothing like that here.");
       const phrase = verb === "talk" ? `I talk to ${name}` : verb === "examine" ? `I examine ${name}` : verb === "interact" ? `I interact with ${name}` : `I ${verb.replace("_", " ")} ${name}`;
       reply("ok");
-      if (verb === "talk") this.track({ talkedTo: [targetId] });
+      if (verb === "talk" && targetId !== undefined) this.track({ talkedTo: [targetId] });
       this.recordIntent(player, `${phrase} (${targetId}).`);
       return;
     }
@@ -794,7 +895,8 @@ export class GameSession {
     if (!first.ok) return reply("error", "invalid_state", cap(first.error ?? "That did not work."));
     this.commit(first.state);
     this.publish(first.events);
-    this.track(verb === "talk" ? { talkedTo: [targetId] } : {});
+    this.track(verb === "talk" && targetId !== undefined ? { talkedTo: [targetId] } : {});
+    this.recoverIfWiped();
     after(first);
     reply("ok");
   }
@@ -804,10 +906,15 @@ export class GameSession {
     const ent = this.state.entities[targetId];
     if (ent) return ent.name;
     const map = currentMap(this.state);
-    const obj = map ? getObjects(map).find((o) => "id" in o && o.id === targetId) : undefined;
+    const obj = map ? this.visibleObjects(map).find((o) => "id" in o && o.id === targetId) : undefined;
     if (obj && "kind" in obj) return `the ${obj.kind}`;
     const c = this.state.containers[targetId];
-    return c ? `the ${labelOf(c).toLowerCase()}` : undefined;
+    return c && !isContainerHidden(this.state, c) ? `the ${labelOf(c).toLowerCase()}` : undefined;
+  }
+
+  /** The map's objects as the table knows them: a hidden trap or chest is not there until it is found. */
+  private visibleObjects(map: NonNullable<ReturnType<typeof currentMap>>): ReturnType<typeof getObjects> {
+    return getObjects(map).filter((o) => o.type !== "interactable" || !isHidden(this.state, map.id, o));
   }
 
   /** Show one player what is in a container (by container id or the id of the chest object it came from). */
@@ -815,7 +922,7 @@ export class GameSession {
     if (!player || !id) return;
     const mapId = (player.characterId ? this.state.entities[player.characterId]?.mapId : undefined) ?? this.state.currentMapId ?? "";
     const c = this.state.containers[id] ?? containerForObject(this.state, mapId, id);
-    const view = c ? containerView(this.state, c.id) : undefined;
+    const view = c && !isContainerHidden(this.state, c) ? containerView(this.state, c.id) : undefined;
     if (view) this.room.send(player.id, "container_view", view);
   }
 
@@ -854,14 +961,119 @@ export class GameSession {
       : giveItem(this.state, this.rng(), id, p.item_id, p.to_character_id ?? "")));
   }
 
-  /** basic_attack outside combat is just an intent: the DM decides whether a fight starts. */
+  /**
+   * basic_attack outside combat. In lean mode, attacking a living hostile enemy starts the fight in the engine (`engageEnemy`);
+   * anything else is just an intent: the DM decides whether a fight starts.
+   */
   handleAttackIntent(player: Player, targetId: string, reply: Reply): void {
     const ch = this.characterOf(player);
     if (!ch) return reply("error", "forbidden", "You have no character in this game.");
     const name = this.state.entities[targetId]?.name;
     if (!name) return reply("error", "not_found", "That target is gone.");
     reply("ok");
+    if (this.engageEnemy(ch.id, targetId)) return;
     this.recordIntent(player, `I attack ${name} (${targetId}).`);
+  }
+
+  /**
+   * Lean mode: a character attacks a living hostile enemy on their map outside combat. The engine starts the fight (the party,
+   * allies and every hostile enemy there), opens it with `narrateCombatStart`, records what happened for the DM's next call and
+   * runs the normal combat loop, with no model call. Returns false, and changes nothing, in "full" mode, during a fight, or when
+   * the target is not a hostile enemy on the attacker's map (the caller then leaves the attack to the DM).
+   */
+  engageEnemy(characterId: string, targetId: string, opts: { line?: string } = {}): boolean {
+    if (this.cfg.combatDm !== "lean" || this.state.combat) return false;
+    const present = this.presentIds();
+    const plan = planEngagement(this.state, characterId, targetId, { presentCharacterIds: present, partyLevel: computePartyLevel(this.state, present) });
+    if (!plan.ok) return false;
+    const targetName = this.state.entities[targetId]?.name ?? "the enemy";
+    return this.startEngineFight(plan, {
+      starter: plan.starter,
+      line: opts.line ?? `I attack ${targetName}.`,
+      pending: (text) => `[engine: ${plan.starter} attacked ${targetName} and the engine started the fight without the DM${text ? `: ${text}` : ""}]`,
+    });
+  }
+
+  /**
+   * Lean mode, after a party character moved or arrived outside combat: allied NPCs follow, then hostile creatures that see the
+   * party start the fight (`aggroCheck`) without a model call. Returns whether a fight started.
+   */
+  private afterPartyMoved(): boolean {
+    if (this.state.combat || this.closed) return false;
+    this.spotTraps();
+    const f = followStep(this.state, this.rng());
+    if (f.ok && f.events.length > 0) {
+      this.commit(f.state);
+      this.publishStep(f.events);
+    }
+    this.recoverIfWiped();
+    return this.checkAggro();
+  }
+
+  /** Passive spotting after the party moved or arrived. A trap noticed stops every walk in progress, so the player can decide. */
+  private spotTraps(): void {
+    if (this.state.combat) return;
+    const r = spotCheck(this.state);
+    if (r.events.length === 0) return;
+    this.commit(r.state);
+    this.publishStep(r.events);
+    this.walks.clear();
+  }
+
+  /**
+   * Outside combat nothing ends a party that is all down (a trap with no one left to heal them): the engine wakes them at the
+   * data wake HP, as the end of a fight does, and the DM is told.
+   */
+  private recoverIfWiped(): void {
+    if (this.state.combat) return;
+    const r = wakeIfWiped(this.state, this.rng());
+    if (r.events.length === 0) return;
+    this.commit(r.state);
+    this.publish(r.events);
+    this.pushPending([`[engine: every hero was down outside combat, so the engine woke them at ${RULES.downed.wakeHp} HP; there is no game over]`]);
+  }
+
+  private checkAggro(): boolean {
+    if (!this.cfg.aggro || this.cfg.combatDm !== "lean" || this.state.combat) return false;
+    const found = aggroCheck(this.state);
+    if (!found) return false;
+    const plan = planAggroEngagement(this.state, found, { partyLevel: computePartyLevel(this.state, this.presentIds()) });
+    const started = this.startEngineFight(plan, {
+      noticed: true,
+      pending: (text) => `[engine: hostile creatures noticed the party and the engine started the fight without the DM${text ? `: ${text}` : ""}]`,
+    });
+    if (started) this.walks.clear(); // nobody keeps walking into a fight
+    return started;
+  }
+
+  /**
+   * The part of an engine-started fight both `engageEnemy` and aggro share: roll initiative, open with `narrateCombatStart`, put the
+   * line and the opening in the recent turns, leave a pending `[engine: ...]` line for the DM and run the combat loop.
+   */
+  private startEngineFight(
+    plan: { participants: string[]; difficulty: Parameters<typeof startCombat>[3]; foes: string[] },
+    how: { starter?: string; noticed?: true; line?: string; pending: (openingText: string) => string },
+  ): boolean {
+    const r = startCombat(this.state, this.rng(), plan.participants, plan.difficulty);
+    if (!r.ok) return false;
+    this.commit(r.state);
+    this.publish(r.events);
+    const first = r.state.combat ? r.state.entities[r.state.combat.active_id] : undefined;
+    const text = narrateCombatStart({
+      foes: plan.foes,
+      ...(how.noticed ? { noticed: true } : how.starter ? { starter: how.starter } : {}),
+      ...(first ? { first: { name: first.name, side: first.kind === "enemy" ? "enemy" as const : "party" as const } } : {}),
+    }, this.flavorRng());
+    if (how.starter && how.line) this.recent.push({ speaker: how.starter, text: how.line, kind: "player", channel: "ic" });
+    if (text) {
+      this.room.broadcast("narration_chunk", { turn_id: `n${++this.turnN}`, text, done: true });
+      this.recent.push({ speaker: "DM", text, kind: "dm" });
+    }
+    this.trimRecent();
+    this.pushPending([how.pending(text)]);
+    this.roundLineStart = this.pendingLines.length; // the round digest must not swallow the opening
+    this.enqueue(() => this.advanceCombat());
+    return true;
   }
 
   private trimRecent(): void {
@@ -894,9 +1106,17 @@ export class GameSession {
         intents = routed.narrative;
         lines = routed.lines;
         for (const i of routed.mechanical) {
+          if (routed.engaged.has(i)) continue; // engageEnemy recorded this line with the opening
           if (i.text.trim() !== "" && !/^\/ooc\b/i.test(i.text.trim())) this.recent.push({ speaker: i.characterName, text: i.text, kind: "player", channel: "ic" });
         }
         this.trimRecent();
+        if (this.state.combat) {
+          // a fight began while the beat was routed: what is left is handled like intents during combat (no beat DM call)
+          this.pushPending(lines);
+          this.combatIntents.push(...routed.narrative);
+          if (this.combatIntents.length > MAX_PENDING_LINES) this.combatIntents.splice(0, this.combatIntents.length - MAX_PENDING_LINES);
+          return;
+        }
         if (intents.length === 0) {
           // Every intent was mechanical: the engine already resolved them, so no model call. The lines wait for the next DM call.
           this.pushPending(lines);
@@ -915,12 +1135,12 @@ export class GameSession {
 
   private intentContext(actorId: string): IntentContext {
     const map = currentMap(this.state);
-    const objects = map ? getObjects(map) : [];
+    const objects = map ? this.visibleObjects(map) : [];
     const actor = this.state.entities[actorId];
     const dist = (o: { x: number; y: number }): number | undefined => (actor ? Math.max(Math.abs(actor.x - o.x), Math.abs(actor.y - o.y)) : undefined);
     const withDist = <T extends object>(d: number | undefined, v: T): T & { dist?: number } => (d === undefined ? v : { ...v, dist: d });
     const containers = map
-      ? Object.values(this.state.containers).filter((c) => c.map_id === map.id && c.kind !== "pockets" && (c.kind === "chest" || c.items.length > 0)).map((c) => {
+      ? Object.values(this.state.containers).filter((c) => c.map_id === map.id && c.kind !== "pockets" && (c.kind === "chest" || c.items.length > 0) && !isContainerHidden(this.state, c)).map((c) => {
           const open = !c.locked && (c.kind !== "chest" || c.opened === true);
           return withDist(dist(c), {
             id: c.id, kind: c.kind as "chest" | "pile" | "remains", label: labelOf(c),
@@ -932,21 +1152,33 @@ export class GameSession {
     const ch = actor ? this.state.characters[actor.refId] : undefined;
     return {
       actorId,
-      objects: objects.flatMap((o) => (o.type === "interactable" ? [withDist(dist(o), { id: o.id, kind: o.kind })] : [])),
-      exits: objects.flatMap((o) => (o.type === "exit" ? [{ name: o.name }] : [])),
+      objects: objects.flatMap((o) => (o.type === "interactable"
+        ? [withDist(dist(o), { id: o.id, kind: o.kind, ...(o.kind === "trap" ? { state: effectiveState(this.state, map?.id ?? "", o) } : {}) })]
+        : [])),
+      exits: objects.flatMap((o) => {
+        if (o.type !== "exit") return [];
+        const side = map ? exitSide(map, o) : undefined;
+        return [side ? { name: o.name, side } : { name: o.name }];
+      }),
       entities: map ? entitiesOnMap(this.state, map.id).map((e) => ({ id: e.id, name: e.name, kind: e.kind })) : [],
       containers,
-      inventory: ch ? ch.inventory.map((i) => ({ id: i.id, name: i.name })) : [],
+      // only the healing draught can be used by name (see `useItem`); anything else a player says goes to the DM
+      inventory: ch ? ch.inventory.map((i) => ({ id: i.id, name: i.name, usable: i.kind === "consumable" && i.name.toLowerCase() === RULES.draught.name.toLowerCase() })) : [],
     };
   }
 
   /**
    * Resolve the mechanical intents of a beat with engine calls: movement and the typed object commands (open, unlock, pull,
-   * read, examine, take, drop, give). An intent whose engine call fails, or that the engine leaves to the DM, goes to the DM.
+   * read, examine, take, drop, give, use an item), plus look, inventory and wait. A typed attack still goes to the DM (see
+   * `engageFromIntent`). An intent whose engine call fails, or that the engine leaves to the DM, goes to the DM. If a fight
+   * starts while the beat is routed (a typed attack, or a walk that makes creatures notice the party), the intents after it
+   * are left narrative and the caller hands them to the combat loop.
    */
-  private routeIntents(all: Intent[]): { narrative: Intent[]; mechanical: Intent[]; lines: string[] } {
+  private routeIntents(all: Intent[]): { narrative: Intent[]; mechanical: Intent[]; engaged: Set<Intent>; lines: string[] } {
     const narrative: Intent[] = [];
     const mechanical: Intent[] = [];
+    /** Intents whose line `engageEnemy` already put in the recent turns. */
+    const engaged = new Set<Intent>();
     const lines: string[] = [];
     for (const i of all) {
       const verdict = classifyIntent(i.text, this.intentContext(i.characterId));
@@ -963,9 +1195,34 @@ export class GameSession {
         const r = moveEntity(this.state, this.rng(), ent.id, { x: ent.x + dx, y: ent.y + dy });
         if (!r.ok) { narrative.push(i); lines.push(`[engine: ${ent.name} could not step ${verdict.direction}: ${r.error ?? "blocked"} (${quote})]`); continue; }
         this.commit(r.state);
-        this.publish(r.events, { toDm: false });
+        this.publishStep(r.events);
         lines.push(`[engine: ${ent.name} steps from (${from.x},${from.y}) to (${from.x + dx},${from.y + dy}) (${quote})]`);
         mechanical.push(i);
+        this.afterPartyMoved();
+        continue;
+      }
+      if (verdict.action === "look") {
+        // the engine's own description, shown to the table like an examine line; the DM hears only that it happened
+        this.room.broadcast("log", { kind: "narration", text: describeScene(this.state, ent.id).slice(0, 4000) });
+        lines.push(`[engine: ${ent.name} looks around the scene (${quote})]`);
+        mechanical.push(i);
+        continue;
+      }
+      if (verdict.action === "inventory") {
+        // private to the player who asked; the DM needs no line
+        const owner = this.ownerOf(i.characterId);
+        if (owner) this.sysTo(owner.id, describeInventory(this.state, ent.id));
+        mechanical.push(i);
+        continue;
+      }
+      if (verdict.action === "wait") {
+        lines.push(`[engine: ${ent.name} waits (${quote})]`);
+        mechanical.push(i);
+        continue;
+      }
+      if (verdict.action === "attack") {
+        if (this.engageFromIntent(ent.id, verdict.targetId, i.text)) { mechanical.push(i); engaged.add(i); continue; }
+        narrative.push(i); // full mode, or the engine cannot start this fight: the DM decides
         continue;
       }
       if (verdict.action !== "move_to") {
@@ -974,11 +1231,19 @@ export class GameSession {
         if (!r.ok) { narrative.push(i); lines.push(`[engine: ${ent.name} could not do that: ${r.error ?? "it failed"} (${quote})]`); continue; }
         this.commit(r.state);
         lines.push(...this.publish(r.events, { toDm: false }));
+        this.recoverIfWiped();
         this.sendContainerView(this.ownerOf(i.characterId), r.containerId);
         mechanical.push(i);
         continue;
       }
       const dest = this.walkDestination(ent, map, verdict.target);
+      if (dest === "trap") {
+        const owner = this.ownerOf(i.characterId);
+        if (owner) this.sysTo(owner.id, trapBlockedText());
+        lines.push(`[engine: ${ent.name} did not walk toward ${verdict.label}: a known trap blocks the only way (${quote})]`);
+        mechanical.push(i);
+        continue;
+      }
       if (!dest) { narrative.push(i); lines.push(`[engine: ${ent.name} found no clear path to ${verdict.label} (${quote})]`); continue; }
       if (dest.path.length > 0) this.startWalk(ent.id, dest.path.slice(0, 60));
       lines.push(dest.path.length > 0
@@ -987,26 +1252,53 @@ export class GameSession {
       mechanical.push(i);
     }
     if (mechanical.length > 0) this.track();
-    return { narrative, mechanical, lines };
+    return { narrative, mechanical, engaged, lines };
+  }
+
+  /**
+   * Start a fight from a typed attack on a lone, uniquely named enemy (`classifyIntent` verdict `attack`). Returns whether the
+   * engine took it over: in lean mode through `engageEnemy` (which records the player's typed line), otherwise false and the DM decides.
+   */
+  private engageFromIntent(actorId: string, targetId: string, text: string): boolean {
+    const line = text.trim().slice(0, 200);
+    return this.engageEnemy(actorId, targetId, line ? { line } : {});
   }
 
   /** The engine call for a typed command the router recognized. */
-  private typedAction(actorId: string, v: Exclude<ClassifiedIntent, { kind: "narrative" } | { action: "empty" | "ooc" | "move_dir" | "move_to" }>): ActResult {
+  private typedAction(actorId: string, v: Exclude<ClassifiedIntent, { kind: "narrative" } | { action: "empty" | "ooc" | "move_dir" | "move_to" | "look" | "inventory" | "wait" | "attack" }>): ActResult {
     const st = this.state;
     const rng = this.rng();
     const plain = (r: { state: GameState; events: EngineEvent[]; ok: boolean; error?: string }): ActResult => ({ ...r, narrative: false });
     switch (v.action) {
       case "act": return performAct(st, rng, actorId, v.verb, v.targetId);
+      case "search": return performAct(st, rng, actorId, "search");
       case "take": return plain(takeItem(st, rng, actorId, v.containerId, v.itemId));
       case "take_all": return plain(takeAll(st, rng, actorId, v.containerId));
       case "drop": return plain(dropItem(st, rng, actorId, v.itemId));
       case "give": return plain(giveItem(st, rng, actorId, v.itemId, v.toId));
+      case "use_item": return plain(useItem(st, rng, actorId, v.itemId, v.targetId));
     }
   }
 
-  /** Where a walk to an object, exit or entity ends: the tile itself for an exit, else the nearest reachable neighbour. */
-  private walkDestination(ent: Entity, map: NonNullable<ReturnType<typeof currentMap>>, target: { type: "object" | "exit" | "entity"; id: string }): { path: { x: number; y: number }[]; at: { x: number; y: number } } | null {
-    const objs = getObjects(map);
+  /**
+   * A path for the party that keeps off revealed, armed traps: it avoids them whenever any other way exists. When the only way crosses
+   * one the answer is "trap" (the walk is refused). A destination that is itself a trap tile is a deliberate step onto it, so that
+   * tile (and the one the walker stands on) never counts. Null when there is no path at all.
+   */
+  private partyPath(ent: Entity, map: NonNullable<ReturnType<typeof currentMap>>, to: { x: number; y: number }, occ: Set<string>): { x: number; y: number }[] | "trap" | null {
+    const from = { x: ent.x, y: ent.y };
+    const traps = knownTrapTiles(this.state, map.id);
+    traps.delete(tileKey(to.x, to.y));
+    traps.delete(tileKey(from.x, from.y));
+    if (traps.size === 0) return findPath(map, from, to, occ);
+    const safe = findPath(map, from, to, new Set([...occ, ...traps]));
+    if (safe) return safe;
+    return findPath(map, from, to, occ) ? "trap" : null;
+  }
+
+  /** Where a walk to an object, exit or entity ends: the tile itself for an exit, else the nearest reachable neighbour. "trap" when only a known trap is in the way. */
+  private walkDestination(ent: Entity, map: NonNullable<ReturnType<typeof currentMap>>, target: { type: "object" | "exit" | "entity"; id: string }): { path: { x: number; y: number }[]; at: { x: number; y: number } } | "trap" | null {
+    const objs = this.visibleObjects(map);
     let goal: { x: number; y: number } | undefined;
     if (target.type === "entity") goal = this.state.entities[target.id];
     else if (target.type === "exit") goal = objs.find((o) => o.type === "exit" && o.name === target.id);
@@ -1015,17 +1307,21 @@ export class GameSession {
     const g = goal;
     const from = { x: ent.x, y: ent.y };
     const occ = occupiedTiles(this.state, map.id, { exceptId: ent.id });
+    const traps = knownTrapTiles(this.state, map.id);
     const cands = target.type === "exit"
       ? [{ x: g.x, y: g.y }]
       : [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]].map(([dx, dy]) => ({ x: g.x + (dx as number), y: g.y + (dy as number) }));
     if (target.type !== "exit" && cands.some((c) => c.x === from.x && c.y === from.y)) return { path: [], at: from };
     let best: { x: number; y: number }[] | null = null;
+    let blocked = false;
     for (const c of cands) {
       if (!isWalkable(map, c.x, c.y) || occ.has(`${c.x},${c.y}`)) continue;
-      const path = findPath(map, from, c, occ);
+      if (target.type !== "exit" && traps.has(tileKey(c.x, c.y))) continue; // never end a walk beside the target by stepping on a trap
+      const path = this.partyPath(ent, map, c, occ);
+      if (path === "trap") { blocked = true; continue; }
       if (path && path.length > 0 && (!best || path.length < best.length)) best = path;
     }
-    if (!best) return null;
+    if (!best) return blocked ? "trap" : null;
     return { path: best, at: best[best.length - 1] as { x: number; y: number } };
   }
 
@@ -1046,8 +1342,9 @@ export class GameSession {
       const r = moveEntity(this.state, this.rng(), ent.id, { x: ent.x + dx, y: ent.y + dy });
       if (!r.ok) return reply("error", "invalid_state", cap(r.error ?? "You can't go that way."));
       this.commit(r.state);
-      this.publish(r.events, { toDm: false });
+      this.publishStep(r.events);
       reply("ok");
+      this.afterPartyMoved();
       return;
     }
 
@@ -1055,13 +1352,16 @@ export class GameSession {
       const r = moveEntity(this.state, this.rng(), ent.id, payload);
       if (!r.ok) return reply("error", "invalid_state", cap(r.error ?? "You can't reach that tile."));
       this.commit(r.state);
-      this.publish(r.events, { toDm: false });
+      this.publishStep(r.events);
       reply("ok");
+      // a trap can drop the last hero (the fight is lost) or be a dramatic beat: the combat loop decides, as after any other action
+      if (combatOutcome(this.state) !== null || this.reactionDue) this.enqueue(() => this.advanceCombat());
       return;
     }
 
     if (!isWalkable(map, payload.x, payload.y)) return reply("error", "invalid_state", "A wall blocks the way.");
-    const path = findPath(map, { x: ent.x, y: ent.y }, payload, occupiedTiles(this.state, map.id, { exceptId: ent.id }));
+    const path = this.partyPath(ent, map, payload, occupiedTiles(this.state, map.id, { exceptId: ent.id }));
+    if (path === "trap") return reply("error", "invalid_state", trapBlockedText());
     if (!path || path.length === 0) return reply("error", "invalid_state", "You can't reach that tile.");
     reply("ok");
     this.startWalk(ent.id, path.slice(0, 60));
@@ -1073,10 +1373,20 @@ export class GameSession {
     const step = (i: number): void => {
       if (this.walks.get(entityId) !== token || this.state.combat || i >= path.length) return;
       const next = path[i] as { x: number; y: number };
+      // a trap found since the walk began (spotted, searched out) stops it; only the last tile may be a trap, a deliberate step onto it
+      if (i + 1 < path.length && knownTrapTiles(this.state, this.state.entities[entityId]?.mapId ?? "").has(tileKey(next.x, next.y))) {
+        this.walks.delete(entityId);
+        const owner = this.ownerOf(entityId);
+        if (owner) this.sysTo(owner.id, trapBlockedText());
+        return;
+      }
       const r = moveEntity(this.state, this.rng(), entityId, next);
       if (!r.ok) { this.walks.delete(entityId); return; }
       this.commit(r.state);
-      this.publish(r.events, { toDm: false });
+      this.publishStep(r.events);
+      if (r.events.some((e) => e.type === "trap_sprung")) this.walks.delete(entityId); // springing a trap ends the walk
+      if (this.afterPartyMoved()) return; // a fight began: afterPartyMoved already stopped every walk
+      if (this.walks.get(entityId) !== token) return; // stopped by a trap, or by something newly spotted
       if (i + 1 < path.length) this.later(() => step(i + 1), this.cfg.moveStepMs);
       else this.walks.delete(entityId);
     };
@@ -1109,7 +1419,7 @@ export class GameSession {
     this.track();
     opts.onOk?.(r);
     reply("ok");
-    if (opts.endsTurn || combatOutcome(this.state) !== null || this.reactionDue) this.enqueue(() => this.advanceCombat());
+    if (opts.endsTurn || combatOutcome(this.state) !== null || this.reactionDue || this.barkQueue.length > 0) this.enqueue(() => this.advanceCombat());
   }
 
   handleBasicAttack(player: Player, targetId: string, reply: Reply): void {
@@ -1330,6 +1640,7 @@ export class GameSession {
   private async advanceCombat(): Promise<void> {
     for (let guard = 0; guard < 400; guard++) {
       if (this.closed) return;
+      this.flushBarks(); // may commit a spoken line, so read the state after it
       const st = this.state;
       const c = st.combat;
       if (!c) { this.clearTurnTimer(); return; }
@@ -1414,11 +1725,32 @@ export class GameSession {
 
   private async finishCombat(outcome: "victory" | "defeat"): Promise<void> {
     this.clearTurnTimer();
+    // Lean mode: an ordinary victory is closed by the engine. Defeat, a boss or elite, a hero still down, waiting speech
+    // or an unspent dramatic trigger all still get the real DM.
+    const c = this.state.combat;
+    const partyDown = (c?.order ?? [])
+      .map((o) => this.state.entities[o.entity_id])
+      .filter((e): e is Entity => e?.kind === "pc" && (e.hp <= 0 || !!e.out))
+      .map((e) => e.name);
+    const summary = { ...this.fight, partyDown };
+    const engineCloses = this.cfg.combatDm === "lean" && outcome === "victory" && !victoryNeedsDm(summary) && this.combatIntents.length === 0 && !this.reactionDue;
+    if (engineCloses) this.narrateRound(c?.round ?? this.lastNarratedRound);
     const r = endCombat(this.state, this.rng(), outcome);
     if (!r.ok) return;
     this.commit(r.state);
     this.publish(r.events);
     this.track();
+    if (engineCloses) {
+      const text = narrateCombatEnd(summary, this.flavorRng());
+      if (text) {
+        this.room.broadcast("narration_chunk", { turn_id: `n${++this.turnN}`, text, done: true });
+        this.recent.push({ speaker: "DM", text, kind: "dm" });
+        this.trimRecent();
+        this.pushPending([`[engine: the fight ended in victory; the engine narrated the close without the DM: ${text}]`]);
+      }
+      this.autosave();
+      return;
+    }
     await this.dmTurn({ intents: [], engineLines: [], allowFollowup: true, tick: false });
   }
 
@@ -1728,9 +2060,10 @@ export class GameSession {
    * fails; the caller decides what that means. Does not register the archetype.
    */
   private async designEnemy(
-    a: { concept: string; role: Enemy["role"]; setting_notes: string; appearance?: string | undefined; asset_ref?: string | undefined },
+    a: { concept: string; role: Enemy["role"]; setting_notes: string; appearance?: string | undefined; asset_ref?: string | undefined; ref?: string | undefined },
     level: number,
-    provider: typeof this.deps.provider = this.deps.provider,
+    /** Seed for the engine's builder. The default reads the live state; background work passes its own. */
+    seed: number = Math.imul(this.state.seed | 0, 2654435761) ^ Object.keys(this.state.archetypes).length,
   ): Promise<Enemy> {
     const r = enemyRangesForLevel(level, a.role);
     const ranges = {
@@ -1739,15 +2072,26 @@ export class GameSession {
       attackBonus: [r.attack.min, r.attack.max] as [number, number],
       damagePerRound: [r.damageHundredths.min / 100, r.damageHundredths.max / 100] as [number, number],
     };
-    const built = await buildEnemy(provider, { concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ranges }, {
-      finalize: (draft) => {
-        try {
-          const c = clampEnemy(draft, level);
-          return { ok: true as const, enemy: c.enemy, notes: c.notes };
-        } catch (err) {
-          return { ok: false as const, errors: [err instanceof Error ? err.message : "invalid enemy"] };
-        }
-      },
+    let built: { enemy: Enemy } | undefined;
+    if (this.cfg.enemyBuilder === "model") {
+      try {
+        built = await buildEnemy(this.deps.provider, { concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ranges }, {
+          finalize: (draft) => {
+            try {
+              const c = clampEnemy(draft, level);
+              return { ok: true as const, enemy: c.enemy, notes: c.notes };
+            } catch (err) {
+              return { ok: false as const, errors: [err instanceof Error ? err.message : "invalid enemy"] };
+            }
+          },
+        });
+      } catch (err) {
+        this.deps.logger.warn("[dm] enemy builder model failed, building offline:", err instanceof LlmError ? err.kind : (err as Error)?.name);
+      }
+    }
+    // the engine's own builder: the default, and the fallback when the model call fails. The seed comes from the game, never a clock.
+    built ??= buildEnemyOffline({
+      concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ...(a.ref ? { ref: a.ref } : {}), seed,
     });
     const enemy = { ...built.enemy };
     const castLook = this.castLook(a.asset_ref, "enemy");
@@ -1816,7 +2160,7 @@ export class GameSession {
   }
 
   private moveToMap(mapId: string): void {
-    const r = placePartyOnMap(this.state, mapId, "party_start");
+    const r = placePartyWithAllies(this.state, mapId, "party_start", this.presentIds());
     if (!r.value) return;
     this.commit(r.state);
     this.publish(r.events);
@@ -1835,6 +2179,8 @@ export class GameSession {
       this.publish(r.events);
     }
     this.pendingLines.push(`[engine: the party arrives at a new area, ${map?.meta.setting.name ?? "unknown"} (map ${map?.id ?? "?"})]`);
+    this.spotTraps(); // a trap the party can see on arrival is shown before anything walks into it
+    this.checkAggro(); // the party arrived: creatures that see it may start the fight (no follow step, the allies came along)
   }
 
   /** Spawn positions are a placement detail, not a rules number: snap a blocked tile to the nearest free one. */

@@ -9,7 +9,7 @@ const ent = (id: string, x: number, y: number, extra: Partial<EntityView> = {}):
 });
 let n = 0;
 const msg = <T extends ServerMessage["type"]>(type: T, payload: Extract<ServerMessage, { type: T }>["payload"]) =>
-  ({ v: 7, type, id: `s${++n}`, ts: 0, payload }) as unknown as ServerMessage;
+  ({ v: 8, type, id: `s${++n}`, ts: 0, payload }) as unknown as ServerMessage;
 
 const map = (id = "m_x"): GameMap => ({
   v: 2, id, width: 20, height: 20, layers: [{
@@ -68,6 +68,26 @@ describe("containers in the store", () => {
     expect(s.map).toBe(before);
     expect(stateOf(s, "door_a")).toMatchObject({ state: "open" });
     expect(stateOf(s, "chest_a")).toMatchObject({ state: "closed" });
+  });
+
+  it("adds revealed objects to the current map immutably, replaces a known id and ignores other maps", () => {
+    const s = game();
+    const before = s.map!;
+    const trap = { type: "interactable", id: "trap_a", kind: "trap", state: "closed", x: 6, y: 6 } as const;
+    applyServerMessage(s, msg("state_diff", { seq: 2, changed: [], removed: [], interactables_revealed: [
+      { map_id: "m_x", object: trap }, { map_id: "m_other", object: { ...trap, id: "trap_z" } },
+    ] }), 0);
+    expect(s.map).not.toBe(before);
+    expect(stateOf(s, "trap_a")).toMatchObject({ kind: "trap", state: "closed", x: 6, y: 6 });
+    expect(stateOf(s, "trap_z")).toBeUndefined();
+    expect(stateOf(s, "door_a")).toBeDefined();
+    expect(JSON.stringify(before)).not.toContain("trap_a"); // the old map object is untouched
+    const once = s.map;
+    applyServerMessage(s, msg("state_diff", { seq: 3, changed: [], removed: [], interactables_revealed: [{ map_id: "m_x", object: { ...trap, state: "open" } }] }), 0);
+    expect(stateOf(s, "trap_a")).toMatchObject({ state: "open" });
+    expect(s.map).not.toBe(once);
+    const found = s.map!.layers.flatMap((l) => (l.type === "objectgroup" ? l.objects : [])).filter((o) => "id" in o && o.id === "trap_a");
+    expect(found).toHaveLength(1);
   });
 
   it("stores a container_view and drops it on a new map or when leaving", () => {

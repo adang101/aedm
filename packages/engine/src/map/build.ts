@@ -11,6 +11,7 @@ import { resolveSetting } from "./settings";
 import type { ResolvedSetting } from "./settings";
 import { signText } from "./signs";
 import { INTERACT } from "../data.ts";
+import { hideChests, placeTraps } from "./place-traps";
 
 export interface BuildOptions {
   id: string;
@@ -19,6 +20,8 @@ export interface BuildOptions {
   tier?: number;
   /** Make the generator's door tiles real door objects (open, closed or locked). Default `interact.doors.generated.enabled`. */
   doorObjects?: boolean;
+  /** Add trap objects (and hide chests per `chest.hiddenPct`). Default `interact.traps.generated.enabled`. */
+  trapObjects?: boolean;
 }
 
 type InteractableObj = Extract<MapObject, { type: "interactable" }>;
@@ -133,13 +136,13 @@ function addDoors(grid: Grid): void {
 
 const INTERACTABLES = ["chest", "door", "lever", "sign", "altar"] as const;
 
-export function interactableKind(kind: string): InteractableKind | null {
+export function interactableKind(kind: string): Exclude<InteractableKind, "trap"> | null {
   const k = kind.toLowerCase();
   for (const name of INTERACTABLES) if (k.includes(name)) return name;
   return null;
 }
 
-const INTERACTABLE_PROP: Record<Exclude<InteractableKind, "door">, string> = {
+const INTERACTABLE_PROP: Record<Exclude<InteractableKind, "door" | "trap">, string> = {
   chest: "treasure_chest", lever: "wall_lever", sign: "signpost", altar: "stone_altar",
 };
 
@@ -296,6 +299,11 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
     objects, (opts.doorObjects ?? INTERACT.doors.generated.enabled) ? doorTiles : [], new Map(brief.rooms.map((r) => [r.id, r.type])),
     brief.setting.name, seed, opts.tier ?? INTERACT.locks.defaultTier, signRooms,
   );
+
+  if (opts.trapObjects ?? INTERACT.traps.generated.enabled) {
+    placeTraps(grid, objects, start, setting.density.hazards, new Set(decor.keys()), seed, opts.tier ?? INTERACT.locks.defaultTier);
+    hideChests(objects, seed);
+  }
 
   const a = assemble({ grid, setting, seed, decor });
   return {
