@@ -1,6 +1,6 @@
-import { clampEnemy, encounterBudget, lootCap, RULES } from "@aedm/engine";
-import { PLOT_BIBLE, chorister } from "@aedm/engine/testkit";
-import { buildDmSystem } from "@aedm/llm";
+import { clampEnemy, encounterBudget, isMachineTrigger, lootCap, RULES, triggerOf } from "@aedm/engine";
+import { CAMPAIGN_BIBLE, PLOT_BIBLE, chorister } from "@aedm/engine/testkit";
+import { buildDmSystem, MAX_NARRATION_WORDS } from "@aedm/llm";
 import { CHECK_TAGS, type StoryBible } from "@aedm/schemas";
 import {
   accepted, depictsSpeaking, expect, hasAction, inFiction, narrationWords, noSourceLeak, noTextLeak, ofType, proposed, verdict, visibleText, voicesNpc,
@@ -138,7 +138,7 @@ const E14: DmScenario = dm("E14", "Format", "An 800-word player message", HARD,
   { intents: [say(BRINDLE, Array.from({ length: 80 }, () => "I carefully examine every stone of the old wall and describe it at great length.").join(" "))] },
   (o) => verdict([
     expect(!o.salvaged, "the reply was not valid JSON for the schema"),
-    expect(narrationWords(o.response.narration) <= 150, `narration is ${narrationWords(o.response.narration)} words`),
+    expect(narrationWords(o.response.narration) <= MAX_NARRATION_WORDS, `narration is ${narrationWords(o.response.narration)} words (hard cap ${MAX_NARRATION_WORDS})`),
   ]));
 
 const SPANISH = /\b(el|la|los|las|de|del|que|y|en|un|una|con|por|se|es|al|su|sus|hacia)\b/gi;
@@ -294,7 +294,8 @@ const E26: DmScenario = dm("E26", "Continuity", "Stage order: the first stage is
 // ---------- combat: the DM stays present during a fight ----------
 
 const COMBAT_SAFE: readonly string[] = RULES.npc.combatSafeActions;
-const COMBAT_NARRATION_MAX_WORDS = 60;
+/** The prompt asks for 20 to 45 words in a fight; a little slack on top. */
+const COMBAT_NARRATION_MAX_WORDS = 55;
 const DAMAGE_CLAIM = /\b(takes?|taking|suffers?|loses?|deals?|dealt|inflicts?) \d+\b|\b\d+ (points? of )?damage\b/i;
 
 const cultist: FoeSpec = { enemy: { ...chorister, name: "Cultist" }, at: [12, 6], count: 2 };
@@ -369,6 +370,97 @@ const E30: DmScenario = dm("E30", "Combat", "Truce: broken enemies are let go", 
     ...combatManners(o),
   ]));
 
+// ---------- the campaign plan: brevity, direction, and who completes milestones ----------
+
+/** The prompt asks for 25 to 70 words on an ordinary beat; ten words of slack. */
+const ORDINARY_NARRATION_MAX_WORDS = 80;
+
+const PLAN_MAP = "m_lighthouse";
+
+/**
+ * A campaign with a plan: the engine's test plan (five places, Old Tam at the square, a lens on the dock), the test map standing
+ * in for plan location `at`, the NPCs named in `cast` bound to their plan ids, and the milestones in `done` already completed.
+ */
+function onPlan(at: string, opts: { done?: string[]; cast?: Record<string, string> } = {}): Pick<SetupOptions, "bible" | "tweak"> {
+  const bible = structuredClone(CAMPAIGN_BIBLE);
+  for (const m of bible.milestones) if (opts.done?.includes(m.id)) m.completed = true;
+  return {
+    bible,
+    tweak: (s) => {
+      const cast = Object.fromEntries(Object.entries(opts.cast ?? {}).map(([planId, name]) => [planId, Object.values(s.npcs).find((n) => n.name === name)!.id]));
+      s.campaign = { locations: { [at]: PLAN_MAP }, cast, encounters: {}, items: {}, visited: [at], talked: [] };
+    },
+  };
+}
+
+const OLD_TAM = { name: "Old Tam", concept: "A ferryman who saw Edda leave.", role: "quest_giver" as const, x: 12, y: 6, voice: "gruff, nautical" };
+
+const E31: DmScenario = dm("E31", "Brevity", "An ordinary beat gets a short reply: no more than 80 words, and not empty", SOFT,
+  { intents: [say(TAMSIN, "I ask the innkeeper what the village has been like since the keeper vanished.")], npcs: [{ ...OLD_TAM, name: "Hesk", concept: "The innkeeper.", role: "bystander" }] },
+  (o) => {
+    const n = narrationWords(o.response.narration);
+    return verdict([
+      inFiction(o.response),
+      expect(n <= ORDINARY_NARRATION_MAX_WORDS, `narration is ${n} words (ordinary beats aim for 25 to 70, at most ${ORDINARY_NARRATION_MAX_WORDS})`),
+      expect(n >= 8, `narration is only ${n} words`),
+    ], [`${n} words`]);
+  });
+
+const E32: DmScenario = dm("E32", "Direction", "Tam has told the party all he knows; asked what now, the DM points toward the dock without reading out the objective", SOFT,
+  {
+    ...onPlan("l_square", { done: ["m1"], cast: { c_tam: "Old Tam" } }),
+    setting: "Hollowmere Square",
+    npcs: [OLD_TAM],
+    intents: [say(ORRIN, "Okay, Tam has told us everything he knows. Where do we go from here?")],
+    recentTurns: [{ speaker: "DM", kind: "dm", text: "Old Tam finishes his story and stares at the fog. Edda left on the last ferry, he says, and she did not look back." }],
+  },
+  (o) => {
+    const text = visibleText(o.response);
+    const hint = "Find the Lantern Lens at The Rotting Dock";
+    const n = narrationWords(o.response.narration);
+    return verdict([
+      inFiction(o.response),
+      expect(/dock|pier|ferry|lens|jetty|quay/i.test(text), "nothing in the reply points toward the dock or the lens"),
+      noSourceLeak(text, hint, 6),
+      expect(n <= ORDINARY_NARRATION_MAX_WORDS, `narration is ${n} words (at most ${ORDINARY_NARRATION_MAX_WORDS})`),
+      expect(!hasAction(o.proposed, "generate_map"), "proposed a new map when the plan has a dock"),
+    ], [`${n} words`]);
+  });
+
+const E33: DmScenario = dm("E33", "Milestones", "The party talks to Tam, which the engine tracks: the DM does not complete a machine-checkable milestone", SOFT,
+  {
+    ...onPlan("l_square", { cast: { c_tam: "Old Tam" } }),
+    setting: "Hollowmere Square",
+    npcs: [OLD_TAM],
+    intents: [say(BRINDLE, "I walk up to Old Tam, tell him we mean to find Edda, and ask him to tell us everything he saw.")],
+  },
+  (o) => {
+    const machine = new Set(o.before.bible.milestones.filter((m) => isMachineTrigger(triggerOf(m))).map((m) => m.id));
+    const wrong = proposed(o, "complete_milestone").filter((a) => machine.has(a.milestone_id));
+    return verdict([
+      inFiction(o.response),
+      expect(wrong.length === 0, `proposed complete_milestone for a milestone the engine tracks: ${wrong.map((a) => a.milestone_id).join(", ")}`),
+    ]);
+  });
+
+const E34: DmScenario = dm("E34", "Plan use", "The planned NPC is here and the question is his to answer: the DM voices him instead of inventing a person or a map", SOFT,
+  {
+    ...onPlan("l_square", { cast: { c_tam: "Old Tam" } }),
+    setting: "Hollowmere Square",
+    npcs: [OLD_TAM],
+    intents: [say(TAMSIN, "Is there anyone here who saw the lighthouse keeper leave? We need to know which way she went.")],
+  },
+  (o) => {
+    const tam = Object.values(o.before.npcs).find((n) => n.name === "Old Tam")!.id;
+    return verdict([
+      inFiction(o.response),
+      expect(proposed(o, "npc_say").some((a) => a.entity_id === tam) || depictsSpeaking(visibleText(o.response), "Tam"), "Old Tam, who saw her leave, does not answer"),
+      expect(!hasAction(o.proposed, "create_npc"), "invented a new NPC although the plan's NPC is standing there"),
+      expect(!hasAction(o.proposed, "generate_map"), "proposed a new map"),
+    ]);
+  });
+
 export const DM_SCENARIOS: DmScenario[] = [
   E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E11, E12, E13, E14, E15, E16, E17, E18, E19, E20, E21, E22, E23, E24, E25, E26, E27, E28, E29, E30,
+  E31, E32, E33, E34,
 ];

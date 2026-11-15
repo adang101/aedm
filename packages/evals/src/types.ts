@@ -1,6 +1,6 @@
 import type { GameState } from "@aedm/engine";
-import type { DmContextPack } from "@aedm/llm";
-import type { DmAction, DmResponse } from "@aedm/schemas";
+import type { BibleInput, DmContextPack } from "@aedm/llm";
+import type { DmAction, DmResponse, StoryBible } from "@aedm/schemas";
 import type { ForgeContext, ForgeOutcome } from "@aedm/server/src/forge";
 
 /** What a scenario's `check` returns. `reasons` explain a failure; `notes` are context worth reporting on a pass too. */
@@ -55,4 +55,18 @@ export interface ForgeScenario extends ScenarioBase {
   check(outcome: ForgeOutcome): CheckResult;
 }
 
-export type Scenario = DmScenario | ForgeScenario;
+/** What the story bible call's first reply came to: the parsed bible, or why it did not parse. */
+export interface BibleOutcome {
+  bible?: StoryBible;
+  /** Parse errors, when the reply was not a schema-valid bible. */
+  errors?: string;
+}
+
+/** One story bible call, judged on its first reply (the repair call is not made, so the bar measures the prompt, not the safety net). */
+export interface BibleScenario extends ScenarioBase {
+  kind: "bible";
+  input: BibleInput;
+  check(outcome: BibleOutcome): CheckResult;
+}
+
+export type Scenario = DmScenario | ForgeScenario | BibleScenario;
