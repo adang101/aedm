@@ -1,6 +1,6 @@
 import { DmResponseSchema } from "@aedm/schemas";
 import { describe, expect, it } from "vitest";
-import { runDmTurn } from "./dm";
+import { MAX_NARRATION_WORDS, runDmTurn } from "./dm";
 import { LlmError } from "./errors";
 import { MAX_OUTPUT_TOKENS } from "./provider";
 import { createFakeProvider } from "./providers/fake";
@@ -84,7 +84,7 @@ describe("runDmTurn", () => {
     expect(r.response.actions.map((a) => a.type)).toEqual(["request_check"]);
     expect(r.droppedActions).toHaveLength(3);
     expect(r.droppedActions[0]!.error).toBeTruthy();
-    expect(r.response.narration.split(/\s+/).length).toBeLessThanOrEqual(150);
+    expect(r.response.narration.split(/\s+/).length).toBeLessThanOrEqual(MAX_NARRATION_WORDS);
     expect(r.response.importance).toBe(2);
   });
 

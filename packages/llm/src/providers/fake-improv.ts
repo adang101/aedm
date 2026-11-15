@@ -25,14 +25,16 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const tag = (s: string, name: string): string => new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`).exec(s)?.[1]?.trim() ?? "";
 
-/** Fit narration into 40 to 150 words without padding when already inside; pads only from the given filler. */
+/** Fit narration into 25 to 70 words (the DM prompt's range) without padding when already inside; pads only from the given filler. */
 function fitNarration(sentences: string[], filler: string[], h: number): string {
   const out = [...sentences];
   let i = 0;
-  while (words(out.join(" ")).length < 48 && i < filler.length) out.push(pick(filler, h, i++));
+  while (words(out.join(" ")).length < 28 && i < filler.length) out.push(pick(filler, h, i++));
+  // too long: drop the scene description, then the earliest reactions, but keep the opener and the last sentence (the engine's)
+  while (words(out.join(" ")).length > 70 && out.length > 2) out.splice(1, 1);
   let text = out.join(" ");
   const w = words(text);
-  if (w.length > 140) text = w.slice(0, 140).join(" ").replace(/[,;:]?\s*\S*$/, ".");
+  if (w.length > 70) text = w.slice(0, 70).join(" ").replace(/[,;:]?\s*\S*$/, ".");
   return text.replace(/[<>]/g, "");
 }
 

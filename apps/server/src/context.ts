@@ -1,8 +1,9 @@
-import type { CombatContext, DmContextPack, NpcDossierEntry, SceneContainer, SceneEntity, SceneObject } from "@aedm/llm";
-import type { NpcRecord } from "@aedm/schemas";
+import type { CombatContext, DmContextPack, NpcDossierEntry, ObjectiveContext, SceneContainer, SceneEntity, SceneObject } from "@aedm/llm";
+import type { MilestoneTrigger, NpcRecord } from "@aedm/schemas";
 import {
-  MATERIAL_IDS, RULES, computePartyLevel, currentAct, currentMap, effectiveLock, effectiveState, entitiesOnMap, getObjects, lootCap, pacingBlock,
-  sideOf as combatSide, type GameState,
+  MATERIAL_IDS, RULES, campaignOf, computePartyLevel, currentAct, currentMap, currentStage, effectiveLock, effectiveState, entitiesOnMap, getObjects,
+  hasCampaignPlan, isMachineTrigger, locationExits, lootCap, milestoneHint, pacingBlock, sideOf as combatSide, triggerBlocked, triggerOf, triggerSatisfied,
+  type GameState,
 } from "@aedm/engine";
 
 export interface RecentTurn {
@@ -89,6 +90,54 @@ function combatBlock(state: GameState): CombatContext | undefined {
   };
 }
 
+/**
+ * The campaign plan for this beat: the open milestones of the current stage (and whether the engine or the DM completes
+ * each), the ending, and the plan's facts for the place the party is in now. Only the current stage and place, never the
+ * whole plan. Undefined when the bible has no plot or no plan (older saves), so those keep the plain milestone list.
+ */
+export function objectiveContext(state: GameState): ObjectiveContext | undefined {
+  const bible = state.bible;
+  const cur = currentStage(bible);
+  if (!cur || !hasCampaignPlan(bible) || !bible.ending) return undefined;
+  const bound = campaignOf(state);
+  const place = (id: string | undefined) => bible.locations?.find((l) => l.id === id)?.name;
+  const targetOf = (t: MilestoneTrigger): string | undefined => {
+    switch (t.type) {
+      case "reach_location": return place(t.location);
+      case "talk_to": { const c = bible.cast?.find((x) => x.id === t.cast); return c ? `${c.name} at ${place(c.location)}` : undefined; }
+      case "obtain_item": { const k = bible.key_items?.find((x) => x.id === t.item); return k ? `${k.name} at ${place(k.location)}` : undefined; }
+      case "defeat_encounter": { const e = bible.encounters?.find((x) => x.id === t.encounter); return e ? `${e.name} at ${place(e.location)}` : undefined; }
+      case "story": return undefined;
+    }
+  };
+  const open = bible.milestones.filter((m) => m.stage === cur.stage.id && !m.completed).map((m) => {
+    const t = triggerOf(m);
+    const target = targetOf(t);
+    return {
+      id: m.id, hint: milestoneHint(bible, m), who: isMachineTrigger(t) && triggerBlocked(state, t) === undefined ? ("engine" as const) : ("dm" as const),
+      ...(target ? { target } : {}),
+    };
+  });
+
+  const locId = Object.keys(bound.locations).find((id) => bound.locations[id] === state.currentMapId);
+  const loc = locId ? bible.locations?.find((l) => l.id === locId) : undefined;
+  const here: ObjectiveContext["here"] = loc && {
+    name: loc.name,
+    summary: loc.summary,
+    cast: (bible.cast ?? []).filter((c) => c.location === loc.id && state.npcs[bound.cast[c.id] ?? ""]?.alive !== false).map((c) => ({ name: c.name, role: c.role })),
+    fights: (bible.encounters ?? []).filter((e) => e.location === loc.id).map((e) => ({ name: e.name, done: triggerSatisfied(state, { type: "defeat_encounter", encounter: e.id }) })),
+    items: (bible.key_items ?? []).filter((k) => k.location === loc.id && !triggerSatisfied(state, { type: "obtain_item", item: k.id })).map((k) => {
+      const holder = k.held_by && (k.held_by.kind === "cast" ? bible.cast?.find((c) => c.id === k.held_by!.id)?.name : bible.encounters?.find((e) => e.id === k.held_by!.id)?.name);
+      return { name: k.name, ...(holder ? { heldBy: holder } : {}) };
+    }),
+    exits: locationExits(bible, loc.id).map((x) => ({ label: x.label, to: place(x.to) ?? x.to, been: bound.visited.includes(x.to) })),
+  };
+  return {
+    open, ending: { goal: bible.ending.goal, success: bible.ending.success }, finished: cur.finished,
+    ...(here ? { here } : {}),
+  };
+}
+
 /** Pure: game state plus this beat's inputs become the DM's context pack. */
 export function buildContextPack(input: ContextInput): DmContextPack {
   const { state } = input;
@@ -171,6 +220,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
   }
 
   const pacing = pacingBlock(state.bible) ?? undefined;
+  const objective = objectiveContext(state);
   const limit = input.recentLimit ?? 12;
   const recent = (input.recentTurns ?? []).filter((t) => t.channel !== "ooc").slice(-limit);
 
@@ -200,6 +250,7 @@ export function buildContextPack(input: ContextInput): DmContextPack {
     quests: state.bible.quests.map((q) => ({ id: q.id, title: q.title, status: q.status, notes: [...q.notes] })),
     milestones: state.bible.milestones.map((m) => ({ id: m.id, description: m.description, completed: m.completed, ...(m.stage ? { stage: m.stage } : {}) })),
     pacing,
+    ...(objective ? { objective } : {}),
     recentTurns: recent.map((t) => ({ speaker: t.speaker, text: t.text, kind: t.kind, channel: t.channel ?? "ic" })),
     engineLines: [...(input.engineLines ?? [])],
     intents: input.intents.map((i) => ({ ...i })),

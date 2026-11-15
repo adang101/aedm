@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { bibleSystem } from "./bible";
 import { buildDmContext } from "./context";
 import { buildEnemyPrompt } from "./enemy";
 import { buildForgePrompt } from "./forge";
@@ -34,7 +35,7 @@ for (const [name, pack] of Object.entries(CONTEXT_PACKS)) {
 measured["system.dm"] = estimateTokens(buildDmContext(CONTEXT_PACKS.opening).system);
 measured["system.forge"] = estimateTokens(forge.system);
 measured["system.enemy"] = estimateTokens(enemy.system);
-measured["system.bible"] = estimateTokens(loadPrompt("story-bible"));
+measured["system.bible"] = estimateTokens(bibleSystem());
 measured["system.summary"] = estimateTokens(loadPrompt("summary"));
 measured["system.sprite"] = estimateTokens(sprite.system);
 measured["system.repair"] = estimateTokens(renderPrompt("repair", { errors: "- field: expected string, received number" }));

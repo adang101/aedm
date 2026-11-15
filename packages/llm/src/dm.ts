@@ -30,7 +30,8 @@ export interface DmTurnResult {
   calls: number;
 }
 
-export const MAX_NARRATION_WORDS = 150;
+/** Hard ceiling on narration. The prompt asks for 25 to 70 words (110 when high_stakes); this only trims a reply that ignores that. */
+export const MAX_NARRATION_WORDS = 120;
 
 export function clampNarration(text: string, maxWords = MAX_NARRATION_WORDS): string {
   const clean = text.replace(/<\/?[a-zA-Z][^>]*>/g, "").trim();
@@ -38,7 +39,7 @@ export function clampNarration(text: string, maxWords = MAX_NARRATION_WORDS): st
   if (words.length <= maxWords) return clean;
   const cut = words.slice(0, maxWords).join(" ");
   const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "), cut.lastIndexOf('." '));
-  if (end > 0 && cut.slice(0, end + 1).split(/\s+/).length >= 40) return cut.slice(0, end + 1);
+  if (end > 0 && cut.slice(0, end + 1).split(/\s+/).length >= 25) return cut.slice(0, end + 1);
   return cut;
 }
 
@@ -83,7 +84,7 @@ export async function runDmTurn(provider: ModelProvider, pack: DmContextPack, op
 
 /**
  * Last resort: keep whatever is individually valid. Tries the latest reply first, then earlier ones.
- * Narration is trimmed to 150 words (never padded); invalid actions are dropped and reported.
+ * Narration is trimmed to MAX_NARRATION_WORDS (never padded); invalid actions are dropped and reported.
  */
 export function salvageDmResponse(
   texts: string[],
