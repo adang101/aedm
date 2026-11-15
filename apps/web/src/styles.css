@@ -399,6 +399,9 @@ input[type="password"]:focus-visible { outline: 2px solid var(--accent); outline
 .mapcard { margin: 0 0 20px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
 .mapcard-head { margin-bottom: 6px; font-size: 13px; }
 .mapcard-row { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.pairstrip { display: flex; flex-wrap: wrap; gap: 12px; }
+.pair { margin: 0; max-width: 480px; }
+.pair canvas { display: block; max-width: 100%; image-rendering: pixelated; border-radius: 6px; }
 .gallery-page .map-thumb { background: #1b1626; max-width: 100%; }
 .gallery-page .map-crop { background: #1b1626; width: 672px; max-width: 100%; height: auto; }
 
