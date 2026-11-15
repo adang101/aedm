@@ -54,6 +54,15 @@ describe("fake improv DM", () => {
     expect(types).not.toContain("grant_item");
   });
 
+  it("keeps its narration inside the DM prompt's ordinary range (about 25 to 70 words)", async () => {
+    for (const text of INPUTS) {
+      const r = await runDmTurn(createFakeProvider(), makeLanternPack([{ characterId: "ch_brindle", characterName: "Brindle Ash", text }]));
+      const n = r.response.narration.split(/\s+/).filter(Boolean).length;
+      expect(n, text.slice(0, 40)).toBeGreaterThanOrEqual(20);
+      expect(n, text.slice(0, 40)).toBeLessThanOrEqual(70);
+    }
+  });
+
   it("is deterministic", async () => {
     const pack = makeLanternPack([{ characterId: "ch_orrin", characterName: "Orrin Vale", text: "I search the desk." }]);
     const a = await runDmTurn(createFakeProvider(), pack);

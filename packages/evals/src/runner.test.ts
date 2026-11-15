@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFakeProvider } from "@aedm/llm";
 import { parseCli, selectScenarios } from "./cli";
 import { DM_SCENARIOS } from "./dm-scenarios";
+import { BIBLE_SCENARIOS } from "./bible-scenarios";
 import { FORGE_SCENARIOS } from "./forge-scenarios";
 import { failedScenarios, formatRow, formatSummary, runScenarios } from "./runner";
 
@@ -36,6 +37,19 @@ describe("runner (fake provider, no network)", () => {
     expect(results[0]?.failures[0]?.reasons[0]).toMatch(/threw: boom/);
   });
 
+  it("runs a bible scenario on the first reply only, with no repair call", async () => {
+    const provider = createFakeProvider();
+    const results = await runScenarios(BIBLE_SCENARIOS.filter((s) => s.id === "B01"), { provider, runs: 1, delayMs: 0 });
+    expect(results[0]?.failures).toEqual([]);
+    expect(results[0]?.passes).toBe(1);
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]!.purpose).toBe("bible");
+    const bad = createFakeProvider(["not json"]);
+    const failed = await runScenarios(BIBLE_SCENARIOS.filter((s) => s.id === "B01"), { provider: bad, runs: 1, delayMs: 0 });
+    expect(failed[0]?.passes).toBe(0);
+    expect(bad.requests).toHaveLength(1);
+  });
+
   it("runs a forge scenario through the server's forge", async () => {
     const results = await runScenarios(FORGE_SCENARIOS.filter((s) => s.id === "F04"), { provider: createFakeProvider(), runs: 1, delayMs: 0 });
     expect(results[0]?.failures[0]?.reasons.join(" ") ?? "").not.toMatch(/threw/);
@@ -54,6 +68,8 @@ describe("command line", () => {
   it("selects by suite and id", () => {
     expect(selectScenarios({ only: [], suite: "dm" })).toHaveLength(DM_SCENARIOS.length);
     expect(selectScenarios({ only: [], suite: "forge" })).toHaveLength(FORGE_SCENARIOS.length);
+    expect(selectScenarios({ only: [], suite: "bible" }).map((s) => s.id)).toEqual(["B01", "B02"]);
+    expect(selectScenarios({ only: [], suite: "all" })).toHaveLength(DM_SCENARIOS.length + FORGE_SCENARIOS.length + BIBLE_SCENARIOS.length);
     expect(selectScenarios({ only: ["E06", "F16"], suite: "all" }).map((s) => s.id)).toEqual(["E06", "F16"]);
     expect(() => selectScenarios({ only: ["E06"], suite: "forge" })).toThrow(/No scenario E06/);
   });

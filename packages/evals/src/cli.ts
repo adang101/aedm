@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { createProviderFromEnv } from "@aedm/llm";
+import { BIBLE_SCENARIOS } from "./bible-scenarios";
 import { DM_SCENARIOS } from "./dm-scenarios";
 import { FORGE_SCENARIOS } from "./forge-scenarios";
 import { DEFAULT_RUNS, failedScenarios, formatRow, formatSummary, runScenarios, type ScenarioResult } from "./runner";
@@ -11,7 +12,7 @@ import type { Scenario } from "./types";
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = resolve(PACKAGE_ROOT, "../..");
 
-export const SUITES = ["dm", "forge", "all"] as const;
+export const SUITES = ["dm", "forge", "bible", "all"] as const;
 type Suite = (typeof SUITES)[number];
 
 export interface CliOptions {
@@ -22,7 +23,7 @@ export interface CliOptions {
   allowFake: boolean;
 }
 
-/** Parses `--only E06,E21 --runs 3 --suite dm|forge|all --delay-ms 500 --allow-fake`. Throws a plain-language Error on bad input. */
+/** Parses `--only E06,E21 --runs 3 --suite dm|forge|bible|all --delay-ms 500 --allow-fake`. Throws a plain-language Error on bad input. */
 export function parseCli(argv: readonly string[]): CliOptions {
   // `pnpm eval -- --only X` may hand us the separator itself
   const args = argv[0] === "--" ? argv.slice(1) : [...argv];
@@ -47,7 +48,11 @@ export function parseCli(argv: readonly string[]): CliOptions {
 
 /** The scenarios of the suite, narrowed to `only` ids when given. Unknown ids are an error. */
 export function selectScenarios(opts: Pick<CliOptions, "only" | "suite">): Scenario[] {
-  const pool: Scenario[] = [...(opts.suite === "forge" ? [] : DM_SCENARIOS), ...(opts.suite === "dm" ? [] : FORGE_SCENARIOS)];
+  const pool: Scenario[] = [
+    ...(opts.suite === "dm" || opts.suite === "all" ? DM_SCENARIOS : []),
+    ...(opts.suite === "forge" || opts.suite === "all" ? FORGE_SCENARIOS : []),
+    ...(opts.suite === "bible" || opts.suite === "all" ? BIBLE_SCENARIOS : []),
+  ];
   if (opts.only.length === 0) return pool;
   const unknown = opts.only.filter((id) => !pool.some((s) => s.id === id));
   if (unknown.length) throw new Error(`No scenario ${unknown.join(", ")} in suite "${opts.suite}". Known: ${pool.map((s) => s.id).join(", ")}.`);
