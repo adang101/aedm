@@ -186,9 +186,9 @@ describe("cast in the game", () => {
       { type: "spawn_entity", archetype_id: "en_hag", map_id: map.id, x: spot2.x, y: spot2.y, count: 1 },
     ]));
     beat(t);
-    await until(() => Object.values(stateOf(h!).entities).some((e) => e.kind === "npc") && Object.values(stateOf(h!).entities).some((e) => e.kind === "enemy"));
+    await until(() => Object.values(stateOf(h!).entities).some((e) => e.name === "Old Wren") && Object.values(stateOf(h!).entities).some((e) => e.kind === "enemy"));
     const s2 = stateOf(h);
-    const npc = Object.values(s2.entities).find((e) => e.kind === "npc")!;
+    const npc = Object.values(s2.entities).find((e) => e.name === "Old Wren")!;
     expect(npc.sprite).toEqual(npcRecipe);
     expect(npc.hpMax).toBe(1);
     const arch = s2.archetypes["en_hag"]!;
@@ -237,8 +237,9 @@ describe("cast in the game", () => {
       type: "create_npc", name: `Local ${i}`, concept: "A local", role: "bystander", map_id: map.id, x: spots[i]!.x, y: spots[i]!.y, sprite_tags: [], asset_ref: ref,
     }))));
     beat(t);
-    await until(() => Object.values(stateOf(h!).entities).filter((e) => e.kind === "npc").length === 3);
-    for (const npc of Object.values(stateOf(h).entities).filter((e) => e.kind === "npc")) expect(npc.sprite.kind).toBe("spec");
+    const locals = () => Object.values(stateOf(h!).entities).filter((e) => e.kind === "npc" && e.name.startsWith("Local "));
+    await until(() => locals().length === 3);
+    for (const npc of locals()) expect(npc.sprite.kind).toBe("spec");
 
     // approve the pending one, then turn the cast off (allowed mid-game): the ref is ignored again
     await a.request("cast_decision", { asset_id: pendingNpc, approve: true });
@@ -247,7 +248,7 @@ describe("cast in the game", () => {
       type: "create_npc", name: "Local 3", concept: "A local", role: "bystander", map_id: map.id, x: spots[3]!.x, y: spots[3]!.y, sprite_tags: [], asset_ref: pendingNpc,
     }]));
     beat(t);
-    await until(() => Object.values(stateOf(h!).entities).filter((e) => e.kind === "npc").length === 4);
+    await until(() => locals().length === 4);
     const late = Object.values(stateOf(h).entities).find((e) => e.name === "Local 3")!;
     expect(late.sprite.kind).toBe("spec");
     expect((await a.request("update_settings", { content_rating: "family" })).type).toBe("error"); // other settings stay locked once playing
