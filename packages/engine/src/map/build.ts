@@ -4,7 +4,11 @@ import type { GameMap, InteractableKind, MapBrief, MapObject, Material } from "@
 import { assemble } from "./assemble";
 import { LAYOUT_GENERATORS, borderTerrain, pocketTerrain } from "./layouts/index";
 import { DIRS4, Grid, T, isPassable, level } from "./layouts/grid";
-import type { Pt, RoomShape } from "./layouts/grid";
+import type { LayoutHints, Pt, RoomShape } from "./layouts/grid";
+import { computeFields, decorWeight, fillSmallWater, paintGround } from "./nature";
+import { TERRAIN } from "./fields";
+
+const TERRAIN_WATER = TERRAIN.water;
 import { closestPattern, findMaterial, getMaterial, resolveMaterial, words } from "./materials";
 import { MapRng } from "./prng";
 import { resolveSetting } from "./settings";
@@ -210,9 +214,16 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
   const hasShallow = setting.materials.liquid.some((m) => m.walkable);
 
   const layout = LAYOUT_GENERATORS[setting.layout];
-  const out = layout({ grid, setting, rooms: brief.rooms, exits: brief.exits, rng, hasShallow });
+  computeFields(grid, seed);
+  const hints: LayoutHints = {
+    combatRooms: new Set(brief.entity_slots.filter((e) => e.role === "enemy" || e.role === "boss").map((e) => e.room_id)),
+    focalRooms: new Set(brief.points_of_interest.map((p) => p.room_id)),
+  };
+  const out = layout({ grid, setting, rooms: brief.rooms, exits: brief.exits, rng, hasShallow, hints });
   const shapes = out.shapes;
   grid.sealBorder(borderTerrain(setting.layout, setting.environment));
+  // routes that bridge a lake or river can leave scraps of open water; they become shallows (or land), never lone squares
+  fillSmallWater(grid, TERRAIN_WATER.tinyWater, hasShallow ? T.SHALLOW : T.FLOOR);
 
   // start: the open tile nearest the first room's center
   const first = shapes[0]!;
@@ -236,6 +247,8 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
   const seen = grid.reachable(start);
   const pocket = pocketTerrain(setting.layout, setting.environment);
   for (let i = 0; i < grid.t.length; i++) if (isPassable(grid.t[i]!) && !seen[i]) { grid.t[i] = pocket; grid.room[i] = -1; }
+  // cut-off scraps of land inside a sea must not show up as lone squares of water
+  if (pocket === T.LIQUID) fillSmallWater(grid, TERRAIN_WATER.tinyWater, T.OBSTACLE);
   for (const e of exits) if (e.type === "exit" && !seen[grid.idx(e.x, e.y)]) throw new Error(`exit ${e.name} is cut off`);
 
   const startIdx = grid.idx(start.x, start.y);
@@ -249,6 +262,7 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
   }
 
   const byId = new Map(shapes.filter((s) => !s.extra).map((s) => [s.id, s]));
+  const natural = setting.layout === "open_field" || setting.layout === "trail";
   const freeTile = (shape: RoomShape | undefined): Pt => {
     const ok = (p: Pt): boolean => {
       const i = grid.idx(p.x, p.y);
@@ -261,6 +275,12 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
     if (cands.length === 0) throw new Error("no free tile for object");
     const loose = cands.filter((p) => !grid.crit[grid.idx(p.x, p.y)]);
     if (loose.length > 0) cands = loose;
+    // in natural layouts things sit in the heart of their clearing, where the worn ground and the open space are
+    if (shape && natural) {
+      const reach = Math.max(3, Math.min(shape.w, shape.h) * 0.4 + 1);
+      const heart = cands.filter((p) => Math.hypot(p.x - shape.center.x, p.y - shape.center.y) <= reach);
+      if (heart.length > 0) cands = heart;
+    }
     return rng.pick(cands);
   };
 
@@ -291,6 +311,7 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
 
   placeHazards(grid, setting, rng, taken, start);
   repairHazards(grid, objects, startIdx);
+  paintGround(grid, setting, setting.layout === "islands" ? "shore" : setting.layout === "settlement" ? "worn" : "fields");
   scatterDecor(grid, setting, rng, taken, decor);
 
   const doorTiles: Pt[] = [];
@@ -395,7 +416,7 @@ function scatterDecor(grid: Grid, setting: ResolvedSetting, rng: MapRng, taken: 
       const x = i % grid.w;
       const y = (i - x) / grid.w;
       if (grid.border(x, y) || (enclosed && grid.room[i]! < 0)) continue;
-      if (rng.chance(rate)) decor.set(i, props[Math.min(props.length - 1, Math.floor(rng.next() * props.length))]!);
+      if (rng.chance(enclosed ? rate : rate * decorWeight(grid.grove[i]!))) decor.set(i, props[Math.min(props.length - 1, Math.floor(rng.next() * props.length))]!);
     }
   }
   if (mounts.length > 0) {

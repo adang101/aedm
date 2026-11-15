@@ -1,25 +1,37 @@
-import { T, arrangeRooms, caNoise, carveShapes, connectRooms, level, pond } from "./grid";
-import type { LayoutFn } from "./grid";
+import { addShallows, carveLakes, carveRiver, growTreeline, growVegetation, layPath, linkRooms, openExit, placeCover, roomDistance, widenPaths, wearLandmarks } from "../nature";
+import { TERRAIN } from "../fields";
+import { T, arrangeRooms, carveShapes, level } from "./grid";
+import type { LayoutFn, Pt } from "./grid";
 
-const CLUMP = [0, 0.3, 0.4, 0.46] as const;
-const SINGLES = [0, 0.01, 0.015, 0.02] as const;
-
-/** Open ground with obstacle clumps by density, ponds, and cleared rooms joined by painted paths. */
-export const openField: LayoutFn = ({ grid, setting, rooms, rng, hasShallow }) => {
-  const d = level(setting.density.obstacles);
+/**
+ * Open ground as a place: clearings for the rooms, lakes in low ground and sometimes a winding river, winding paths between
+ * the rooms and out to the exits (bridged or forded where they cross water), worn ground at the arrival point and landmarks,
+ * groves that follow the terrain fields, and a treeline instead of a fence.
+ */
+export const openField: LayoutFn = ({ grid, setting, rooms, exits, rng, hasShallow, hints }) => {
   grid.fill(T.FLOOR);
-  if (d > 0) {
-    const mask = caNoise(grid, rng, CLUMP[d], 3);
-    for (let i = 0; i < mask.length; i++) if (mask[i]) grid.t[i] = T.OBSTACLE;
-    for (let i = 0; i < mask.length; i++) if (grid.t[i] === T.FLOOR && rng.chance(SINGLES[d])) grid.t[i] = T.OBSTACLE;
-  }
-  const lq = level(setting.density.liquid);
-  const ponds = lq === 0 ? 0 : rng.int(lq, lq * 2);
-  const any = (i: number) => !grid.border(i % grid.w, Math.floor(i / grid.w));
-  for (let k = 0; k < ponds; k++) pond(grid, rng, rng.int(3, grid.w - 4), rng.int(3, grid.h - 4), rng.int(2, 2 + lq), hasShallow, (i) => any(i) && (grid.t[i] === T.FLOOR || grid.t[i] === T.OBSTACLE));
-
-  const shapes = arrangeRooms(grid, rooms, rng, "blob");
+  const shapes = arrangeRooms(grid, rooms, rng, "blob", TERRAIN.rooms.fieldScale);
   carveShapes(grid, shapes);
-  connectRooms(grid, shapes, rooms, rng, 1, true);
-  return { shapes };
+
+  const lq = level(setting.density.liquid);
+  const rd = roomDistance(grid);
+  const open = (i: number): boolean => grid.t[i] === T.FLOOR && rd[i]! > TERRAIN.water.roomClearance;
+  carveLakes(grid, rng, lq, open);
+  carveRiver(grid, rng, lq, (i) => grid.t[i] === T.FLOOR, rd);
+  if (hasShallow) addShallows(grid);
+
+  linkRooms(grid, shapes, rooms);
+  const exitPoints: Pt[] = [];
+  for (const e of exits) exitPoints.push(openExit(grid, rng, e.side, shapes, exitPoints));
+  // an extra trail between the first room and the farthest one gives a loop where there are enough rooms
+  if (shapes.length >= 4) layPath(grid, grid.idx(shapes[0]!.center.x, shapes[0]!.center.y), grid.idx(shapes[shapes.length - 1]!.center.x, shapes[shapes.length - 1]!.center.y), 1.4);
+  widenPaths(grid);
+  wearLandmarks(grid, rng, shapes, hints?.focalRooms ?? new Set());
+
+  growVegetation(grid, rng, { level: level(setting.density.obstacles), shapes, open: new Set([shapes[0]!.id, ...(hints?.combatRooms ?? [])]), ...(hints ? { focal: hints.focalRooms } : {}) });
+  shapes.forEach((s, k) => {
+    if (!s.extra && hints?.combatRooms.has(s.id)) placeCover(grid, rng, s, k);
+  });
+  if (setting.environment === "outdoor") growTreeline(grid, rng);
+  return { shapes, exitPoints };
 };

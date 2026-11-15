@@ -131,6 +131,9 @@ function pickWeighted(n: number, u: number, firstShare: number): number {
   return 1 + Math.min(n - 2, Math.floor(((u - firstShare) / (1 - firstShare)) * (n - 1)));
 }
 
+/** A tile's color variant from two smooth fields: broad, soft patches of lighter and darker ground instead of per-tile speckle. */
+const toneOf = (a: number, b: number): number => (a > 0.74 ? 1 : a < 0.24 ? 2 : b > 0.84 ? 3 : 0);
+
 const variantOf = (u: number, spread: number): number => (u < 1 - spread ? 0 : u < 1 - spread * 0.45 ? 1 : 2);
 
 export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembled {
@@ -152,8 +155,9 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
 
   const floorAt = (x: number, y: number): number => {
     const list = mats.floor;
-    const m = list[pickWeighted(list.length, vnoise(seed, x, y, 5), list.length === 2 ? 0.68 : 0.58)]!;
-    return bank.gid(m, variantOf(hash(seed, x, y, 1), 0.16), "ground");
+    // the zone (contiguous regions chosen by the layout and `paintGround`) picks the material; variants stay a per-tile texture
+    const m = list[Math.min(list.length - 1, grid.zone[grid.idx(x, y)]!)]!;
+    return bank.gid(m, toneOf(grid.wander2[grid.idx(x, y)]!, grid.wander[grid.idx(x, y)]!), "ground");
   };
   const liquidDepth = (x: number, y: number): boolean => {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
@@ -175,7 +179,7 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           // Coherent patches (smooth noise), not per-tile picks, so a secondary path material forms
           // whole stretches instead of speckling the main road; few variants keep roads calm.
           const m = mats.path[pickWeighted(mats.path.length, vnoise(seed, x, y, 9), 0.8)]!;
-          ground[i] = bank.gid(m, variantOf(u, 0.1), "ground");
+          ground[i] = bank.gid(m, toneOf(grid.wander[i]!, grid.wander2[i]!), "ground");
           break;
         }
         case T.BRIDGE:
@@ -200,7 +204,17 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
         case T.OBSTACLE: {
           ground[i] = floorAt(x, y);
           const list = mats.obstacle;
-          const m = list[pickWeighted(list.length, u, 0.5)]!;
+          const code = grid.veg[i]!;
+          let m: Material;
+          if (code === 0) m = list[pickWeighted(list.length, u, 0.5)]!;
+          else {
+            // layouts mark groves by species and rocks apart, so a grove is one kind of tree, not a mix of everything
+            const trees = list.filter((o) => o.tags.includes("tree"));
+            const rocks = list.filter((o) => !o.tags.includes("tree"));
+            if (code === 3) m = rocks[0] ?? list[list.length - 1]!;
+            else if (trees.length > 0) m = trees[u < 0.12 && trees.length > 2 ? 2 : Math.min(code - 1, trees.length - 1)]!;
+            else m = list[Math.min(code - 1, list.length - 1)]!;
+          }
           walls[i] = bank.gid(m, hash(seed, x, y, 3) < 0.2 ? 1 : 0, "walls");
           if (m.tags.includes("tree") && hash(seed, x, y, 4) < 0.22) {
             const top: Material = { ...m, id: `${m.id.slice(0, 24)}_canopy`, blocks_sight: false, walkable: true };
