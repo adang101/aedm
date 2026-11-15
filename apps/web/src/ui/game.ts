@@ -8,6 +8,7 @@ import { createContainerPanel } from "./container";
 import { nearbyMenu, targetMenu } from "./interact-menu";
 import { createLevelUpModal } from "./levelup";
 import { createLog } from "./log";
+import { createObjectiveTracker } from "./objective";
 import { closeMenu, openMenu, type MenuItem } from "./menu";
 import { createSheetModal } from "./sheet";
 import type { Ctx, Screen } from "./types";
@@ -167,7 +168,8 @@ export function mountGame(ctx: Ctx): Screen {
     type: "button", class: "tab", role: "tab", "data-tab": t,
     onClick: () => { tab = t; refresh(); },
   }, t === "story" ? "Story" : "Quests"));
-  const panel = h("aside", { class: "panel" }, partyBar, h("div", { class: "tabs", role: "tablist" }, ...tabBtns), storyPane, questPane);
+  const objective = createObjectiveTracker();
+  const panel = h("aside", { class: "panel" }, partyBar, objective.el, h("div", { class: "tabs", role: "tablist" }, ...tabBtns), storyPane, questPane);
 
   const vote = createVoteModal(ctx);
   const sheet = createSheetModal(ctx);
@@ -222,6 +224,7 @@ export function mountGame(ctx: Ctx): Screen {
     canvas.classList.toggle("targeting", pending !== null);
     updateParty(s);
     updateQuests(s);
+    objective.update(s);
     log.update(s);
     vote.update(s);
     levelUpModal.update(s);
@@ -245,6 +248,7 @@ export function mountGame(ctx: Ctx): Screen {
     update,
     destroy() {
       clearInterval(ticker);
+      objective.destroy();
       document.removeEventListener("keydown", onKey);
       renderer.stop();
       closeMenu();
