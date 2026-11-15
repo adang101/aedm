@@ -167,7 +167,8 @@ describe("in combat", () => {
     const reg = registerArchetype(st, FOE);
     if (!reg.ok) throw new Error(reg.errors.join("; "));
     const m = st.maps[map]!;
-    const at = findFreeTileNear(m, 1, 1, occupiedTiles(reg.state, map))!;
+    const pc = st.entities[Object.keys(st.characters)[0]!]!;
+    const at = findFreeTileNear(m, pc.x + 6, pc.y, occupiedTiles(reg.state, map))!; // away from the party, wherever the map has room
     const spawned = applyDmActions(reg.state, createRng(1), [{ type: "spawn_entity", archetype_id: reg.archetype.id as string, map_id: map, x: at.x, y: at.y, count: 1 }], {
       presentCharacterIds: Object.keys(st.characters), partyLevel: 1,
     });

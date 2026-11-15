@@ -194,6 +194,8 @@ export function buildContextPack(input: ContextInput): DmContextPack {
         ...(opened ? { items: c.items.map((i) => i.name) } : {}),
       });
     }
+    // nearest first, like containers: the context caps the list, and what is beside the party must never be the part that is cut
+    objects.sort((a, b) => reach(a) - reach(b) || a.id.localeCompare(b.id));
   }
 
   const party = Object.values(state.characters).map((c) => {

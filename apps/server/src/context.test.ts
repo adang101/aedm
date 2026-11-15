@@ -97,7 +97,8 @@ describe("buildContextPack", () => {
     const arch = registerArchetype(s0, { ...chorister, role: "elite", concept: "c".repeat(150) });
     if (!arch.ok) throw new Error(arch.errors.join(";"));
     const map = currentMap(arch.state)!;
-    const at = (n: number) => findFreeTileNear(map, 20 + n, 10, occupiedTiles(arch.state, map.id))!;
+    const here = arch.state.entities.ch_brindle!;
+    const at = (n: number) => findFreeTileNear(map, here.x + 2 + n, here.y, occupiedTiles(arch.state, map.id))!;
     const ctx = { presentCharacterIds: ["ch_brindle", "ch_tamsin"], partyLevel: 1 };
     const spawned = applyDmActions(arch.state, rngFromState(arch.state), [
       { type: "spawn_entity", archetype_id: arch.archetype.id as string, map_id: map.id, x: at(0).x, y: at(0).y, count: 1 },

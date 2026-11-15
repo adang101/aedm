@@ -35,7 +35,29 @@ export function stageRun(h: Harness, t: Table, opts: { objects?: (s: Stage) => M
       if (ok) found = { x0, y };
     }
   }
-  if (!found) throw new Error("no open strip on the test map");
+  if (!found) {
+    // natural maps rarely have a bare strip this size, so clear one: the spot with the fewest blocked tiles that holds no object or creature
+    const objectTiles = new Set(map.layers.flatMap((l) => (l.type === "objectgroup" ? l.objects.map((o) => `${o.x},${o.y}`) : [])));
+    let best: { x0: number; y: number; blocked: number } | undefined;
+    for (let y = 3; y < map.height - 3; y++) {
+      for (let x0 = 3; x0 < map.width - RUN - 3; x0++) {
+        let blocked = 0;
+        let free = true;
+        for (let dx = -1; dx <= RUN && free; dx++) for (let dy = -2; dy <= 2 && free; dy++) {
+          const k = `${x0 + dx},${y + dy}`;
+          if (occ.has(k) || objectTiles.has(k)) free = false;
+          else if (!isWalkable(map, x0 + dx, y + dy)) blocked++;
+        }
+        if (free && (!best || blocked < best.blocked)) best = { x0, y, blocked };
+      }
+    }
+    if (!best) throw new Error("no room for an open strip on the test map");
+    for (const l of map.layers) {
+      if (l.type !== "tilelayer" || (l.name !== "walls" && l.name !== "above")) continue;
+      for (let dx = -1; dx <= RUN; dx++) for (let dy = -2; dy <= 2; dy++) l.data[(best.y + dy) * map.width + best.x0 + dx] = 0;
+    }
+    found = { x0: best.x0, y: best.y };
+  }
   const s: Stage = { a, b, mapId, ...found };
   for (const l of map.layers) {
     if (l.type === "objectgroup") {
