@@ -11,7 +11,8 @@ import { drawContainerMarker, drawExit, drawInteractable, createMapStyle, type M
 import { TerrainCache } from "./terrain-chunks";
 import { TerrainGrid } from "./terrain-grid";
 import { drawLights, drawMood, type Light } from "./mood";
-import { drawPoiLabel, labelsToShow } from "./poi-labels";
+import { drawPoiLabel, labelsToShow, placeLabelsToShow, type PlaceMark } from "./poi-labels";
+import { mapLandmarks } from "@aedm/engine";
 
 export interface TapInfo {
   tileX: number;
@@ -42,6 +43,8 @@ export interface MapLayers {
   decor: number[];
   above: number[];
   objects: MapObject[];
+  /** Landmarks the generator stamped into this map (none on older or DM-made maps). */
+  places: PlaceMark[];
   style: MapStyle;
   mood: GameMap["meta"]["setting"]["mood"];
   terrain: TerrainCache;
@@ -60,6 +63,7 @@ export function extractLayers(map: GameMap): MapLayers {
     mapId: map.id, ref: map, w: map.width, h: map.height,
     ground, walls, decor, above: tiles("above"),
     objects: obj && obj.type === "objectgroup" ? obj.objects : [],
+    places: mapLandmarks(map).map((l) => ({ id: l.id, name: l.name, x: l.x, y: l.y, radius: l.radius })),
     style,
     mood: map.meta.setting.mood,
     terrain: new TerrainCache(grid, style),
@@ -359,6 +363,7 @@ export class MapRenderer {
     for (const h of huds) drawEntityHud(ctx, h.e, h.o);
     const party = Object.values(s.entities).filter((e) => e.kind === "pc" && e.hp > 0);
     for (const l of labelsToShow(L.objects, this.hover, party)) drawPoiLabel(ctx, l);
+    for (const l of placeLabelsToShow(L.places, this.hover, party)) drawPoiLabel(ctx, l);
     this.hooks.onFrame?.();
   }
 

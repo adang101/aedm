@@ -1,3 +1,4 @@
+import { mapLandmarks } from "@aedm/engine";
 import "./minimap.css";
 import type { Camera } from "../render/camera";
 import {
@@ -40,10 +41,10 @@ function initialCollapsed(): boolean {
 }
 
 const MARKER_COLOR: Record<MarkerKind, string> = {
-  exit: "#f0c94a", chest: "#e8b33a", door: "#c8934d", lever: "#9fd4f5", sign: "#f2efe4", altar: "#c79bff", trap: "#ff6b5a", pile: "#d9b98a",
+  exit: "#f0c94a", chest: "#e8b33a", door: "#c8934d", lever: "#9fd4f5", sign: "#f2efe4", altar: "#c79bff", trap: "#ff6b5a", pile: "#d9b98a", landmark: "#f4e6c2",
 };
 const MARKER_NAME: Record<MarkerKind, string> = {
-  exit: "Exit", chest: "Chest", door: "Door", lever: "Lever", sign: "Sign", altar: "Altar", trap: "Trap", pile: "Loot",
+  exit: "Exit", chest: "Chest", door: "Door", lever: "Lever", sign: "Sign", altar: "Altar", trap: "Trap", pile: "Loot", landmark: "Landmark",
 };
 const OUT = "rgba(14,9,22,0.95)";
 
@@ -77,7 +78,7 @@ export function createMinimap(hooks: MinimapHooks): Minimap {
 
   const shapeItems: DotShape[] = ["me", "ally", "friendly", "neutral", "wary", "hostile"];
   for (const sh of shapeItems) legend.append(h("li", null, h("i", { class: `lg lg-${sh}`, "aria-hidden": "true" }), DOT_STYLE[sh].label));
-  for (const k of ["exit", "chest", "door", "lever", "sign", "altar", "trap", "pile"] as MarkerKind[]) {
+  for (const k of ["landmark", "exit", "chest", "door", "lever", "sign", "altar", "trap", "pile"] as MarkerKind[]) {
     legend.append(h("li", null, h("i", { class: `lg lg-m-${k}`, "aria-hidden": "true" }), MARKER_NAME[k]));
   }
   legend.append(h("li", { class: "lg-wide" }, "Dimmed ground: not visited yet"));
@@ -153,8 +154,9 @@ export function createMinimap(hooks: MinimapHooks): Minimap {
     const p = local(ev);
     const t = minimapToTile(p.x, p.y, size.k, m.width, m.height);
     const d = dots.find((x) => Math.abs(x.x - t.x) <= 1 && Math.abs(x.y - t.y) <= 1);
-    const mk = markers.find((x) => x.x === t.x && x.y === t.y);
-    const tip = d ? `${d.label} (${DOT_STYLE[d.shape].label.toLowerCase()})` : mk ? MARKER_NAME[mk.kind] : "";
+    const mk = markers.find((x) => x.kind !== "landmark" && x.x === t.x && x.y === t.y);
+    const place = markers.find((x) => x.kind === "landmark" && Math.abs(x.x - t.x) <= 1 && Math.abs(x.y - t.y) <= 1);
+    const tip = d ? `${d.label} (${DOT_STYLE[d.shape].label.toLowerCase()})` : mk ? MARKER_NAME[mk.kind] : place ? place.label : "";
     if (canvas.title !== tip) canvas.title = tip;
   }
 
@@ -186,7 +188,7 @@ export function createMinimap(hooks: MinimapHooks): Minimap {
       rebuildBase();
     }
     const objs = m.layers.find((l) => l.type === "objectgroup");
-    markers = collectMarkers(m, objs && objs.type === "objectgroup" ? objs.objects : [], Object.values(s.containers));
+    markers = collectMarkers(m, objs && objs.type === "objectgroup" ? objs.objects : [], Object.values(s.containers), mapLandmarks(m));
     dots = creatureDots(s.entities, myEntity(s)?.id ?? null);
     boxSig = "";
   }
@@ -300,6 +302,9 @@ function drawMarker(ctx: CanvasRenderingContext2D, mk: Marker, k: number, u: num
       ctx.beginPath(); ctx.moveTo(cx - half, cy - half); ctx.lineTo(cx + half, cy + half); ctx.moveTo(cx + half, cy - half); ctx.lineTo(cx - half, cy + half); ctx.stroke();
       ctx.lineWidth = 1.3; ctx.strokeStyle = c; ctx.stroke(); return;
     case "pile": ctx.beginPath(); ctx.arc(cx, cy, half * 0.7, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); return;
+    case "landmark": // an open ring: a place, not a thing to use
+      ctx.lineWidth = 3; ctx.strokeStyle = OUT; ctx.beginPath(); ctx.arc(cx, cy, half * 1.25, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 1.4; ctx.strokeStyle = c; ctx.stroke(); return;
     case "chest": ctx.fillRect(cx - half, cy - half * 0.75, u, u * 0.75); ctx.strokeRect(cx - half, cy - half * 0.75, u, u * 0.75); return;
   }
 }

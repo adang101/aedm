@@ -11,7 +11,7 @@ import { abilityCost, validateCharacterAbilities } from "./cost.ts";
 import { createRng, fromState, type Rng } from "./rng.ts";
 import { hpMax as computeHpMax, levelFromGrowth, levelCaps, validatePointBuy } from "./rules.ts";
 import { enemyThreat, validateEnemy } from "./threat.ts";
-import { findFreeTileNear, getObjects, getSpawn } from "./map/index.ts";
+import { arrivalPoint, findFreeTileNear, getObjects } from "./map/index.ts";
 import { designSpriteOffline } from "./sprites.ts";
 import { objectiveView } from "./objective-view.ts";
 import { routeView } from "./route-view.ts";
@@ -630,10 +630,11 @@ export function placePartyInternal(m: Mut, mapId: string, spawnName: string, cha
   const s = m.s;
   const map = s.maps[mapId];
   if (!map) return false;
-  const spawn = getSpawn(map, spawnName);
+  const spawn = arrivalPoint(map, spawnName);
   if (!spawn) return false;
   const ids = characterIds ?? Object.keys(s.characters);
   const occupied = occupiedTiles(s, mapId, { includeWalls: true });
+  if (spawn.kind === "exit") occupied.add(tileKey(spawn.x, spawn.y)); // beside the exit, never on it
   for (const id of ids) {
     const c = s.characters[id];
     if (!c) continue;

@@ -128,7 +128,7 @@ export function creatureDots(entities: Record<string, EntityView>, myId: string 
 
 // ---------- objects ----------
 
-export type MarkerKind = "exit" | "chest" | "door" | "lever" | "sign" | "altar" | "trap" | "pile";
+export type MarkerKind = "exit" | "chest" | "door" | "lever" | "sign" | "altar" | "trap" | "pile" | "landmark";
 export type Side = "n" | "s" | "e" | "w";
 
 export interface Marker {
@@ -148,9 +148,14 @@ export function exitSide(x: number, y: number, w: number, h: number): Side {
   return best[0];
 }
 
-/** Exits, interactables and loot piles present in the data the client holds. Hidden objects are never included. */
-export function collectMarkers(map: GameMap, objects: readonly MapObject[], containers: readonly ContainerSummary[]): Marker[] {
+/** Landmarks, exits, interactables and loot piles present in the data the client holds. Hidden objects are never included. */
+export function collectMarkers(
+  map: GameMap, objects: readonly MapObject[], containers: readonly ContainerSummary[],
+  landmarks: readonly { name: string; x: number; y: number }[] = [],
+): Marker[] {
   const out: Marker[] = [];
+  // landmarks first, so anything standing on one is drawn over its glyph
+  for (const l of landmarks) out.push({ kind: "landmark", x: l.x, y: l.y, label: l.name });
   const taken = new Set<string>();
   for (const o of objects) {
     if (o.type === "exit") {

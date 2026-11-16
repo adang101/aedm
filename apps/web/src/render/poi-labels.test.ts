@@ -1,6 +1,6 @@
 import type { MapObject } from "@aedm/schemas";
 import { describe, expect, it } from "vitest";
-import { labelsToShow, poiLabel, prettyName } from "./poi-labels";
+import { labelsToShow, placeLabelsToShow, poiLabel, prettyName } from "./poi-labels";
 
 const objs: MapObject[] = [
   { type: "exit", name: "stairs_up", to: "m_a", target_entry: "x", x: 2, y: 17 },
@@ -27,5 +27,18 @@ describe("point of interest labels", () => {
     expect(labelsToShow(objs, null, [{ x: 30, y: 30 }])).toEqual([]);
     expect(labelsToShow(objs, null, [{ x: 12, y: 11 }]).map((l) => l.id)).toEqual(["d1", "c1"]);
     expect(labelsToShow(objs, { x: 2, y: 17 }, []).map((l) => l.text)).toEqual(["Exit: Stairs up"]);
+  });
+});
+
+describe("landmark labels", () => {
+  const well = { id: "lm_1", name: "Village well", x: 10, y: 10, radius: 2 };
+  it("names a landmark the party is at or close to, and one the pointer is over", () => {
+    expect(placeLabelsToShow([well], null, [{ x: 13, y: 10 }])).toEqual([{ id: "lm_1", x: 10, y: 10, text: "Village well", tone: "place" }]);
+    expect(placeLabelsToShow([well], null, [{ x: 14, y: 10 }])).toHaveLength(1); // radius 2 plus 2 near
+    expect(placeLabelsToShow([well], { x: 12, y: 11 }, [])).toHaveLength(1);
+  });
+  it("stays quiet for a landmark far from the party and the pointer", () => {
+    expect(placeLabelsToShow([well], null, [{ x: 15, y: 10 }])).toEqual([]);
+    expect(placeLabelsToShow([well], { x: 13, y: 10 }, [])).toEqual([]);
   });
 });

@@ -94,6 +94,9 @@ describe("markers", () => {
     ]);
     expect(m.map((x) => `${x.kind}@${x.x},${x.y}`)).toEqual(["exit@0,5", "chest@4,4", "pile@9,9"]);
     expect(m[0]!.side).toBe("w");
+    // landmarks come first (drawn underneath), named
+    const withPlace = collectMarkers(map, objs, [], [{ name: "Village well", x: 7, y: 7 }]);
+    expect(withPlace[0]).toEqual({ kind: "landmark", x: 7, y: 7, label: "Village well" });
   });
 });
 

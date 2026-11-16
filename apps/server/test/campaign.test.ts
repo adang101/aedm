@@ -152,6 +152,14 @@ describe("campaign travel and objectives", () => {
     await walkTo(t, pc.id, back.x, back.y);
     await t.a.wait("state_snapshot", (s) => s.map.id === campaignOf(stateOf(h!)).locations.l_square, { from: m2 });
     expect(Object.keys(stateOf(h!).maps)).toHaveLength(maps);
+    // and comes in by the way it left: beside the square's exit to the dock, not back at the square's start, and not on the exit
+    const home = stateOf(h!);
+    const way = exitOf(home, /dock/i);
+    for (const e of Object.values(home.entities).filter((x) => x.kind === "pc")) {
+      const d = Math.max(Math.abs(e.x - way.x), Math.abs(e.y - way.y));
+      expect(d, `${e.name} at ${e.x},${e.y}, exit at ${way.x},${way.y}`).toBeGreaterThan(0);
+      expect(d).toBeLessThanOrEqual(3);
+    }
   });
 
   it("builds encounter creatures for the party level and installs them on arrival", async () => {

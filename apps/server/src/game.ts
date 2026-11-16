@@ -1,5 +1,5 @@
 import {
-  addAbilityToCharacter, addCharacter, aggroCheck, buildEnemyOffline, followStep, placePartyWithAllies, planAggroEngagement, addGrowth, addMap, campaignNeighbors, campaignOf, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
+  addAbilityToCharacter, addCharacter, aggroCheck, buildEnemyOffline, followStep, placePartyWithAllies, planAggroEngagement, addGrowth, addMap, campaignNeighbors, campaignOf, locationExits, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
   classifyIntent, closeContainer, computePartyLevel, containerDiff, containerForObject, containerView, createGameState, createRng, currentMap, describeEvent, digestEvents, getObjects, hasDramaticBeat,
   altarText, creatureVoice, isContainerHidden, isDmVictoryRole, isHidden, knownTrapTiles, searchedText, spotCheck, tileKey, trapBlockedText, trapEventText, wakeIfWiped, narrateCombatEnd, narrateCombatStart, planEngagement, startCombat, victoryNeedsDm,
   narrateEvents, NARRATION, endCombat, endTurn, enemyRangesForLevel,
@@ -434,7 +434,12 @@ export class GameSession {
       mapId = prep!.map.id;
       this.prep.delete(locationId);
     }
-    this.moveToMap(mapId);
+    // A place the party has been to before is entered by the way that leads back to where it came from; a first visit uses the
+    // map's own arrival area, which the generator keeps clear.
+    const b = campaignOf(this.state);
+    const from = Object.keys(b.locations).find((id) => b.locations[id] === fromMapId);
+    const back = from && b.visited.includes(locationId) ? locationExits(this.state.bible, locationId).find((e) => e.to === from)?.label : undefined;
+    this.moveToMap(mapId, back);
     this.track();
     this.autosave();
     this.prefetchNeighbors();
@@ -2172,8 +2177,9 @@ export class GameSession {
     }
   }
 
-  private moveToMap(mapId: string): void {
-    const r = placePartyWithAllies(this.state, mapId, "party_start", this.presentIds());
+  private moveToMap(mapId: string, entry?: string): void {
+    let r = entry ? placePartyWithAllies(this.state, mapId, entry, this.presentIds()) : null;
+    if (!r?.value) r = placePartyWithAllies(this.state, mapId, "party_start", this.presentIds());
     if (!r.value) return;
     this.commit(r.state);
     this.publish(r.events);

@@ -8,7 +8,7 @@ export interface PoiLabel {
   x: number;
   y: number;
   text: string;
-  tone: "exit" | "thing";
+  tone: "exit" | "thing" | "place";
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -42,6 +42,22 @@ export function labelsToShow(objects: readonly MapObject[], hover: Pt | null, pa
   return out;
 }
 
+/** A named place on the map (a landmark the generator stamped): what the client needs to label it. */
+export interface PlaceMark { id: string; name: string; x: number; y: number; radius: number }
+
+/**
+ * Landmark names worth drawing now: one whose area the pointer is over, and any the party is at or close to
+ * (`near` tiles beyond its own radius). A landmark is scenery, so its name is no secret.
+ */
+export function placeLabelsToShow(places: readonly PlaceMark[], hover: Pt | null, party: readonly Pt[], near = 2): PoiLabel[] {
+  const out: PoiLabel[] = [];
+  for (const m of places) {
+    const hovered = !!hover && cheb(hover, m) <= m.radius;
+    if (hovered || party.some((p) => cheb(p, m) <= m.radius + near)) out.push({ id: m.id, x: m.x, y: m.y, text: m.name, tone: "place" });
+  }
+  return out;
+}
+
 /** Same look as a creature's name (bold 10px, dark halo), centred under the tile. */
 export function drawPoiLabel(ctx: Ctx, l: PoiLabel): void {
   ctx.save();
@@ -50,7 +66,7 @@ export function drawPoiLabel(ctx: Ctx, l: PoiLabel): void {
   ctx.lineWidth = 3; ctx.strokeStyle = "rgba(20,12,30,0.9)"; ctx.lineJoin = "round";
   const x = l.x * TILE + TILE / 2, y = l.y * TILE + TILE - 4;
   ctx.strokeText(l.text, x, y);
-  ctx.fillStyle = l.tone === "exit" ? "#e8c95a" : "#cbe3f5";
+  ctx.fillStyle = l.tone === "exit" ? "#e8c95a" : l.tone === "place" ? "#f4e6c2" : "#cbe3f5";
   ctx.fillText(l.text, x, y);
   ctx.restore();
 }
