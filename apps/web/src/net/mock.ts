@@ -5,6 +5,7 @@ import {
 } from "@aedm/schemas";
 import type { Transport, TransportFactory, TransportHandlers } from "./transport";
 import { MockObjective } from "./mock-objective";
+import { mockRouteView } from "./mock-route";
 import { FIRST_SCENE, NARRATION_OPENING, blockedAt, buildScenes, sceneFromText, type MockScene } from "./mock-world";
 import { designSpriteOffline } from "@aedm/engine";
 import { PREMADE_SPECS } from "../state/sprite-builder";
@@ -127,6 +128,7 @@ export class MockServer {
   private voteId = 0;
   private turnN = 0;
   private objective = new MockObjective();
+  private visitedScenes = new Set<string>();
   private loot = new MockLoot({
     map: () => this.map,
     me: () => this.ents[ME_CHAR],
@@ -153,13 +155,20 @@ export class MockServer {
   advanceObjective(): void {
     if (this.phase !== "playing") return;
     const change = this.objective.completeNext();
-    if (change) this.emit("objective_update", { ...change.view, completed: change.completed });
+    if (change) { this.emit("objective_update", { ...change.view, completed: change.completed }); this.emitRoute(); }
   }
+
+  /** The route view for the current scene: visited places, their neighbours, and where open objectives are. */
+  private routeNow() {
+    return mockRouteView(this.scene.id, [...this.visitedScenes], this.objective.view().milestones.filter((m) => !m.done).map((m) => m.id));
+  }
+
+  private emitRoute(): void { this.emit("route_update", this.routeNow()); }
 
   /** Complete a milestone by id when it is open in the current stage; tells the client. */
   private trackObjective(id: string): void {
     const change = this.objective.complete(id);
-    if (change) this.emit("objective_update", { ...change.view, completed: change.completed });
+    if (change) { this.emit("objective_update", { ...change.view, completed: change.completed }); this.emitRoute(); }
   }
 
   /** Dev helper: drop the current connection so the client's reconnect path runs. */
@@ -603,6 +612,7 @@ export class MockServer {
     this.party.push({ ...myChar, inventory: starterPack() });
     this.loot.reset();
     this.objective.reset();
+    this.visitedScenes = new Set([this.scene.id]);
     this.addPc(myChar, ME, { x: 13, y: 10 });
     for (const pl of squad) {
       const f = Object.values(FAKES).find((x) => x.id === pl.player_id);
@@ -628,6 +638,7 @@ export class MockServer {
       seq: ++this.seq, mode: this.mode, map: this.map, entities: Object.values(this.ents), party: this.party,
       containers: this.loot.summaries(),
       objective: this.objective.view(),
+      route: this.routeNow(),
       quests: [{ id: "q_lantern", title: "The Drowned Lantern", status: "active", notes: ["Odalys says three villagers sleepwalk toward the marsh."] },
         { id: "q_choir", title: "Who hired the choir?", status: "new", notes: [] }],
       ...(this.combat ? { combat: this.combatState() } : {}),
@@ -788,6 +799,7 @@ export class MockServer {
     if (next === this.scene) return this.engine("You are already here.");
     this.walkToken++;
     this.scene = next;
+    this.visitedScenes.add(next.id);
     this.map = next.map;
     const pcs = Object.values(this.ents).filter((e) => e.kind === "pc");
     this.ents = {};
