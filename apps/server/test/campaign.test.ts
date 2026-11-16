@@ -98,7 +98,7 @@ describe("campaign start", () => {
     const snap = t.a.lastSnapshot()!;
     expect(snap.map.id).toBe(st.currentMapId);
     expect(snap.objective!.stage.index).toBe(0);
-    expect(snap.objective!.milestones[0]).toMatchObject({ id: "m1", done: false, hint: "Talk to Old Tam at Hollowmere Square" });
+    expect(snap.objective!.milestones[0]).toMatchObject({ id: "m1", done: false, hint: expect.stringMatching(/^Talk to Old Tam at (the |Hollowmere Square)/) }); // at a landmark when Tam stands at one
     expect(t.a.invalid).toEqual([]);
 
     // the opening DM turn names the place and the first objective
