@@ -109,12 +109,12 @@ function classify(ch: string, legend: Record<string, LegendEntry>): Kind {
 const K_OPEN = 1, K_SOLID = 2, K_WATER = 3, K_BRIDGE = 4, K_DOOR = 5;
 
 interface Program { n: number; dx: Int16Array; dy: Int16Array; kind: Uint8Array }
-const programs = new Map<string, Program>();
+// Keyed by the oriented pattern itself (`orient` caches those), so a lookup never rebuilds a string key.
+const programs = new WeakMap<Oriented, Program>();
 
 /** An oriented pattern as flat lists of the cells it writes (and how), so searching never re-reads the text. */
 function compile(piece: LandmarkPiece, ori: Oriented): Program {
-  const key = `${piece.id}|${ori.cells.join("")}|${ori.w}`;
-  let prog = programs.get(key);
+  let prog = programs.get(ori);
   if (prog) return prog;
   const dx: number[] = [];
   const dy: number[] = [];
@@ -129,7 +129,7 @@ function compile(piece: LandmarkPiece, ori: Oriented): Program {
     }
   }
   prog = { n: dx.length, dx: Int16Array.from(dx), dy: Int16Array.from(dy), kind: Uint8Array.from(kind) };
-  programs.set(key, prog);
+  programs.set(ori, prog);
   return prog;
 }
 
@@ -222,9 +222,10 @@ export function stampLandmarks(input: StampInput): StampOutput {
         const sig = ori.cells.join("") + ori.w;
         if (seen.has(sig)) continue;
         seen.add(sig);
+        const prog = compile(piece, ori);
         for (let oy = box.y0 - ori.center.y; oy <= box.y1 - ori.center.y; oy++) {
           for (let ox = box.x0 - ori.center.x; ox <= box.x1 - ori.center.x; ox++) {
-            const c = evaluate(piece, ori, ox, oy, target);
+            const c = evaluate(prog, ori, ox, oy, target);
             if (c !== null) found.push({ t, ox, oy, cost: c + 0.9 * hash(seed, ox * 31 + t, oy, 77 + pi) });
           }
         }
@@ -234,8 +235,7 @@ export function stampLandmarks(input: StampInput): StampOutput {
     const square = (r: number) => ({ x0: Math.max(2, Math.floor(target.x - r)), y0: Math.max(2, Math.floor(target.y - r)), x1: Math.min(w - 3, Math.ceil(target.x + r)), y1: Math.min(h - 3, Math.ceil(target.y + r)) });
     const roomBox = (s: RoomShape) => ({ x0: s.x0, y0: s.y0, x1: s.x0 + s.w - 1, y1: s.y0 + s.h - 1 });
 
-    const evaluate = (p: LandmarkPiece, ori: Oriented, ox: number, oy: number, tgt: Pt): number | null => {
-      const prog = compile(p, ori);
+    const evaluate = (prog: Program, ori: Oriented, ox: number, oy: number, tgt: Pt): number | null => {
       const gt = grid.t;
       let cost = 0;
       for (let k = 0; k < prog.n; k++) {

@@ -60,6 +60,18 @@ export interface Harness {
   stop(): Promise<void>;
 }
 
+/** A small deterministic generator (mulberry32) standing in for Math.random in tests. */
+export function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export async function startHarness(opts: { provider?: ModelProvider; config?: GameServerOptions["config"]; random?: () => number; assets?: AssetStore; spriteTimeoutMs?: number } = {}): Promise<Harness> {
   const dataDir = await mkdtemp(join(tmpdir(), "aedm-data-"));
   const saveDir = join(dataDir, "saves");
@@ -67,7 +79,8 @@ export async function startHarness(opts: { provider?: ModelProvider; config?: Ga
   const server = await createGameServer({
     port: 0, host: "127.0.0.1", provider, saveDir, dataDir, logger: silentLogger,
     config: { ...FAST, ...opts.config, limits: { ...FAST.limits, ...opts.config?.limits } },
-    ...(opts.random ? { random: opts.random } : {}),
+    // A fixed pseudo-random stream by default, so the game seed (and with it every generated map) is the same on every run.
+    random: opts.random ?? seededRandom(0x5eed1e55),
     ...(opts.assets ? { assets: opts.assets } : {}),
     ...(opts.spriteTimeoutMs ? { spriteTimeoutMs: opts.spriteTimeoutMs } : {}),
   });
