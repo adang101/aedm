@@ -1,6 +1,6 @@
 import type {
   AuthUser, CampaignInfo, CastEntry, CharacterSummary, CombatState, CharacterView, ContainerSummary, ContainerView, EntityView, GameMap,
-  InteractableView, LevelUpResult, LevelUpState, ObjectiveView, Quest, ServerMessage, WorkshopAsset,
+  InteractableView, LevelUpResult, LevelUpState, ObjectiveView, Quest, RouteView, ServerMessage, WorkshopAsset,
 } from "@aedm/schemas";
 import { arrivalLine, isRawArrivalLine } from "./arrival";
 import { describeObjectiveChange, type ObjectiveEvent } from "./objective";
@@ -100,6 +100,8 @@ export interface AppState {
   quests: Quest[];
   /** The story's current stage and objectives; null for a game without a plot. */
   objective: ObjectiveView | null;
+  /** What the party knows of the campaign route; null for a game without a plan. */
+  route: RouteView | null;
   /** The latest objective_update, so the tracker can flash once; null before the first. */
   objectiveEvent: ObjectiveEvent | null;
   combat: CombatState | null;
@@ -127,7 +129,7 @@ export function createInitialState(): AppState {
     conn: "idle", mock: false, versionMismatch: false, busy: false,
     displayName: "", playerId: null, roomId: null, inviteCode: null, authToken: null,
     lobby: null, cast: [], myCharacterName: null, claimed: {},
-    seq: 0, needsResync: false, mode: "exploration", map: null, entities: {}, party: [], quests: [], objective: null, objectiveEvent: null,
+    seq: 0, needsResync: false, mode: "exploration", map: null, entities: {}, party: [], quests: [], objective: null, route: null, objectiveEvent: null,
     containers: {}, containerView: null,
     combat: null, turnTimer: null, vote: null, log: [], chips: [],
     levelUp: null, levelUpResult: null, levelUpBusy: false,
@@ -149,7 +151,7 @@ export function resetRoom(s: AppState): void {
   s.playerId = fresh.playerId; s.roomId = fresh.roomId; s.inviteCode = fresh.inviteCode; s.authToken = fresh.authToken;
   s.lobby = null; s.cast = []; s.myCharacterName = null; s.claimed = {};
   s.seq = 0; s.needsResync = false; s.mode = "exploration"; s.map = null; s.entities = {}; s.party = [];
-  s.quests = []; s.objective = null; s.objectiveEvent = null; s.containers = {}; s.containerView = null; s.combat = null; s.turnTimer = null; s.vote = null; s.log = []; s.chips = [];
+  s.quests = []; s.objective = null; s.route = null; s.objectiveEvent = null; s.containers = {}; s.containerView = null; s.combat = null; s.turnTimer = null; s.vote = null; s.log = []; s.chips = [];
   s.levelUp = null; s.levelUpResult = null; s.levelUpBusy = false;
   s.busy = false;
 }
@@ -269,7 +271,7 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
       s.seq = p.seq; s.needsResync = false; s.mode = p.mode; s.map = p.map;
       s.containers = indexContainers(p.containers);
       s.entities = Object.fromEntries(p.entities.map((e) => [e.id, e]));
-      s.party = p.party; s.quests = p.quests; s.objective = p.objective ?? null; s.combat = p.combat ?? null;
+      s.party = p.party; s.quests = p.quests; s.objective = p.objective ?? null; s.route = p.route ?? null; s.combat = p.combat ?? null;
       if (!s.combat) s.turnTimer = null;
       return;
     }
@@ -340,6 +342,9 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
       for (const text of lines) pushLog(s, { kind: "system", text, done: true });
       return;
     }
+    case "route_update":
+      s.route = msg.payload;
+      return;
     case "level_up_state":
       s.levelUp = msg.payload;
       return;

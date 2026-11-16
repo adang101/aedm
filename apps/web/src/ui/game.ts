@@ -11,12 +11,13 @@ import { createLog } from "./log";
 import { createMinimap, type Minimap } from "./minimap";
 import { createObjectiveTracker } from "./objective";
 import { createTitleCard } from "./title-card";
+import { createRoutePanel } from "./route";
 import { closeMenu, openMenu, type MenuItem } from "./menu";
 import { createSheetModal } from "./sheet";
 import type { Ctx, Screen } from "./types";
 import { createVoteModal } from "./vote";
 
-type Tab = "story" | "quests";
+type Tab = "story" | "quests" | "route";
 const DIRS: Record<string, "n" | "s" | "e" | "w"> = {
   w: "n", arrowup: "n", s: "s", arrowdown: "s", a: "w", arrowleft: "w", d: "e", arrowright: "e",
 };
@@ -190,12 +191,15 @@ export function mountGame(ctx: Ctx): Screen {
   const questList = h("div", { class: "quests stack" });
   const storyPane = h("div", { class: "pane story" }, log.el, chipRow, form);
   const questPane = h("div", { class: "pane quest-pane", hidden: true }, questList);
-  const tabBtns = (["story", "quests"] as const).map((t) => h("button", {
+  const route = createRoutePanel(ctx);
+  const routePane = h("div", { class: "pane route-wrap", hidden: true }, route.el);
+  const TAB_LABELS = { story: "Story", quests: "Quests", route: "Route" } as const;
+  const tabBtns = (["story", "quests", "route"] as const).map((t) => h("button", {
     type: "button", class: "tab", role: "tab", "data-tab": t,
     onClick: () => { tab = t; refresh(); },
-  }, t === "story" ? "Story" : "Quests"));
+  }, TAB_LABELS[t]));
   const objective = createObjectiveTracker();
-  const panel = h("aside", { class: "panel" }, partyBar, objective.el, h("div", { class: "tabs", role: "tablist" }, ...tabBtns), storyPane, questPane);
+  const panel = h("aside", { class: "panel" }, partyBar, objective.el, h("div", { class: "tabs", role: "tablist" }, ...tabBtns), storyPane, questPane, routePane);
 
   const vote = createVoteModal(ctx);
   const sheet = createSheetModal(ctx);
@@ -255,6 +259,7 @@ export function mountGame(ctx: Ctx): Screen {
     mini.update(s);
     mini.setTopInset(hud.top.hidden ? 0 : hud.top.offsetHeight);
     titleCard.update(s);
+    route.update(s);
     log.update(s);
     vote.update(s);
     levelUpModal.update(s);
@@ -265,8 +270,11 @@ export function mountGame(ctx: Ctx): Screen {
     }, c)));
     chipRow.hidden = s.chips.length === 0;
     for (const b of tabBtns) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+    if (tab === "route" && !s.route) tab = "story";
+    tabBtns[2]!.hidden = !s.route;
     storyPane.hidden = tab !== "story";
     questPane.hidden = tab !== "quests";
+    routePane.hidden = tab !== "route";
     const active = s.quests.filter((q) => q.status === "active" || q.status === "new").length;
     tabBtns[1]!.textContent = active ? `Quests (${active})` : "Quests";
   }

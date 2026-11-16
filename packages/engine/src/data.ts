@@ -324,6 +324,8 @@ export interface CampaignData {
   checkable: { minPct: number; finalStageMin: number };
   /** How a plan location becomes a map brief. */
   map: { defaultSizeClass: "small" | "medium" | "large"; forwardSides: string[]; backSides: string[]; maxSlotCount: number };
+  /** Route view layout, in abstract units (the client scales): the distance between layers (columns) and between rows in a layer. */
+  route: { layerGap: number; rowGap: number };
   /** Content for the deterministic offline plan (`buildFallbackCampaign`). */
   fallback: {
     lairFromPct: number;

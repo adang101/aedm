@@ -3,7 +3,7 @@ import {
   classifyIntent, closeContainer, computePartyLevel, containerDiff, containerForObject, containerView, createGameState, createRng, currentMap, describeEvent, digestEvents, getObjects, hasDramaticBeat,
   altarText, creatureVoice, isContainerHidden, isDmVictoryRole, isHidden, knownTrapTiles, searchedText, spotCheck, tileKey, trapBlockedText, trapEventText, wakeIfWiped, narrateCombatEnd, narrateCombatStart, planEngagement, startCombat, victoryNeedsDm,
   narrateEvents, NARRATION, endCombat, endTurn, enemyRangesForLevel,
-  dropItem, enemyTakeTurn, ensureCampaignPlan, entitiesOnMap, giveItem, hasCampaignPlan, locationEnemyRequests, milestoneHint, objectiveView, resolveExit, startLocation, trackObjectives, validateCampaign, labelOf, openContainer, performAct, takeAll, takeItem, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
+  dropItem, enemyTakeTurn, ensureCampaignPlan, entitiesOnMap, giveItem, hasCampaignPlan, locationEnemyRequests, milestoneHint, objectiveView, resolveExit, routeView, startLocation, trackObjectives, validateCampaign, labelOf, openContainer, performAct, takeAll, takeItem, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
   pickPlot, placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
   skipAbilityPick, spendScorePoint, STARTER_BRIEFS, toCharacterView,
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
@@ -143,6 +143,7 @@ export class GameSession {
   /** Entity and tile of the exit last acted on, so a refused exit is not retried on every commit. */
   private exitKey = "";
   private lastObjectiveKey = "";
+  private lastRouteKey = "";
   private endingTold = false;
   /** What the opening DM turn is told about the start. */
   private openingNote = "The session is just beginning: set the scene for the party and invite them to act.";
@@ -468,6 +469,7 @@ export class GameSession {
 
   /** Broadcast `objective_update` when the view differs from the one the table last saw; tell the DM once when the story is finished. */
   private syncObjective(completed: { id: string; hint: string; done: true }[] = []): void {
+    this.syncRoute();
     const view = objectiveView(this.state);
     if (!view) return;
     const key = JSON.stringify(view);
@@ -480,6 +482,16 @@ export class GameSession {
       const end = this.state.bible.ending;
       this.pushPending([`[engine: every objective of the story is complete${end ? ` (the ending: ${end.success.slice(0, 160)})` : ""}; bring the campaign to its ending now instead of opening new threads]`]);
     }
+  }
+
+  /** Broadcast `route_update` when what the party knows of the route differs from what the table last saw. */
+  private syncRoute(): void {
+    const view = routeView(this.state);
+    if (!view) return;
+    const key = JSON.stringify(view);
+    if (key === this.lastRouteKey) return;
+    this.lastRouteKey = key;
+    this.room.broadcast("route_update", view);
   }
 
   /** Begin play: snapshot, then the opening DM turn. */
@@ -589,6 +601,7 @@ export class GameSession {
     const payload = this.snapshotPayload(++this.seq);
     if (payload) {
       if (payload.objective) this.lastObjectiveKey = JSON.stringify(payload.objective);
+      if (payload.route) this.lastRouteKey = JSON.stringify(payload.route);
       this.room.broadcast("state_snapshot", payload);
     }
   }

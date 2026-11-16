@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EnemyRoleSchema, NpcRoleSchema, SizeClassSchema } from "./enums";
+import { EnemyRoleSchema, ExitSideSchema, NpcRoleSchema, SizeClassSchema } from "./enums";
 import { EntityIdSchema, StageIdSchema, shortWord, text } from "./common";
 import { SettingSchema } from "./map";
 
@@ -137,3 +137,51 @@ export const ObjectiveUpdatePayload = ObjectiveViewSchema.extend({
   completed: z.array(ObjectiveMilestoneSchema).max(30).optional(),
 });
 export type ObjectiveUpdate = z.infer<typeof ObjectiveUpdatePayload>;
+
+// ---------- the player-facing route view (wire) ----------
+
+/** How the party stands with a place: it is here, it has been there, or an exit of a visited place names it. */
+export const RouteNodeStateSchema = z.enum(["current", "visited", "known"]);
+export type RouteNodeState = z.infer<typeof RouteNodeStateSchema>;
+
+/**
+ * One place on the route map. `id` is opaque (derived by the engine, never the plan's own id) and stable for the game. `x` and `y`
+ * are layout hints in abstract units (the engine lays out the whole plan, so a node never moves when others are discovered).
+ * `exit` is set on the current place's neighbours only: the exit of the current map that leads there (as named on the map).
+ * `summary` appears on visited places only.
+ */
+export const RouteNodeSchema = z.strictObject({
+  id: EntityIdSchema,
+  name: text(40),
+  state: RouteNodeStateSchema,
+  summary: text(200).optional(),
+  x: z.number().int().min(0).max(100000),
+  y: z.number().int().min(0).max(100000),
+  exit: z.strictObject({ side: ExitSideSchema, label: text(40) }).optional(),
+});
+export type RouteNode = z.infer<typeof RouteNodeSchema>;
+
+/** A connection between two shown nodes (undirected; at least one end is visited). */
+export const RouteEdgeSchema = z.strictObject({ a: EntityIdSchema, b: EntityIdSchema });
+export type RouteEdge = z.infer<typeof RouteEdgeSchema>;
+
+/** An open objective of the current stage that the engine can place: the milestone (an `ObjectiveView` milestone id) and its node. */
+export const RouteMarkerSchema = z.strictObject({ milestone_id: EntityIdSchema, node: EntityIdSchema });
+export type RouteMarker = z.infer<typeof RouteMarkerSchema>;
+
+/**
+ * What players know of the campaign's geography: every place they have visited, plus the places the visited ones lead to
+ * (named, unvisited). Never later places, trigger internals, encounters or items. `current` is null when the party stands on a map
+ * that is not a plan location.
+ */
+export const RouteViewSchema = z.strictObject({
+  nodes: z.array(RouteNodeSchema).max(12),
+  edges: z.array(RouteEdgeSchema).max(48),
+  markers: z.array(RouteMarkerSchema).max(30),
+  current: EntityIdSchema.nullable(),
+});
+export type RouteView = z.infer<typeof RouteViewSchema>;
+
+/** Payload of the `route_update` server message: the new route view. */
+export const RouteUpdatePayload = RouteViewSchema;
+export type RouteUpdate = RouteView;

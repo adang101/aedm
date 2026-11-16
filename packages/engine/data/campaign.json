@@ -21,6 +21,10 @@
     "backSides": ["west", "south", "north", "east"],
     "maxSlotCount": 6
   },
+  "route": {
+    "layerGap": 120,
+    "rowGap": 80
+  },
   "fallback": {
     "lairFromPct": 60,
     "presets": {
