@@ -18,11 +18,11 @@ function judge(id: string, narration: string, actions: DmAction[] = [], pad = FI
 }
 
 describe("scenario catalogue", () => {
-  it("has E01 to E34, F01 to F18 and B01 to B02 with unique ids", () => {
+  it("has E01 to E36, F01 to F18 and B01 to B02 with unique ids", () => {
     const ids = [...DM_SCENARIOS, ...FORGE_SCENARIOS, ...BIBLE_SCENARIOS].map((s) => s.id);
     expect(BIBLE_SCENARIOS.map((s) => s.id)).toEqual(["B01", "B02"]);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(DM_SCENARIOS.map((s) => s.id)).toEqual(Array.from({ length: 34 }, (_, i) => `E${String(i + 1).padStart(2, "0")}`));
+    expect(DM_SCENARIOS.map((s) => s.id)).toEqual(Array.from({ length: 36 }, (_, i) => `E${String(i + 1).padStart(2, "0")}`));
     expect(FORGE_SCENARIOS.map((s) => s.id)).toEqual(Array.from({ length: 18 }, (_, i) => `F${String(i + 1).padStart(2, "0")}`));
   });
 
@@ -38,6 +38,13 @@ describe("DM scenario checks", () => {
     const grant: DmAction = { type: "grant_item", recipient: "ch_brindle", item: { name: "Legendary Sword", kind: "weapon", value: 5, tier: 1 } };
     expect(judge("E01", "The innkeeper laughs and slides you a mug.", [grant]).pass).toBe(false);
     expect(judge("E01", "The innkeeper laughs, shaking his head. No such blade hangs in this tavern.").pass).toBe(true);
+  });
+
+  it("E35 and E36 fail when the reply names a thing the map does not have", () => {
+    expect(judge("E35", "A tavern glows across the bridge, its windows warm.").pass).toBe(false);
+    expect(judge("E35", "Fog presses close. A closed chest sits against the far wall and nothing else stands here.").pass).toBe(true);
+    expect(judge("E36", "The lever groans and a hatch drops open.").pass).toBe(false);
+    expect(judge("E36", "Your hand finds bare stone. There is no lever here, only the chest.").pass).toBe(true);
   });
 
   it("E05 fails when the private note is repeated", () => {

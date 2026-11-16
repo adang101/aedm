@@ -220,7 +220,7 @@ A live playthrough showed that players got no direction (milestones were free pr
 
 | Phase | Change |
 | --- | --- |
-| 0 | Measure. `scoreNarration` (`packages/engine/src/consistency.ts`, words in `data/place-words.json`) sorts each place or object noun in a text as on the map, elsewhere in the plan, or nowhere (built). Still to do: direction agreement, plan things present and reachable, HUD and DM name agreement, eval scenarios E35 to E43 and B03 to B05, and a baseline run. |
+| 0 | Measure. `scoreNarration` (`packages/engine/src/consistency.ts`, words in `data/place-words.json`) sorts each place or object noun in a text as on the map, elsewhere in the plan, or nowhere (built). Still to do: direction agreement, plan things present and reachable, HUD and DM name agreement, eval scenarios E37 to E43 and B03 to B05, and a baseline run. E35 and E36 (the DM names only what the map has) are written and not yet run. |
 | 1 | DM map digest: a `<map>` block in the DM context with each named place's direction and distance from the party, labelled doors, sign text and exits, from today's landmarks. Objective targets use the HUD's phrase. Fix: a repaired reply replaces narration already streamed. |
 | 2 | Narration lint, logging only: the phase 0 scorer with allowances for quoted speech and remembered places. |
 | 3 | Closed vocabulary and named places: a location lists `places` (id, landmark id from the catalog or an interactable kind, display name, optional sign text). One name on the map, minimap, HUD, signs and DM context. `features` goes; up to two decor-only flavour strings stay. The offline plan and the built-in bible follow the same contract. New catalog pieces as needed. |
@@ -230,9 +230,9 @@ A live playthrough showed that players got no direction (milestones were free pr
 | 7 | Layout sketch: up to three relations per location from `near`, `far`, `edge`, `within`, met by scoring candidate positions. A relation the layout cannot honour is dropped with a note in the build report. |
 | 8 | Map-first prose: location summaries, milestone hints and arrival text are written after the map is built, with engine templates as the fallback. |
 
-**Decided.** The digest lists every place on the map, seen or not. A relation the layout cannot honour is dropped with a note, never a plan error. Token growth is paid for by trimming elsewhere, not by raising ceilings. Evals run on the free tier of the Gemini API, so runs are few and spaced with `--delay-ms`. Which catalog pieces to add is left to the implementer.
+**Decided.** The digest lists every place on the map, seen or not. A relation the layout cannot honour is dropped with a note, never a plan error. Token growth is paid for by trimming elsewhere, not by raising ceilings. Evals run on the free tier of the Gemini API, so runs are few and spaced with `--delay-ms`. Which catalog pieces to add is left to the implementer. Schema changes are additive optional fields, so existing saves keep loading.
 
-**Open.** How much of an existing save must survive the schema changes of phase 3. A home base map with arcs planned one milestone at a time (rest and revival at the base) is a later idea that would sit on the contracts of phases 3 and 4.
+**Later.** A home base map with arcs planned one milestone at a time (rest and revival at the base) is a later idea that would sit on the contracts of phases 3 and 4.
 
 ## Capability check (as of this branch)
 

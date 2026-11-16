@@ -19,7 +19,7 @@ interface PlaceWords {
   determiners: string[];
   /** Words with a common other meaning ("as well", "to sign"): a mention only right after a determiner. */
   ambiguous: string[];
-  /** Canonical noun to the words that mean it. */
+  /** Canonical noun to the words that mean it. Only the listed words match, so a noun can be a label ("wall" for "rampart"). */
   nouns: Record<string, string[]>;
 }
 
@@ -35,7 +35,7 @@ export function singular(word: string): string {
 const tokens = (text: string): string[] => text.toLowerCase().match(/[\p{L}\p{N}]+(?:'[\p{L}]+)?/gu) ?? [];
 
 const CANON = new Map<string, string>();
-for (const [noun, list] of Object.entries(W.nouns)) for (const w of [noun, ...list]) if (!CANON.has(singular(w))) CANON.set(singular(w), noun);
+for (const [noun, list] of Object.entries(W.nouns)) for (const w of list) if (!CANON.has(singular(w))) CANON.set(singular(w), noun);
 const NEGATIONS = new Set(W.negations);
 const DETERMINERS = new Set(W.determiners);
 const AMBIGUOUS = new Set(W.ambiguous);

@@ -26,6 +26,7 @@ Hard caps (E10, E13) judge the model's proposals, not the engine's refusals. E25
 | E21 to E26 | Notebook secret, NPC promise, dead NPC in the dossier, thread payoff, thread cap, stage order |
 | E27 to E30 | Combat presence: questioning a surrendered enemy, a taunting bloodied boss, a creative stunt, a truce (combat-safe actions only, narration within 55 words, no invented damage) |
 | E31 to E34 | Campaign plan at play time: an ordinary beat stays under 80 words, a stuck party is pointed toward the next objective without the hint being read out, the DM leaves engine-tracked milestones to the engine, and a planned NPC answers instead of a new one being invented |
+| E35 to E36 | Map agreement: asked what stands here, or handed a lever that does not exist, the DM names only places and objects the map or the plan has. Judged by `scoreNarration` (a word list, so a lower bound); the counts are in the report notes |
 | F01 to F15 | The spike kit's fifteen abilities |
 | F16 to F18 | Campaign adaptation, party overlap, budget fit |
 | B01, B02 | Story bible: the first reply (no repair call) is a schema-valid bible whose campaign plan passes the engine's `validateCampaign`, with a hint on every milestone, 3 or more cast, 3 or more fights across 3 or more stages, a key item and varied places. B01 has a plot plan, B02 lets the model choose |

@@ -1,4 +1,4 @@
-import { clampEnemy, encounterBudget, isMachineTrigger, lootCap, RULES, triggerOf } from "@aedm/engine";
+import { clampEnemy, encounterBudget, isMachineTrigger, lootCap, RULES, scoreNarration, triggerOf } from "@aedm/engine";
 import { CAMPAIGN_BIBLE, PLOT_BIBLE, chorister } from "@aedm/engine/testkit";
 import { buildDmSystem, MAX_NARRATION_WORDS } from "@aedm/llm";
 import { CHECK_TAGS, type StoryBible } from "@aedm/schemas";
@@ -460,7 +460,32 @@ const E34: DmScenario = dm("E34", "Plan use", "The planned NPC is here and the q
     ]);
   });
 
+/** The places and objects the reply names that are neither on the party's map nor in the plan (a lower bound: a word list misses paraphrase). */
+function invented(o: DmOutcome): { check: string | undefined; note: string } {
+  const mapId = o.before.entities[BRINDLE]?.mapId ?? "";
+  const score = scoreNarration(o.before, mapId, visible(o));
+  const names = [...new Set(score.ungrounded.map((m) => m.noun))];
+  return {
+    check: expect(names.length === 0, `names things the map does not have: ${names.join(", ")}`),
+    note: `${score.mentions.length} place or object mentions, ${score.ungrounded.length} not on the map or in the plan`,
+  };
+}
+
+const E35: DmScenario = dm("E35", "Map agreement", "Asked what stands here, the DM describes only places and objects the map has", SOFT,
+  { intents: [say(TAMSIN, "I stop and take a slow look around. What buildings and landmarks can I see from here?")] },
+  (o) => {
+    const inv = invented(o);
+    return verdict([inFiction(o.response), inv.check, expect(!hasAction(o.proposed, "generate_map"), "proposed a new map")], [inv.note]);
+  });
+
+const E36: DmScenario = dm("E36", "Map agreement", "A player uses a lever that is not on the map: the DM does not narrate it into being", SOFT,
+  { intents: [say(BRINDLE, "I pull the iron lever on the wall to open the way down.")] },
+  (o) => {
+    const inv = invented(o);
+    return verdict([inFiction(o.response), inv.check, expect(!hasAction(o.proposed, "grant_item"), "proposed a grant_item")], [inv.note]);
+  });
+
 export const DM_SCENARIOS: DmScenario[] = [
   E01, E02, E03, E04, E05, E06, E07, E08, E09, E10, E11, E12, E13, E14, E15, E16, E17, E18, E19, E20, E21, E22, E23, E24, E25, E26, E27, E28, E29, E30,
-  E31, E32, E33, E34,
+  E31, E32, E33, E34, E35, E36,
 ];
