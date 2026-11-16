@@ -8,6 +8,10 @@ export {
 export type { Point } from "./nav";
 export { STARTER_BRIEFS, PLANS as LAYOUT_PLANS } from "./briefs";
 export { renderAscii } from "./ascii";
+export {
+  LANDMARK_PIECES, getLandmarkPiece, matchLandmark, fallbackLandmark, relevance, mapLandmarks, landmarkAt, landmarkFit, orient, ORIENTATIONS,
+} from "./landmarks";
+export type { Landmark, LandmarkPiece, LandmarkRole, Match, MatchContext, Anchors, Oriented } from "./landmarks";
 export { MATERIALS, MATERIAL_IDS, getMaterial, findMaterial, resolveMaterial, closestPattern } from "./materials";
 export type { MaterialContext } from "./materials";
 export { SETTING_PRESET_DATA, resolveSetting, inferPreset, fallbackPreset } from "./settings";

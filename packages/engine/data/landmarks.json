@@ -1,0 +1,281 @@
+{
+  "version": 1,
+  "notes": "Landmarks: small authored set pieces the map generator stamps into focal areas (packages/engine/src/map/landmarks.ts and landmark-stamp.ts). rows are the pattern, top to bottom; every row has the same width. Terrain codes: . leave the terrain as it is; _ open floor; , worn ground (the setting's path material); # wall (the setting's wall); o obstacle (the setting's own); r rock; t tree; ~ deep water; - shallows; = plank bridge; + door. Anchors (all open floor): @ the landmark's centre (exactly one; the map records it); s where a person stands; f where a fight forms up; i where an item or chest rests; g where a sign stands (it gets text from sign). A to Z are props named by the piece's legend: {p: material id of a prop or obstacle in materials.json, solid: true to block movement, ground: ',' to wear the ground under it, wall: true when the cell is a wall that wants a built look, use: library wall ids to fall back on when the setting's walls are natural (hedge, cliff, cave)}. pond: true lets the water cells carve a pond where there is none. Fields: env (outdoor, indoor, underground), layouts (omitted = any), roles (npc, enemy, boss, loot, poi: what the piece suits), weight (0 to 3: how imposing, so bosses take the heaviest), keywords (matching words; a piece also matches its own id and name).",
+  "unfit": [
+    {
+      "env": "outdoor", "layout": "maze",
+      "pieces": ["ruined_shrine", "watchtower_stump", "graveyard_plot", "fishing_jetty", "notice_board", "gallows_hill", "collapsed_wagon", "ritual_circle", "barricade", "boss_dais", "toppled_statue", "burnt_cottage", "fungus_grotto", "crystal_hollow", "bone_pit"]
+    }
+  ],
+  "limits": { "small": 3, "medium": 4, "large": 6, "searchRadius": 9, "wideRadius": 60, "gap": 1, "fightClear": 2, "maxTries": 6 },
+  "pieces": [
+    {
+      "id": "ruined_shrine", "name": "Ruined shrine", "description": "Broken pillars flank a cracked altar in a ring of rubble.",
+      "keywords": ["shrine", "ruin", "ruined", "chapel", "temple", "holy", "sacred", "ancient", "relic", "monument", "altar", "idol", "worship", "devotion"],
+      "env": ["outdoor", "underground"], "roles": ["loot", "npc", "boss", "poi"], "weight": 2, "legend": {"B": {"p": "broken_pillar", "solid": true}, "A": {"p": "stone_altar", "solid": true}, "R": {"p": "rubble"}},
+      "rows": ["B.R_R.B", "_B_A_B_", ",,s@s,,", "_,f_f,_", "R,,i,,R"]
+    },
+    {
+      "id": "standing_stones", "name": "Standing stones", "description": "A ring of weathered stones, humming faintly when the wind drops.",
+      "keywords": ["stone", "stones", "circle", "henge", "menhir", "monolith", "megalith", "druid", "ring", "cairn", "obelisk"],
+      "env": ["outdoor"], "layouts": ["open_field", "trail", "islands"], "roles": ["boss", "enemy", "poi"], "weight": 2, "legend": {},
+      "rows": ["..r_r..", ".r___r.", "r_____r", "__s@f__", "r__i__r", ".r_f_r.", "..r_r.."]
+    },
+    {
+      "id": "campsite", "name": "Abandoned campsite", "description": "A fire ring, bedrolls and a few crates, left in a hurry.",
+      "keywords": ["camp", "campsite", "campfire", "fire", "bivouac", "tent", "bedroll", "hearth", "rest", "caravan", "smuggler", "bandit", "refuge"],
+      "env": ["outdoor", "underground"], "layouts": ["rooms_and_corridors", "cave", "open_field", "settlement", "trail", "arena", "islands"], "roles": ["npc", "enemy", "loot", "poi"], "weight": 0, "legend": {"C": {"p": "campfire"}, "D": {"p": "bed"}, "L": {"p": "fallen_log"}, "X": {"p": "crate", "solid": true}, "Z": {"p": "cargo_sacks"}},
+      "rows": ["..D_D..", "_L_C_L_", "__s@s__", "_Z_f_X_", "..,i,.."]
+    },
+    {
+      "id": "watchtower_stump", "name": "Watchtower stump", "description": "The broken base of a stone watchtower, its roof long gone.",
+      "keywords": ["tower", "watchtower", "watch", "lookout", "keep", "turret", "outpost", "fort", "ruin", "stump", "bastion", "guard"],
+      "env": ["outdoor", "underground"], "roles": ["enemy", "boss", "loot", "poi"], "weight": 2, "legend": {"R": {"p": "rubble"}, "#": {"wall": true, "use": ["stone_brick_wall"]}},
+      "rows": ["##R##", "#_i_#", "R_@_#", "#_s_#", "##_##", ".,f,.", ".,_,."]
+    },
+    {
+      "id": "graveyard_plot", "name": "Graveyard plot", "description": "A fenced plot of leaning headstones and a weeping statue.",
+      "keywords": ["grave", "graveyard", "cemetery", "burial", "tomb", "tombstone", "headstone", "crypt", "boneyard", "undead", "dead", "mourning", "morgue"],
+      "env": ["outdoor"], "roles": ["enemy", "boss", "loot", "poi"], "weight": 1, "sign": ["Rest in peace. Disturb nothing.", "Here lie the nameless of the parish.", "Keep the gate shut at night."],
+      "legend": {"F": {"p": "dense_shrub", "solid": true}, "T": {"p": "tombstone", "solid": true}, "N": {"p": "scattered_bones"}, "S": {"p": "statue", "solid": true}},
+      "rows": ["FFFFFFF", "F_T_T_F", "F_N_N_F", "F_TST_F", "Fs_i_fF", "FFF@FFF", "..,g,.."]
+    },
+    {
+      "id": "ferry_dock", "name": "Ferry dock", "description": "A weathered landing where a ferry once called, with coiled ropes and nets.",
+      "keywords": ["ferry", "dock", "pier", "landing", "wharf", "harbor", "harbour", "quay", "port", "boat", "ferryman", "crossing", "river", "lake", "shore"],
+      "env": ["outdoor"], "layouts": ["open_field", "trail", "settlement", "islands"], "roles": ["npc", "poi", "loot"], "weight": 1, "pond": true, "sign": ["Ferry crossing. Ring the bell and wait.", "No passage after dark.", "Fares paid in advance."],
+      "legend": {"C": {"p": "coiled_rope"}, "N": {"p": "fishing_nets"}},
+      "rows": ["...~~~~~~", ".~~~~~~~~", "g,,======", "@Ns======", "i,f======", ".C.~~~~~~", "..~~~~~~~"]
+    },
+    {
+      "id": "fishing_jetty", "name": "Fishing jetty", "description": "A short wooden jetty reaching into still water, a net drying on its rail.",
+      "keywords": ["jetty", "fishing", "fisher", "fisherman", "angler", "net", "pond", "boathouse", "lagoon", "bay", "cove", "pontoon", "mooring"],
+      "env": ["outdoor"], "roles": ["npc", "poi"], "weight": 0, "pond": true,
+      "legend": {"N": {"p": "fishing_nets"}},
+      "rows": ["..~~~~~", ".-~~~~~", "s@=====", "iN=====", ".f-~~~~", "..~~~~~"]
+    },
+    {
+      "id": "stone_footbridge", "name": "Old footbridge", "description": "A mossy stone footbridge over a slow stream.",
+      "keywords": ["bridge", "footbridge", "stream", "brook", "creek", "ford", "crossing", "gorge", "ravine", "canal", "arch", "span", "river", "causeway", "plank", "walkway", "boardwalk"],
+      "env": ["outdoor"], "layouts": ["open_field", "trail", "islands", "settlement"], "roles": ["enemy", "poi", "boss"], "weight": 1, "pond": true,
+      "legend": {"P": {"p": "stone_pillar", "solid": true}},
+      "rows": ["...P,,,P...", "..f,,@,,s..", ".-~~~=~~~-.", "-~~~~=~~~~-", ".-~~~=~~~-.", "..i,,,,,f..", "...P,,,P..."]
+    },
+    {
+      "id": "village_well", "name": "Village well", "description": "A stone well with a worn path trodden around it.",
+      "keywords": ["well", "wellhead", "water", "spring", "cistern", "pump", "village", "square", "plaza", "commons", "hamlet", "green"],
+      "env": ["outdoor"], "roles": ["npc", "poi", "loot"], "weight": 0, "legend": {"W": {"p": "stone_well", "solid": true}, "E": {"p": "lantern_post"}, "N": {"p": "wildflowers"}},
+      "rows": ["E,,,,,E", ",,,,,,,", ",,s,i,,", ",,,W,,,", ",,f@,,,", ",,,,,,,", "N,,,,,N"]
+    },
+    {
+      "id": "market_stalls", "name": "Market stalls", "description": "Rows of canvas-roofed stalls with crates and sacks piled between them.",
+      "keywords": ["market", "stall", "stalls", "bazaar", "merchant", "trader", "shop", "fair", "vendor", "wares", "trade", "mart", "peddler"],
+      "env": ["outdoor"], "layouts": ["settlement", "open_field", "trail"], "roles": ["npc", "poi", "loot"], "weight": 0,
+      "legend": {"M": {"p": "wooden_table", "solid": true}, "Z": {"p": "cargo_sacks"}, "Q": {"p": "banner"}, "X": {"p": "crate", "solid": true}},
+      "rows": ["MM_MM_MM", "MM_MM_MM", "_Zs_@_iZ", "_,,f,,,_", "MM_MM_XQ"]
+    },
+    {
+      "id": "town_fountain", "name": "Fountain square", "description": "A little fountain with a ring of worn paving and a lantern post.",
+      "keywords": ["fountain", "square", "plaza", "courtyard", "garden", "park", "statue", "noble", "town", "centre", "center"],
+      "env": ["outdoor", "indoor"], "layouts": ["settlement", "open_field", "arena", "rooms_and_corridors"], "roles": ["npc", "poi"], "weight": 0,
+      "legend": {"F": {"p": "fountain", "solid": true}, "E": {"p": "lantern_post"}, "N": {"p": "wildflowers"}},
+      "rows": ["N,,,,,N", ",,,,,,,", ",,sFs,,", ",,,@,,,", ",,f,i,,", ",,,,,,,", "E,,,,,E"]
+    },
+    {
+      "id": "notice_board", "name": "Notice board", "description": "A roadside board crowded with notices, warnings and pleas.",
+      "keywords": ["notice", "board", "sign", "signpost", "crossroads", "junction", "road", "roadside", "waymarker", "waystone", "marker", "bounty", "fork", "lantern", "lamp", "post", "lamppost", "streetlamp", "bell"],
+      "env": ["outdoor"], "roles": ["npc", "poi"], "weight": 0, "sign": ["Bounty: three crowns for proof of the beast.", "Travellers keep to the road after dusk.", "Missing: one child, one dog. Ask at the inn.", "Toll paid at the bridge. No exceptions."],
+      "legend": {"E": {"p": "lantern_post"}},
+      "rows": [".,,g,,.", ",,,,,,,", ",s,@,i,", ",,,,,,,", ".,E,f,."]
+    },
+    {
+      "id": "gallows_hill", "name": "Gallows hill", "description": "A bare rise crowned by a gallows and a scatter of bones.",
+      "keywords": ["gallows", "gibbet", "hanging", "hanged", "execution", "scaffold", "noose", "hill", "mound", "cursed", "gibbet"],
+      "env": ["outdoor"], "roles": ["boss", "enemy", "poi"], "weight": 2, "sign": ["Let this be a warning."],
+      "legend": {"P": {"p": "dead_tree", "solid": true}, "N": {"p": "scattered_bones"}, "K": {"p": "skull_pile"}},
+      "rows": [".rr_rr.", "r_,,,,r", "r_,P,_r", "__,@N,_", "_s,f,fK", "r__i__r", ".r_g_r."]
+    },
+    {
+      "id": "collapsed_wagon", "name": "Collapsed wagon", "description": "A wagon on its side, its cargo spilled across the road.",
+      "keywords": ["wagon", "cart", "caravan", "carriage", "wreck", "wreckage", "crash", "overturned", "cargo", "ambush", "supplies", "merchant", "road"],
+      "env": ["outdoor"], "roles": ["loot", "enemy", "poi"], "weight": 0,
+      "legend": {"W": {"p": "wreckage", "solid": true}, "X": {"p": "crate", "solid": true}, "Y": {"p": "barrel", "solid": true}, "Z": {"p": "cargo_sacks"}},
+      "rows": ["..WWW..", ".XWWWY.", "_Z_@_s_", "_i_f_f_", "..,,,.."]
+    },
+    {
+      "id": "hermit_hut", "name": "Hermit's hut", "description": "A one-room hut with a smoking chimney, a cauldron and a patch of herbs.",
+      "keywords": ["hut", "hermit", "cabin", "cottage", "shack", "witch", "hovel", "lodge", "recluse", "house", "home", "dwelling", "herbalist", "druid"],
+      "env": ["outdoor"], "roles": ["npc", "loot", "poi"], "weight": 1,
+      "legend": {"#": {"wall": true, "use": ["wooden_wall", "plaster_wall"]}, "D": {"p": "bed"}, "O": {"p": "wooden_table"}, "C": {"p": "cauldron"}, "N": {"p": "wildflowers"}},
+      "rows": ["######..", "#DCs_#..", "#_@O_#..", "#_i__#..", "###+##..", ",,,s,,f.", "N,,,,,,."]
+    },
+    {
+      "id": "mine_mouth", "name": "Mine mouth", "description": "A timbered mine entrance with a cart track, crates and a heap of spoil.",
+      "keywords": ["mine", "mining", "quarry", "pit", "shaft", "tunnel", "adit", "miner", "ore", "dig", "excavation", "cave", "mouth", "entrance"],
+      "env": ["outdoor"], "layouts": ["open_field", "trail", "islands"], "roles": ["enemy", "loot", "boss", "poi"], "weight": 1, "sign": ["Danger. Unsafe workings. Keep out."],
+      "legend": {"X": {"p": "crate", "solid": true}, "R": {"p": "rubble"}, "G": {"p": "gear_cluster"}, "F": {"p": "wooden_fence", "solid": true}},
+      "rows": [".rrrrr.", "rr___rr", "r_,@,_r", "rG,s,iR", "F__f__F", ",,,g,,,", ".,X,,R."]
+    },
+    {
+      "id": "waterfall_pool", "name": "Waterfall pool", "description": "A cold pool beneath a rocky ledge where a thin waterfall falls.",
+      "keywords": ["waterfall", "falls", "pool", "pond", "spring", "grotto", "cascade", "fountain", "basin", "oasis", "lake", "mere", "tarn"],
+      "env": ["outdoor"], "layouts": ["open_field", "trail", "islands"], "roles": ["poi", "loot", "npc"], "weight": 1, "pond": true,
+      "legend": {"N": {"p": "reeds"}},
+      "rows": ["rrrrr..", "r-~~~r.", ".-~~~-.", ".-~~~-.", "N,-~-,.", ",s,@,f.", "N,,i,,N"]
+    },
+    {
+      "id": "ritual_circle", "name": "Ritual circle", "description": "A circle of glowing runes ringed with candles, skulls and old bones.",
+      "keywords": ["ritual", "circle", "rune", "runes", "summoning", "cult", "cultist", "sacrifice", "occult", "arcane", "magic", "witchcraft", "sigil", "ceremony", "coven"],
+      "env": ["outdoor", "underground", "indoor"], "roles": ["boss", "enemy", "poi"], "weight": 3,
+      "legend": {"G": {"p": "rune_circle"}, "V": {"p": "candles"}, "K": {"p": "skull_pile"}, "N": {"p": "scattered_bones"}},
+      "rows": ["..VKV..", ".V___V.", "VN_G_NV", "K_f@s_K", "VN_G_NV", ".V_i_V.", "..VKV.."]
+    },
+    {
+      "id": "barricade", "name": "Barricade", "description": "A hasty wall of crates, barrels and stakes across the way.",
+      "keywords": ["barricade", "blockade", "roadblock", "wall", "checkpoint", "defense", "defence", "palisade", "stockade", "gate", "barrier", "choke", "siege", "ambush"],
+      "env": ["outdoor", "underground", "indoor"], "roles": ["enemy", "boss", "poi"], "weight": 1,
+      "legend": {"X": {"p": "crate", "solid": true}, "Y": {"p": "barrel", "solid": true}, "F": {"p": "wooden_fence", "solid": true}},
+      "rows": ["XYF_FYX", "_,_@_,_", "f,s,s,f", "_,,i,,_"]
+    },
+    {
+      "id": "boss_dais", "name": "Raised dais", "description": "A raised platform of worn stone, banners hanging either side.",
+      "keywords": ["dais", "throne", "platform", "stage", "podium", "lair", "court", "seat", "altar", "boss", "tyrant", "warlord", "king", "queen", "lord", "chieftain", "rise", "overlook", "rock", "conductor", "balcony", "ledge", "perch", "crag"],
+      "env": ["outdoor", "underground", "indoor"], "roles": ["boss", "poi"], "weight": 3,
+      "legend": {"Q": {"p": "banner"}, "U": {"p": "brazier", "solid": true}, "P": {"p": "stone_pillar", "solid": true}},
+      "rows": ["P.UQU.P", ",,,,,,,", ",,s@s,,", ",,,i,,,", "__f_f__", "_______"]
+    },
+    {
+      "id": "signal_beacon", "name": "Signal beacon", "description": "An unlit beacon on a cairn of stones, ready for the watchers' call.",
+      "keywords": ["beacon", "signal", "lighthouse", "watchfire", "bonfire", "lookout", "warning", "cairn", "flame", "pyre", "torch"],
+      "env": ["outdoor"], "roles": ["poi", "enemy", "npc"], "weight": 1,
+      "legend": {"U": {"p": "brazier", "solid": true}},
+      "rows": [".rrr.", "r_U_r", "r_@s_", "r_i_r", ".rfr."]
+    },
+    {
+      "id": "toppled_statue", "name": "Toppled statue", "description": "A huge carved figure, fallen and half-buried, its face worn smooth.",
+      "keywords": ["statue", "idol", "colossus", "effigy", "figure", "carving", "totem", "monument", "toppled", "fallen", "giant", "head", "sculpture"],
+      "env": ["outdoor", "underground"], "roles": ["poi", "boss", "loot"], "weight": 1,
+      "legend": {"S": {"p": "statue", "solid": true}, "R": {"p": "rubble"}, "B": {"p": "broken_pillar", "solid": true}},
+      "rows": [".B.SB..", "RSSSR..", "_R@_s_.", "_f_i_f.", ".,,,,.."]
+    },
+    {
+      "id": "burnt_cottage", "name": "Burnt cottage", "description": "Charred walls and fallen beams where a family once lived.",
+      "keywords": ["cottage", "burnt", "burned", "farmhouse", "farm", "homestead", "ruined", "house", "abandoned", "fire", "wreck", "croft", "barn", "ruin"],
+      "env": ["outdoor"], "roles": ["loot", "enemy", "poi"], "weight": 0,
+      "legend": {"#": {"wall": true, "use": ["wooden_wall"]}, "R": {"p": "rubble"}, "L": {"p": "fallen_log"}, "D": {"p": "bed"}},
+      "rows": ["#R###R#", "#D_i_L#", "R_@__s#", "#__f__R", "##_+###", ".R,s,L."]
+    },
+    {
+      "id": "smithy_forge", "name": "Forge", "description": "An open-fronted smithy: a glowing forge, an anvil and racks of half-finished blades.",
+      "keywords": ["forge", "smithy", "smith", "blacksmith", "anvil", "armory", "armoury", "weapon", "weapons", "foundry", "furnace", "workshop", "forgemaster"],
+      "env": ["outdoor", "indoor", "underground"], "roles": ["npc", "loot", "poi"], "weight": 1,
+      "legend": {"#": {"wall": true, "use": ["stone_brick_wall"]}, "U": {"p": "brazier", "solid": true}, "J": {"p": "anvil", "solid": true}, "M": {"p": "weapon_rack"}, "X": {"p": "crate", "solid": true}},
+      "rows": ["#####", "#UMX#", "#_@J_", "#sfi_", "#,,,_"]
+    },
+    {
+      "id": "sacrificial_altar", "name": "Sacrificial altar", "description": "A stained slab altar between iron braziers and piles of skulls.",
+      "keywords": ["sacrifice", "sacrificial", "altar", "blood", "slab", "offering", "cult", "idol", "dark", "demon", "profane", "unholy", "temple", "gore"],
+      "env": ["outdoor", "underground", "indoor"], "roles": ["boss", "loot", "poi"], "weight": 3,
+      "legend": {"A": {"p": "stone_altar", "solid": true}, "U": {"p": "brazier", "solid": true}, "K": {"p": "skull_pile"}, "N": {"p": "scattered_bones"}},
+      "rows": ["U.A.U", "K_i_K", "N_@_N", "_sfs_", ",,f,,"]
+    },
+    {
+      "id": "fungus_grotto", "name": "Fungus grotto", "description": "A damp hollow where pale mushrooms glow around a still, dark pool.",
+      "keywords": ["fungus", "fungal", "mushroom", "grotto", "spore", "glowcap", "damp", "hollow", "moss", "mold", "myconid", "cavern", "pool", "reed", "bog", "marsh", "fen", "peat"],
+      "env": ["underground", "outdoor"], "roles": ["poi", "enemy", "loot"], "weight": 1, "pond": true,
+      "legend": {"M": {"p": "mushrooms"}, "G": {"p": "giant_mushroom", "solid": true}},
+      "rows": [".G...G.", "M_-~-_M", "_-~~~-_", "M,-~-,M", "_s,@,f_", "G_Mi_MG"]
+    },
+    {
+      "id": "crystal_hollow", "name": "Crystal hollow", "description": "A hollow studded with humming crystals that throw cold light.",
+      "keywords": ["crystal", "crystals", "gem", "geode", "hollow", "glow", "shimmer", "quartz", "vein", "prism", "ice", "glacier", "frozen"],
+      "env": ["underground", "outdoor"], "roles": ["loot", "poi", "boss"], "weight": 2,
+      "legend": {"C": {"p": "crystal_cluster", "solid": true}, "G": {"p": "glow_crystals"}},
+      "rows": [".CG_GC.", "C_____C", "G_s@f_G", "C__i__C", ".CG_GC."]
+    },
+    {
+      "id": "bone_pit", "name": "Bone pit", "description": "A churned hollow heaped with bones and skulls, picked clean long ago.",
+      "keywords": ["bone", "bones", "pit", "ossuary", "charnel", "skull", "skulls", "remains", "carrion", "lair", "den", "nest", "beast", "monster"],
+      "env": ["underground", "outdoor", "indoor"], "roles": ["enemy", "boss", "loot", "poi"], "weight": 2,
+      "legend": {"K": {"p": "skull_pile"}, "N": {"p": "scattered_bones"}, "R": {"p": "rubble"}},
+      "rows": [".R_N_R.", "N_K_K_N", "_K_@_K_", "Ns_f_fN", "_NKiKN_", ".R_N_R."]
+    },
+    {
+      "id": "collapsed_tunnel", "name": "Collapsed tunnel", "description": "A rock fall half blocks the way, timbers jutting from the rubble.",
+      "keywords": ["collapse", "collapsed", "cave-in", "tunnel", "rockfall", "rubble", "blocked", "passage", "mine", "timber", "debris", "landslide"],
+      "env": ["underground", "indoor"], "roles": ["enemy", "poi", "loot"], "weight": 0,
+      "legend": {"R": {"p": "rubble"}, "B": {"p": "boulder", "solid": true}, "F": {"p": "wooden_fence", "solid": true}},
+      "rows": ["BBBBB", "BRFRB", "_R@R_", "_s_i_", "_,f,_"]
+    },
+    {
+      "id": "altar_nook", "name": "Altar nook", "description": "A small alcove with a candle-lit altar and a kneeling cushion.",
+      "keywords": ["altar", "nook", "alcove", "chapel", "prayer", "shrine", "candle", "devotional", "oratory", "vigil", "holy", "sanctum", "niche", "reliquary", "organ", "pipe", "choir", "hymn", "pulpit", "pew", "font", "tablet"],
+      "env": ["indoor", "underground"], "roles": ["loot", "npc", "poi"], "weight": 1,
+      "legend": {"A": {"p": "stone_altar", "solid": true}, "V": {"p": "candles"}, "R": {"p": "woven_rug", "ground": ","}},
+      "rows": ["VAV", "_i_", "s@f", ",R,"]
+    },
+    {
+      "id": "prison_cells", "name": "Cell block", "description": "A row of barred cells with straw cots and a guard's table.",
+      "keywords": ["prison", "cell", "cells", "jail", "gaol", "dungeon", "cellblock", "captive", "prisoner", "brig", "oubliette", "holding", "torture", "guard"],
+      "env": ["indoor", "underground"], "layouts": ["rooms_and_corridors", "cave", "arena"], "roles": ["npc", "enemy", "loot", "poi"], "weight": 1,
+      "legend": {"#": {"wall": true}, "D": {"p": "bed"}, "O": {"p": "wooden_table"}},
+      "rows": ["#####_#####", "#D_#_s_#_D#", "#i_+_@_+_i#", "###_#_#_###", "__fOf__f___"]
+    },
+    {
+      "id": "library_corner", "name": "Library corner", "description": "Tall shelves, a reading table and an open book, lit by a single candle.",
+      "keywords": ["library", "book", "books", "shelf", "shelves", "study", "scholar", "archive", "scroll", "scribe", "reading", "lore", "librarian", "tome", "scriptorium", "desk", "writing", "keeper", "journal", "ledger", "logbook", "chart"],
+      "env": ["indoor", "underground"], "roles": ["npc", "loot", "poi"], "weight": 1,
+      "legend": {"I": {"p": "bookshelf", "solid": true}, "O": {"p": "wooden_table"}, "H": {"p": "open_book"}, "V": {"p": "candles"}, "R": {"p": "woven_rug", "ground": ","}},
+      "rows": ["IIIII", "IV_HI", "I_O_i", "s_@_f", "_RRR_"]
+    },
+    {
+      "id": "armory_racks", "name": "Armoury", "description": "Weapon racks and strongboxes line the walls of a cramped armoury.",
+      "keywords": ["armory", "armoury", "weapon", "weapons", "rack", "barracks", "guardroom", "soldier", "arms", "armor", "armour", "garrison", "guard", "stockpile", "arsenal"],
+      "env": ["indoor", "underground"], "roles": ["enemy", "loot", "boss", "poi"], "weight": 1,
+      "legend": {"M": {"p": "weapon_rack"}, "X": {"p": "crate", "solid": true}, "Q": {"p": "banner"}},
+      "rows": ["MMQMM", "X___X", "_s@fi", "__f__"]
+    },
+    {
+      "id": "throne_hall", "name": "Throne dais", "description": "A throne on a carpeted dais between tall banners.",
+      "keywords": ["throne", "court", "audience", "royal", "king", "queen", "lord", "baron", "dais", "seat", "hall", "noble", "castle", "regal", "warlord", "tyrant"],
+      "env": ["indoor", "underground"], "roles": ["boss", "poi"], "weight": 3,
+      "legend": {"Q": {"p": "banner"}, "P": {"p": "stone_pillar", "solid": true}, "S": {"p": "stone_altar", "solid": true}},
+      "rows": ["PQSQP", ",,,,,", ",s@i,", ",,,,,", "_f_f_"]
+    },
+    {
+      "id": "treasure_alcove", "name": "Treasure alcove", "description": "A walled-off recess stacked with chests, crates and old strongboxes.",
+      "keywords": ["treasure", "vault", "hoard", "strongbox", "chest", "cache", "stash", "loot", "reliquary", "coffer", "trove", "gold", "riches", "storeroom", "stores", "cellar", "hatch", "trapdoor", "crate", "cask"],
+      "env": ["indoor", "underground", "outdoor"], "roles": ["loot", "poi"], "weight": 1,
+      "legend": {"C": {"p": "treasure_chest"}, "X": {"p": "crate", "solid": true}, "Y": {"p": "barrel", "solid": true}},
+      "rows": ["XCXCY", "Y_i_X", "_s@f_", "_____"]
+    },
+    {
+      "id": "hearth_corner", "name": "Hearth corner", "description": "A glowing hearth with a pot, a table and a few stools drawn close.",
+      "keywords": ["hearth", "kitchen", "tavern", "inn", "taproom", "common", "cook", "stove", "fireplace", "cosy", "lodging", "bar", "alehouse", "pub", "meal"],
+      "env": ["indoor", "outdoor"], "layouts": ["rooms_and_corridors", "settlement", "arena"], "roles": ["npc", "poi", "loot"], "weight": 0,
+      "legend": {"C": {"p": "campfire"}, "O": {"p": "wooden_table", "solid": true}, "Y": {"p": "barrel", "solid": true}, "K": {"p": "cauldron"}, "R": {"p": "woven_rug", "ground": ","}},
+      "rows": ["YCCK_", "R___O", "s_@_i", "R_O_f", ",,,,,"]
+    },
+    {
+      "id": "burial_niches", "name": "Burial niches", "description": "Stone sarcophagi set in a row, their lids carved with faces.",
+      "keywords": ["burial", "niche", "niches", "sarcophagus", "coffin", "crypt", "catacomb", "tomb", "ossuary", "vault", "mausoleum", "undead", "grave", "dead", "wake"],
+      "env": ["indoor", "underground"], "roles": ["enemy", "boss", "loot", "poi"], "weight": 2,
+      "legend": {"S": {"p": "sarcophagus", "solid": true}, "V": {"p": "candles"}, "N": {"p": "cobweb"}},
+      "rows": ["SVSVS", "_____", "s_@_i", "__f_f", "N___N"]
+    },
+    {
+      "id": "alchemy_bench", "name": "Alchemist's bench", "description": "A cluttered bench of bubbling glass, a cauldron and shelves of jars.",
+      "keywords": ["alchemy", "alchemist", "potion", "laboratory", "lab", "brew", "cauldron", "apothecary", "herbs", "experiment", "workbench", "chemist", "witch", "wizard", "mage", "tower", "sorcerer"],
+      "env": ["indoor", "underground", "outdoor"], "roles": ["npc", "boss", "loot", "poi"], "weight": 1,
+      "legend": {"I": {"p": "bookshelf", "solid": true}, "O": {"p": "wooden_table", "solid": true}, "C": {"p": "cauldron"}},
+      "rows": ["IIIII", "_OOC_", "s_@_i", "__f__"]
+    },
+    {
+      "id": "guard_post", "name": "Guard post", "description": "A watchfire, a rack of spears and a bench where the sentries sit.",
+      "keywords": ["guard", "post", "sentry", "gatehouse", "watch", "patrol", "checkpoint", "toll", "gate", "guardhouse", "picket", "soldier", "outpost", "garrison"],
+      "env": ["outdoor", "indoor", "underground"], "roles": ["enemy", "boss", "poi"], "weight": 1,
+      "legend": {"M": {"p": "weapon_rack"}, "U": {"p": "brazier", "solid": true}, "Q": {"p": "banner"}, "O": {"p": "wooden_table"}},
+      "rows": ["MQMU_", "_O___", "s_@_f", "__f_i"]
+    }
+  ]
+}

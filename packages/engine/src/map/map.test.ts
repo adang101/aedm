@@ -232,7 +232,9 @@ describe("generateMap", () => {
       const tile = candy.tileset.tiles.find((t) => t.material_id === "custom_gumdrop_moss" && t.variant === 0)!;
       expect(tile).toMatchObject({ pattern: "dots", role: "floor", layer: "ground" });
       // the clockwork foundry is full of machinery, the airship has a sea of cloud, the glacier snow and ice
-      expect(sets.get("clockwork foundry")).toContain("iron_machinery");
+      // (any of the seeds: landmarks now take part of a small room, so one seed alone may roll none)
+      const foundry = cases.find(([n]) => n === "clockwork foundry")![1];
+      expect(SEEDS.some((seed) => generateMap(foundry, { seed, id: "m_x" }).map.tileset.tiles.some((t) => t.material_id === "iron_machinery"))).toBe(true);
       expect(sets.get("airship deck in a storm")).toContain("hull_planks");
       expect(sets.get("glacier rift")).toMatch(/snow|ice/);
     });
@@ -242,18 +244,19 @@ describe("generateMap", () => {
     const b = brief({
       points_of_interest: [
         { kind: "chest", room_id: "vault" }, { kind: "altar", room_id: "main" }, { kind: "lever", room_id: "hall" }, { kind: "signpost", room_id: "entry" },
-        { kind: "fountain", room_id: "hall" }, { kind: "drowned pipe organ", room_id: "main" }, { kind: "ancient statue", room_id: "entry" },
+        { kind: "fountain", room_id: "hall" }, { kind: "gilded sundial", room_id: "main" }, { kind: "ancient statue", room_id: "entry" },
       ],
     });
     const { map } = generateMap(b, { seed: 3, id: "m_x" });
     const objs = getObjects(map);
     expect(objs.filter((o) => o.type === "interactable" && o.kind !== "door" && o.kind !== "trap").map((o) => (o as { kind: string }).kind).sort()).toEqual(["altar", "chest", "lever", "sign"]);
-    const ids = map.tileset.tiles.filter((t) => t.layer === "decor").map((t) => t.material_id);
+    // a feature that names a landmark becomes that set piece, whose props may be solid (walls layer), so read every layer
+    const ids = map.tileset.tiles.map((t) => t.material_id);
     expect(ids).toContain("fountain");
     expect(ids).toContain("statue");
-    expect(ids).toContain("custom_drowned_pipe_organ");
+    expect(ids).toContain("custom_gilded_sundial");
     expect(ids).toContain("treasure_chest");
-    const organ = map.tileset.tiles.find((t) => t.material_id === "custom_drowned_pipe_organ")!;
+    const organ = map.tileset.tiles.find((t) => t.material_id === "custom_gilded_sundial")!;
     expect(organ).toMatchObject({ role: "decor", layer: "decor", walkable: true });
     checkMap(map, b);
   });
@@ -351,7 +354,7 @@ function randomBrief(r: MapRng): MapBrief {
       id, type: r.pick(ROOM_TYPES), size: r.pick(SIZES),
       connects_to: ids.filter((o) => o !== id && r.chance(1.5 / n)),
     })),
-    points_of_interest: Array.from({ length: r.int(0, 8) }, () => ({ kind: r.pick(["altar", "chest", "drowned pipe organ", "fountain", "lever", "door", "statue", "sign", "barrel", "???", "ancient whispering idol"]), room_id: r.pick(ids) })),
+    points_of_interest: Array.from({ length: r.int(0, 8) }, () => ({ kind: r.pick(["altar", "chest", "gilded sundial", "fountain", "lever", "door", "statue", "sign", "barrel", "???", "ancient whispering idol"]), room_id: r.pick(ids) })),
     entity_slots: Array.from({ length: r.int(0, 8) }, () => ({ role: r.pick(["enemy", "npc", "boss", "loot"] as const), room_id: r.pick(ids), count: r.int(1, 6) })),
     exits: Array.from({ length: r.int(1, 4) }, (_, i) => ({ side: r.pick(["north", "south", "east", "west"] as const), label: `Exit ${i}` })),
   } as MapBrief;

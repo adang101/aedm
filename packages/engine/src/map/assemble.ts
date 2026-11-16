@@ -5,7 +5,7 @@
  */
 import { MAX_TILEDEFS } from "@aedm/schemas";
 import type { InlineTileset, Material, MaterialRole, TileDef } from "@aedm/schemas";
-import { T } from "./layouts/grid";
+import { T, isPassable } from "./layouts/grid";
 import type { Grid } from "./layouts/grid";
 import { lum } from "./contrast";
 import { getMaterial, resolveMaterial, shiftColor } from "./materials";
@@ -114,6 +114,8 @@ export interface AssembleInput {
   seed: number;
   /** Decor tiles: cell index to the prop material drawn there. */
   decor: ReadonlyMap<number, Material>;
+  /** Materials that replace the usual choice for a wall or obstacle tile (landmark props and built walls). */
+  override?: ReadonlyMap<number, Material>;
 }
 
 export interface Assembled {
@@ -136,7 +138,7 @@ const toneOf = (a: number, b: number): number => (a > 0.74 ? 1 : a < 0.24 ? 2 : 
 
 const variantOf = (u: number, spread: number): number => (u < 1 - spread ? 0 : u < 1 - spread * 0.45 ? 1 : 2);
 
-export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembled {
+export function assemble({ grid, setting, seed, decor, override }: AssembleInput): Assembled {
   const { w, h } = grid;
   const n = w * h;
   const ground = new Array<number>(n).fill(0);
@@ -165,6 +167,11 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
       if (c !== T.LIQUID) return false;
     }
     return true;
+  };
+
+  const nearOpen = (x: number, y: number): boolean => {
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (isPassable(grid.get(x + dx, y + dy))) return true;
+    return false;
   };
 
   for (let y = 0; y < h; y++) {
@@ -197,8 +204,21 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           ground[i] = shallow.length > 0 ? bank.gid(shallow[pickWeighted(shallow.length, u, 0.7)]!, 0, "ground", "liquid") : floorAt(x, y);
           break;
         case T.WALL: {
-          const m = mats.wall[pickWeighted(mats.wall.length, u, 0.78)]!;
-          walls[i] = bank.gid(m, variantOf(hash(seed, x, y, 3), 0.3), "walls");
+          const blk = grid.block[i]!;
+          const ov = override?.get(i);
+          if (ov) {
+            walls[i] = bank.gid(ov, blk > 0 && hash(seed, blk, 1, 12) < 0.3 ? 1 : 0, "walls");
+          } else if (blk > 0) {
+            // one building, one roof: the material and tone follow the building, not the tile
+            const m = mats.wall[pickWeighted(mats.wall.length, hash(seed, blk, 0, 11), 0.5)]!;
+            walls[i] = bank.gid(m, hash(seed, blk, 1, 12) < 0.3 ? 1 : 0, "walls");
+          } else if (!nearOpen(x, y)) {
+            // the solid mass between rooms is one material; the others only trim the faces people see
+            walls[i] = bank.gid(mats.wall[0]!, variantOf(hash(seed, x, y, 3), 0.3), "walls");
+          } else {
+            const m = mats.wall[pickWeighted(mats.wall.length, vnoise(seed, x, y, 7), 0.62)]!;
+            walls[i] = bank.gid(m, variantOf(hash(seed, x, y, 3), 0.3), "walls");
+          }
           break;
         }
         case T.OBSTACLE: {
@@ -206,7 +226,9 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           const list = mats.obstacle;
           const code = grid.veg[i]!;
           let m: Material;
-          if (code === 0) m = list[pickWeighted(list.length, u, 0.5)]!;
+          const ov = override?.get(i);
+          if (ov) m = ov;
+          else if (code === 0) m = list[pickWeighted(list.length, u, 0.5)]!;
           else {
             // layouts mark groves by species and rocks apart, so a grove is one kind of tree, not a mix of everything
             const trees = list.filter((o) => o.tags.includes("tree"));

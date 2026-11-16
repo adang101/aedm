@@ -209,11 +209,11 @@ describe("a campaign played through the engine, with no model call", () => {
     s = placePartyOnMap(s, "m_sq").state;
     let r = trackObjectives(s);
     s = r.state;
-    expect(r.value.objective?.milestones[0]).toMatchObject({ id: "m1", hint: "Talk to Old Tam at Hollowmere Square", done: false });
+    expect(r.value.objective?.milestones[0]).toMatchObject({ id: "m1", hint: expect.stringMatching(/^Talk to Old Tam at the /), done: false });
     // talk
     r = trackObjectives(s, { talkedTo: [campaignOf(s).cast.c_tam!] });
     s = r.state;
-    expect(r.value.lines[0]).toBe("Objective complete: Talk to Old Tam at Hollowmere Square");
+    expect(r.value.lines[0]).toMatch(/^Objective complete: Talk to Old Tam at the /);
     expect(r.value.objective?.stage.id).toBe("early_success");
     // the next map: the party walks through the exit
     s = build(s, "l_dock", "m_dock").state;

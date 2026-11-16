@@ -9,7 +9,8 @@
  */
 import { labelOf } from "./containers.ts";
 import { DESCRIBE } from "./data.ts";
-import { getObjects, hasLineOfSight } from "./map/index.ts";
+import { getObjects, hasLineOfSight, landmarkAt, mapLandmarks } from "./map/index.ts";
+import { landmarkPhrase } from "./campaign-place.ts";
 import {
   effectiveState, entitiesOnMap, interactablesOf, isHidden, sightBlockers,
   type Entity, type GameState,
@@ -117,6 +118,15 @@ export function describeScene(state: GameState, actorId: string): string {
   const setting = map.meta.setting;
   const mood = S.moods[setting.mood] ?? setting.mood;
   out.push(setting.name ? fill(setting.mood ? S.placeMood : S.place, { place: setting.name, mood }) : S.noPlace);
+
+  // the landmarks of the place, and the one the character is standing at
+  const landmarks = mapLandmarks(map);
+  if (landmarks.length > 0) {
+    const here = landmarkAt(map, actor.x, actor.y, 0);
+    if (here) out.push(fill(S.at, { name: landmarkPhrase(here.name), description: here.description }));
+    const others = landmarks.filter((l) => l.id !== here?.id).map((l) => landmarkPhrase(l.name));
+    if (others.length > 0) out.push(fill(S.landmarks, { list: capped(others, D.caps.landmarks) }));
+  }
 
   const exits = getObjects(map).flatMap((o) => {
     if (o.type !== "exit") return [];

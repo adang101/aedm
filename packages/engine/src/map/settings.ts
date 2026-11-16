@@ -122,6 +122,25 @@ function toned(m: Material, role: MaterialRole, tone: number): Material {
   return color === m.color && accent === m.accent ? m : { ...m, color, accent };
 }
 
+/** Ramps that sit comfortably beside one another on the ground: bare earth, stone and sand. */
+const NEUTRAL_RAMPS = new Set(["stone", "earth", "sand"]);
+
+/**
+ * Secondary paths must sit well beside the first one: a strongly coloured material from another ramp (red brick beside grey
+ * cobble) is dropped, unless one of the two is a carpet runner, which is meant to stand out. Explicit paths are never touched.
+ */
+export function harmonizePaths(list: Material[]): Material[] {
+  const first = list[0];
+  if (!first) return list;
+  const a = rampPosition(first.color)?.ramp;
+  return list.filter((m, i) => {
+    if (i === 0) return true;
+    const b = rampPosition(m.color)?.ramp;
+    if (!a || !b || a === b || (NEUTRAL_RAMPS.has(a) && NEUTRAL_RAMPS.has(b))) return true;
+    return first.id.includes("carpet") || m.id.includes("carpet");
+  });
+}
+
 function dedupe(list: Material[]): Material[] {
   const seen = new Set<string>();
   return list.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
@@ -163,6 +182,7 @@ export function resolveSetting(setting: Setting, themeTags: readonly string[] = 
       refs.push(...idsFor(role));
     }
     let list = dedupe(refs.map((r) => toned(coerce(resolveMaterial(r, role, ctx), role), role, TONE[mood]))).slice(0, role === "floor" && setting.environment !== "outdoor" ? 2 : CAPS[role]);
+    if (role === "path" && !(Array.isArray(explicit) && explicit.length > 0)) list = harmonizePaths(list);
     if (list.length === 0) list = [toned(coerce(defaultForRole(role, ctx), role), role, TONE[mood])];
     materials[role] = list;
   }

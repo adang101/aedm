@@ -25,6 +25,7 @@ export * from "./plot.ts";
 export * from "./campaign.ts";
 export * from "./campaign-fallback.ts";
 export * from "./campaign-map.ts";
+export * from "./campaign-place.ts";
 export * from "./campaign-install.ts";
 export * from "./objective-view.ts";
 export * from "./objectives.ts";

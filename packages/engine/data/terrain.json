@@ -72,13 +72,13 @@
     ],
     "lakeMin": 7,
     "tinyWater": 4,
-    "lakeRoundness": 0.05,
+    "lakeRoundness": 0.18,
     "roomClearance": 2,
     "borderMargin": 3,
-    "smoothPasses": 2,
+    "smoothPasses": 3,
     "shallowRingNear": 1,
     "shallowRingFar": 2,
-    "shallowFarThreshold": 0.64,
+    "shallowFarThreshold": 0.8,
     "riverChance": [
       0,
       0.3,
@@ -91,9 +91,16 @@
     "riverNoiseCost": 9,
     "riverRoomCost": 40,
     "riverRoomPad": 3,
-    "riverRadiusBase": 0.5,
-    "riverRadiusExtra": 0.75,
-    "riverBankMoisture": 0.35
+    "riverRadiusBase": 0.85,
+    "riverRadiusExtra": 0.45,
+    "riverBankMoisture": 0.35,
+    "riverEdgeWobble": 0.5,
+    "riverSmooth": 6,
+    "pondAspect": [
+      0.65,
+      1.0
+    ],
+    "pondWobble": 0.7
   },
   "paths": {
     "baseCost": 1,
@@ -173,7 +180,8 @@
   },
   "decor": {
     "groveMin": 0.35,
-    "groveMax": 1.7
+    "groveMax": 1.7,
+    "boost": { "swamp": 2.2, "desert": 2.4, "snowfield": 2.2, "beach": 1.6, "farmland": 1.4 }
   },
   "islands": {
     "grow": [
