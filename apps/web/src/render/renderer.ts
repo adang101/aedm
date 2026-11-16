@@ -11,6 +11,7 @@ import { drawContainerMarker, drawExit, drawInteractable, createMapStyle, type M
 import { TerrainCache } from "./terrain-chunks";
 import { TerrainGrid } from "./terrain-grid";
 import { drawLights, drawMood, type Light } from "./mood";
+import { drawPoiLabel, labelsToShow } from "./poi-labels";
 
 export interface TapInfo {
   tileX: number;
@@ -27,6 +28,8 @@ export interface RenderHooks {
   onTap(info: TapInfo): void;
   /** Entities that should pulse as valid targets right now (targeting mode). */
   isTargetable(e: EntityView): boolean;
+  /** Called at the end of every drawn frame (the minimap repaints from it, only when something changed). */
+  onFrame?(): void;
 }
 
 export interface MapLayers {
@@ -136,6 +139,8 @@ export class MapRenderer {
   private pinchDist = 0;
   private down: { x: number; y: number; id: number } | null = null;
   private ro: ResizeObserver;
+  /** Set when the player looked elsewhere (the minimap); the camera stays there until their character moves. */
+  private detachedAt: { x: number; y: number } | null = null;
 
   constructor(private canvas: HTMLCanvasElement, private store: Store, private hooks: RenderHooks) {
     const ctx = canvas.getContext("2d");
@@ -173,6 +178,21 @@ export class MapRenderer {
   zoomBy(factor: number): void {
     this.cam.zoom = clampZoom(this.cam.zoom * factor);
   }
+
+  /** What the view currently shows, for the minimap. */
+  getView(): { cam: Camera; viewW: number; viewH: number } {
+    return { cam: this.cam, viewW: this.viewW, viewH: this.viewH };
+  }
+
+  /** Look at a world point without following the character; following resumes when the character moves or on `recenter`. */
+  lookAt(cx: number, cy: number): void {
+    const me = myEntity(this.store.state);
+    this.detachedAt = me ? { x: me.x, y: me.y } : { x: -1, y: -1 };
+    this.cam.cx = cx; this.cam.cy = cy;
+    if (this.layers) this.cam = clampCamera(this.cam, this.viewW, this.viewH, this.layers.w, this.layers.h);
+  }
+
+  recenter(): void { this.detachedAt = null; }
 
   flashTile(x: number, y: number): void {
     this.flash = { x, y, until: performance.now() + 700 };
@@ -270,7 +290,11 @@ export class MapRenderer {
 
   private frame(now: number, dt: number): void {
     const s = this.store.state;
-    if (!this.layers || this.layers.ref !== s.map) this.layers = s.map ? extractLayers(s.map) : null;
+    if (!this.layers || this.layers.ref !== s.map) {
+      const wasOther = this.layers?.mapId !== s.map?.id;
+      this.layers = s.map ? extractLayers(s.map) : null;
+      if (wasOther) { this.detachedAt = null; this.cam.cx = 0; this.cam.cy = 0; }
+    }
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = OUTLINE;
@@ -333,6 +357,9 @@ export class MapRenderer {
     drawLights(ctx, L.mood, lights, sc, ox, oy, now);
     world();
     for (const h of huds) drawEntityHud(ctx, h.e, h.o);
+    const party = Object.values(s.entities).filter((e) => e.kind === "pc" && e.hp > 0);
+    for (const l of labelsToShow(L.objects, this.hover, party)) drawPoiLabel(ctx, l);
+    this.hooks.onFrame?.();
   }
 
   private drawMarkers(s: AppState, now: number): void {
@@ -372,6 +399,8 @@ export class MapRenderer {
 
   private updateCamera(s: AppState, L: MapLayers, dt: number): void {
     const me = myEntity(s);
+    if (this.detachedAt && (!me || me.x !== this.detachedAt.x || me.y !== this.detachedAt.y)) this.detachedAt = null;
+    if (this.detachedAt) { this.cam = clampCamera(this.cam, this.viewW, this.viewH, L.w, L.h); return; }
     const p = me ? (this.pos.get(me.id) ?? me) : null;
     const tx = p ? p.x * TILE + TILE / 2 : (L.w * TILE) / 2;
     const ty = p ? p.y * TILE + TILE / 2 : (L.h * TILE) / 2;

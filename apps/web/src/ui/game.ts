@@ -8,7 +8,9 @@ import { createContainerPanel } from "./container";
 import { nearbyMenu, targetMenu } from "./interact-menu";
 import { createLevelUpModal } from "./levelup";
 import { createLog } from "./log";
+import { createMinimap, type Minimap } from "./minimap";
 import { createObjectiveTracker } from "./objective";
+import { createTitleCard } from "./title-card";
 import { closeMenu, openMenu, type MenuItem } from "./menu";
 import { createSheetModal } from "./sheet";
 import type { Ctx, Screen } from "./types";
@@ -54,7 +56,16 @@ export function mountGame(ctx: Ctx): Screen {
   const renderer = new MapRenderer(canvas, store, {
     onTap: (info) => handleTap(info),
     isTargetable: (e) => isValidTarget(e),
+    onFrame: () => mini.tick(),
   });
+  const mini: Minimap = createMinimap({
+    getView: () => renderer.getView(),
+    lookAt: (cx, cy) => renderer.lookAt(cx, cy),
+    recenter: () => renderer.recenter(),
+    walkTo: (x, y) => { client.send("move_intent", { x, y }); renderer.flashTile(x, y); },
+  });
+  const titleCard = createTitleCard();
+  mapWrap.append(mini.el, titleCard.el);
   zoomIn.addEventListener("click", () => renderer.zoomBy(1.2));
   zoomOut.addEventListener("click", () => renderer.zoomBy(1 / 1.2));
   renderer.start();
@@ -241,6 +252,9 @@ export function mountGame(ctx: Ctx): Screen {
     updateParty(s);
     updateQuests(s);
     objective.update(s);
+    mini.update(s);
+    mini.setTopInset(hud.top.hidden ? 0 : hud.top.offsetHeight);
+    titleCard.update(s);
     log.update(s);
     vote.update(s);
     levelUpModal.update(s);
@@ -265,6 +279,8 @@ export function mountGame(ctx: Ctx): Screen {
     destroy() {
       clearInterval(ticker);
       objective.destroy();
+      mini.destroy();
+      titleCard.destroy();
       document.removeEventListener("keydown", onKey);
       renderer.stop();
       closeMenu();

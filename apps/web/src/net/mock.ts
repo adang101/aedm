@@ -799,7 +799,6 @@ export class MockServer {
     });
     for (const e of next.entities) this.ents[e.id] = structuredClone(e);
     this.sendSnapshot();
-    this.sys(`The party arrives at ${next.title}.`);
     if (id === "m_crypt" || id === "m_trail") this.trackObjective(id);
     this.narrate(next.arrival, () => this.emit("chips", { chips: next.chips }));
   }
