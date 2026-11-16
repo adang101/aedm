@@ -47,6 +47,8 @@ export class Grid {
   readonly zone: Uint8Array;
   /** For OBSTACLE tiles: 0 any, 1 and 2 a tree species, 3 a rock (the assembler maps these onto the setting's obstacle materials). */
   readonly veg: Uint8Array;
+  /** For WALL tiles of a settlement building: its number (1 and up), so one building is drawn as one roof. 0 elsewhere. */
+  readonly block: Uint16Array;
 
   constructor(readonly w: number, readonly h: number) {
     this.elev = new Float32Array(w * h);
@@ -56,6 +58,7 @@ export class Grid {
     this.wander2 = new Float32Array(w * h);
     this.zone = new Uint8Array(w * h);
     this.veg = new Uint8Array(w * h);
+    this.block = new Uint16Array(w * h);
     this.t = new Uint8Array(w * h);
     this.room = new Int16Array(w * h).fill(-1);
     this.crit = new Uint8Array(w * h);

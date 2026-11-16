@@ -55,7 +55,7 @@ export const settlement: LayoutFn = ({ grid, setting, rooms, exits, rng, hasShal
   let dist = pathDistance(grid);
   for (let attempt = 0; attempt < 400 && placed < target; attempt++) {
     const small = attempt >= 120;
-    const pad = attempt >= 300 ? 0 : 1;
+    const pad = attempt >= 300 && placed === 0 ? 0 : 1;
     const bw = small ? rng.int(3, 5) : rng.int(4, 7);
     const bh = small ? rng.int(3, 4) : rng.int(4, 6);
     const x = rng.int(2, grid.w - bw - 3);
@@ -83,7 +83,7 @@ export const settlement: LayoutFn = ({ grid, setting, rooms, exits, rng, hasShal
       if (d >= 0 && d < bestD) { bestD = d; best = s; }
     }
     if (!best || bestD > 9) continue;
-    for (let yy = y; yy < y + bh; yy++) for (let xx = x; xx < x + bw; xx++) grid.t[grid.idx(xx, yy)] = T.WALL;
+    for (let yy = y; yy < y + bh; yy++) for (let xx = x; xx < x + bw; xx++) { grid.t[grid.idx(xx, yy)] = T.WALL; grid.block[grid.idx(xx, yy)] = placed + 1; }
     grid.t[grid.idx(best.door.x, best.door.y)] = T.DOOR;
     grid.crit[grid.idx(best.door.x, best.door.y)] = 1;
     // a short lane from the door to the street, following the distance field downhill

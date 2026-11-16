@@ -133,23 +133,24 @@ export function carveLakes(grid: Grid, rng: MapRng, lvl: number, ok: (i: number)
     const target = Math.max(W.lakeMin + 2, Math.round((total / count) * (0.7 + rng.next() * 0.6)));
     const cx = xOf(grid, best);
     const cy = yOf(grid, best);
-    const frontier: Array<{ p: number; i: number }> = [{ p: 0, i: best }];
-    const queued = new Set<number>([best]);
-    let area = 0;
-    while (frontier.length > 0 && area < target) {
-      let m = 0;
-      for (let f = 1; f < frontier.length; f++) if (frontier[f]!.p < frontier[m]!.p || (frontier[f]!.p === frontier[m]!.p && frontier[f]!.i < frontier[m]!.i)) m = f;
-      const cur = frontier.splice(m, 1)[0]!;
-      water[cur.i] = 1;
-      area++;
-      for (const [dx, dy] of DIRS4) {
-        const nx = xOf(grid, cur.i) + dx;
-        const ny = yOf(grid, cur.i) + dy;
-        if (!grid.inside(nx, ny)) continue;
-        const n = grid.idx(nx, ny);
-        if (queued.has(n) || water[n] || !usable(n)) continue;
-        queued.add(n);
-        frontier.push({ p: grid.elev[n]! + W.lakeRoundness * Math.hypot(nx - cx, ny - cy), i: n });
+    // a pond: a tilted ellipse whose edge is pushed in and out by the wander field, so the shore is round and irregular, never stepped
+    const aspect = W.pondAspect[0]! + rng.next() * (W.pondAspect[1]! - W.pondAspect[0]!);
+    const ang = rng.next() * Math.PI;
+    const ca = Math.cos(ang);
+    const sa = Math.sin(ang);
+    const R = Math.sqrt((target * aspect) / Math.PI);
+    const reach = Math.ceil(R / Math.min(aspect, 1) + 2);
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        if (!grid.inside(x, y)) continue;
+        const n = grid.idx(x, y);
+        if (!usable(n)) continue;
+        const u = dx * ca + dy * sa;
+        const v = -dx * sa + dy * ca;
+        const e = Math.hypot(u / (R / aspect), v / R);
+        if (e <= 1 + W.pondWobble * (grid.wander2[n]! - 0.5)) water[n] = 1;
       }
     }
     made++;
@@ -196,19 +197,36 @@ export function carveRiver(grid: Grid, rng: MapRng, lvl: number, ok: (i: number)
   });
   if (route.length < along / 2) return false;
   const water = new Uint8Array(grid.w * grid.h);
-  for (const c of route) {
-    const r = W.riverRadiusBase + W.riverRadiusExtra * smoothstep(0.25, 0.75, grid.wander[c]!);
-    const cx = xOf(grid, c);
-    const cy = yOf(grid, c);
-    const reach = Math.ceil(r);
-    for (let dy = -reach; dy <= reach; dy++) {
-      for (let dx = -reach; dx <= reach; dx++) {
-        if (dx * dx + dy * dy > r * r) continue;
-        const x = cx + dx;
-        const y = cy + dy;
-        if (!grid.inside(x, y)) continue;
+  // the banks are a distance threshold around a smoothed centre line (not circles stamped on a staircase of cells), so
+  // they curve; the radius swells and narrows with the wander field and the edge itself wobbles a little
+  const half = 3;
+  const pts = route.map((c, k) => {
+    let sx = 0;
+    let sy = 0;
+    let n = 0;
+    for (let j = Math.max(0, k - half); j <= Math.min(route.length - 1, k + half); j++) { sx += xOf(grid, route[j]!); sy += yOf(grid, route[j]!); n++; }
+    return { x: sx / n, y: sy / n, r: W.riverRadiusBase + W.riverRadiusExtra * smoothstep(0.25, 0.75, grid.wander[c]!) };
+  });
+  for (let k = 0; k + 1 < pts.length; k++) {
+    const p = pts[k]!;
+    const q = pts[k + 1]!;
+    const reach = Math.ceil(Math.max(p.r, q.r) + 1.5);
+    const x0 = Math.floor(Math.min(p.x, q.x)) - reach;
+    const x1 = Math.ceil(Math.max(p.x, q.x)) + reach;
+    const y0 = Math.floor(Math.min(p.y, q.y)) - reach;
+    const y1 = Math.ceil(Math.max(p.y, q.y)) + reach;
+    const sx = q.x - p.x;
+    const sy = q.y - p.y;
+    const len2 = sx * sx + sy * sy || 1;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!grid.inside(x, y) || grid.border(x, y)) continue;
         const n = grid.idx(x, y);
-        if (!grid.border(x, y) && ok(n) && roomDist[n]! > 0) water[n] = 1;
+        if (water[n] || !ok(n) || roomDist[n]! <= 0) continue;
+        const t = Math.min(1, Math.max(0, ((x - p.x) * sx + (y - p.y) * sy) / len2));
+        const d = Math.hypot(x - (p.x + sx * t), y - (p.y + sy * t));
+        const r = p.r + (q.r - p.r) * t + W.riverEdgeWobble * (grid.wander2[n]! - 0.5);
+        if (d <= r) water[n] = 1;
       }
     }
   }

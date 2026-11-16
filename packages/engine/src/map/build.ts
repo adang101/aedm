@@ -409,7 +409,8 @@ function scatterDecor(grid: Grid, setting: ResolvedSetting, rng: MapRng, taken: 
   const props = setting.decorPool.filter((m) => !m.tags.includes("wall_mount"));
   const mounts = setting.decorPool.filter((m) => m.tags.includes("wall_mount"));
   const enclosed = setting.environment !== "outdoor";
-  const rate = enclosed ? 0.025 : 0.035;
+  const boost = (TERRAIN.decor.boost as Record<string, number>)[setting.preset] ?? 1;
+  const rate = (enclosed ? 0.025 : 0.035) * boost;
   if (props.length > 0) {
     for (let i = 0; i < grid.t.length; i++) {
       if (grid.t[i] !== T.FLOOR || taken.has(i) || decor.has(i)) continue;
