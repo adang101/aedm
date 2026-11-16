@@ -8,7 +8,11 @@ import {
 import { OUTLINE } from "./palette";
 import { drawEntityBody, drawEntityHud, type EntityDrawOpts } from "./sprites";
 import { drawContainerMarker, drawExit, drawInteractable, createMapStyle, type MapStyle } from "./tiles";
+import { TerrainCache } from "./terrain-chunks";
+import { TerrainGrid } from "./terrain-grid";
 import { drawLights, drawMood, type Light } from "./mood";
+import { drawPoiLabel, labelsToShow, placeLabelsToShow, type PlaceMark } from "./poi-labels";
+import { mapLandmarks } from "@aedm/engine";
 
 export interface TapInfo {
   tileX: number;
@@ -25,6 +29,8 @@ export interface RenderHooks {
   onTap(info: TapInfo): void;
   /** Entities that should pulse as valid targets right now (targeting mode). */
   isTargetable(e: EntityView): boolean;
+  /** Called at the end of every drawn frame (the minimap repaints from it, only when something changed). */
+  onFrame?(): void;
 }
 
 export interface MapLayers {
@@ -37,8 +43,11 @@ export interface MapLayers {
   decor: number[];
   above: number[];
   objects: MapObject[];
+  /** Landmarks the generator stamped into this map (none on older or DM-made maps). */
+  places: PlaceMark[];
   style: MapStyle;
   mood: GameMap["meta"]["setting"]["mood"];
+  terrain: TerrainCache;
 }
 
 export function extractLayers(map: GameMap): MapLayers {
@@ -47,12 +56,17 @@ export function extractLayers(map: GameMap): MapLayers {
     return l && l.type === "tilelayer" ? l.data : [];
   };
   const obj = map.layers.find((l) => l.type === "objectgroup");
+  const ground = tiles("ground"), walls = tiles("walls"), decor = tiles("decor");
+  const style = createMapStyle(map.tileset.tiles, ground);
+  const grid = new TerrainGrid({ mapId: map.id, w: map.width, h: map.height, ground, walls, decor, defs: style.defs, underlay: style.underlay, roundWalls: map.meta.setting.layout === "cave" });
   return {
     mapId: map.id, ref: map, w: map.width, h: map.height,
-    ground: tiles("ground"), walls: tiles("walls"), decor: tiles("decor"), above: tiles("above"),
+    ground, walls, decor, above: tiles("above"),
     objects: obj && obj.type === "objectgroup" ? obj.objects : [],
-    style: createMapStyle(map.tileset.tiles, tiles("ground")),
+    places: mapLandmarks(map).map((l) => ({ id: l.id, name: l.name, x: l.x, y: l.y, radius: l.radius })),
+    style,
     mood: map.meta.setting.mood,
+    terrain: new TerrainCache(grid, style),
   };
 }
 
@@ -63,57 +77,16 @@ export interface PaintHooks {
   beforeProps?: () => void;
   /** Called after each row of props, so the caller can draw entities that stand in that row. */
   afterRow?: (y: number) => void;
+  /** Live play spreads building the first view of a map over a few frames (default: build everything at once). */
+  buildBudgetMs?: number;
 }
 
 /** Everything under the mood tint, in world pixels: ground, walls, decals, exits, props and canopy. */
 export function paintMapLayers(ctx: CanvasRenderingContext2D, L: MapLayers, r: { x0: number; y0: number; x1: number; y1: number }, now: number, hooks: PaintHooks = {}): void {
   const { x0, y0, x1, y1 } = r;
   const st = L.style;
-  const gidAt = (arr: number[], x: number, y: number) => (x < 0 || y < 0 || x >= L.w || y >= L.h ? 0 : (arr[y * L.w + x] ?? 0));
-  const wallAt = (x: number, y: number) => x < 0 || y < 0 || x >= L.w || y >= L.h || st.isWall(gidAt(L.walls, x, y)) || st.isWall(gidAt(L.ground, x, y));
-  const liquidAt = (x: number, y: number) => st.isLiquid(gidAt(L.walls, x, y)) || st.isLiquid(gidAt(L.ground, x, y)) || wallAt(x, y);
-
-  const drawFullCell = (gid: number, x: number, y: number) => {
-    st.drawFull(ctx, gid, x * TILE, y * TILE, now);
-    if (st.isLiquid(gid)) {
-      st.drawLiquidEdges(ctx, gid, x * TILE, y * TILE, !liquidAt(x, y - 1), !liquidAt(x, y + 1), !liquidAt(x - 1, y), !liquidAt(x + 1, y));
-    }
-  };
-  const drawWallCell = (gid: number, x: number, y: number) =>
-    st.drawWall(ctx, gid, x * TILE, y * TILE, !wallAt(x, y + 1), !wallAt(x, y - 1), !wallAt(x - 1, y), !wallAt(x + 1, y));
-
-  // 1. ground: floors, liquids, hazards, doors; an underlay where nothing is drawn or a prop will stand
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const i = y * L.w + x;
-      const g = L.ground[i] ?? 0;
-      const cls = g ? st.classOf(g) : null;
-      if (cls === "full") drawFullCell(g, x, y);
-      else if (cls === "wall") drawWallCell(g, x, y);
-      else if (!g || cls === "prop") st.drawFull(ctx, st.underlay, x * TILE, y * TILE, now);
-      else st.drawFull(ctx, st.underlay, x * TILE, y * TILE, now);
-    }
-  }
-  // 2. walls and flat decals; props wait for the depth-sorted pass
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const i = y * L.w + x;
-      for (const arr of [L.walls, L.decor]) {
-        const g = arr[i] ?? 0;
-        if (!g) continue;
-        const cls = st.classOf(g);
-        if (cls === "wall") drawWallCell(g, x, y);
-        else if (cls === "full") drawFullCell(g, x, y);
-      }
-    }
-  }
-  // soft shadow of a wall on the floor south of it
-  ctx.fillStyle = "rgba(27,22,38,0.28)";
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      if (wallAt(x, y) && !wallAt(x, y + 1) && y + 1 < L.h) ctx.fillRect(x * TILE, (y + 1) * TILE, TILE, 5);
-    }
-  }
+  // 1-2. ground, water, shadows, walls and doorways come pre-rendered in cached chunks
+  L.terrain.draw(ctx, r, now, hooks.buildBudgetMs);
   for (const o of L.objects) {
     if (o.type === "exit") drawExit(ctx, o.x * TILE, o.y * TILE, now);
   }
@@ -170,6 +143,8 @@ export class MapRenderer {
   private pinchDist = 0;
   private down: { x: number; y: number; id: number } | null = null;
   private ro: ResizeObserver;
+  /** Set when the player looked elsewhere (the minimap); the camera stays there until their character moves. */
+  private detachedAt: { x: number; y: number } | null = null;
 
   constructor(private canvas: HTMLCanvasElement, private store: Store, private hooks: RenderHooks) {
     const ctx = canvas.getContext("2d");
@@ -207,6 +182,21 @@ export class MapRenderer {
   zoomBy(factor: number): void {
     this.cam.zoom = clampZoom(this.cam.zoom * factor);
   }
+
+  /** What the view currently shows, for the minimap. */
+  getView(): { cam: Camera; viewW: number; viewH: number } {
+    return { cam: this.cam, viewW: this.viewW, viewH: this.viewH };
+  }
+
+  /** Look at a world point without following the character; following resumes when the character moves or on `recenter`. */
+  lookAt(cx: number, cy: number): void {
+    const me = myEntity(this.store.state);
+    this.detachedAt = me ? { x: me.x, y: me.y } : { x: -1, y: -1 };
+    this.cam.cx = cx; this.cam.cy = cy;
+    if (this.layers) this.cam = clampCamera(this.cam, this.viewW, this.viewH, this.layers.w, this.layers.h);
+  }
+
+  recenter(): void { this.detachedAt = null; }
 
   flashTile(x: number, y: number): void {
     this.flash = { x, y, until: performance.now() + 700 };
@@ -304,7 +294,11 @@ export class MapRenderer {
 
   private frame(now: number, dt: number): void {
     const s = this.store.state;
-    if (!this.layers || this.layers.ref !== s.map) this.layers = s.map ? extractLayers(s.map) : null;
+    if (!this.layers || this.layers.ref !== s.map) {
+      const wasOther = this.layers?.mapId !== s.map?.id;
+      this.layers = s.map ? extractLayers(s.map) : null;
+      if (wasOther) { this.detachedAt = null; this.cam.cx = 0; this.cam.cy = 0; }
+    }
     const ctx = this.ctx;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = OUTLINE;
@@ -342,6 +336,7 @@ export class MapRenderer {
     while (ei < ents.length && ents[ei]!.row < y0) ei++;
     paintMapLayers(ctx, L, { x0, y0, x1, y1 }, now, {
       lights,
+      buildBudgetMs: 20,
       beforeProps: () => this.drawMarkers(s, now),
       afterRow: (y) => {
         while (ei < ents.length && ents[ei]!.row <= y) {
@@ -358,12 +353,18 @@ export class MapRenderer {
       },
     });
 
+    L.terrain.prefetch({ x0, y0, x1, y1 }, 5);
+
     // 5. whole-scene mood tint and lights (screen space), then HUD pieces on top
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     drawMood(ctx, L.mood, this.canvas.width, this.canvas.height, now);
     drawLights(ctx, L.mood, lights, sc, ox, oy, now);
     world();
     for (const h of huds) drawEntityHud(ctx, h.e, h.o);
+    const party = Object.values(s.entities).filter((e) => e.kind === "pc" && e.hp > 0);
+    for (const l of labelsToShow(L.objects, this.hover, party)) drawPoiLabel(ctx, l);
+    for (const l of placeLabelsToShow(L.places, this.hover, party)) drawPoiLabel(ctx, l);
+    this.hooks.onFrame?.();
   }
 
   private drawMarkers(s: AppState, now: number): void {
@@ -403,6 +404,8 @@ export class MapRenderer {
 
   private updateCamera(s: AppState, L: MapLayers, dt: number): void {
     const me = myEntity(s);
+    if (this.detachedAt && (!me || me.x !== this.detachedAt.x || me.y !== this.detachedAt.y)) this.detachedAt = null;
+    if (this.detachedAt) { this.cam = clampCamera(this.cam, this.viewW, this.viewH, L.w, L.h); return; }
     const p = me ? (this.pos.get(me.id) ?? me) : null;
     const tx = p ? p.x * TILE + TILE / 2 : (L.w * TILE) / 2;
     const ty = p ? p.y * TILE + TILE / 2 : (L.h * TILE) / 2;

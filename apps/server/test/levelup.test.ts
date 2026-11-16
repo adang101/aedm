@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { abilityCost, levelCaps, type GameState } from "@aedm/engine";
+import { abilityCost, cloneState, levelCaps, type GameState } from "@aedm/engine";
 import type { EntityView } from "@aedm/schemas";
 import { brindle, dmReply, scriptedProvider, sleep, startedTable, startHarness, type Harness, type Table, type TestClient } from "./helpers";
 
@@ -16,7 +16,16 @@ async function beat(t: Table): Promise<number> {
   return mark;
 }
 
+/** The DM completes milestones itself only when the engine does not track them: make these story milestones. */
+function storyOnly(): void {
+  const game = h!.server.rooms.all()[0]!.game!;
+  const st = cloneState(game.state);
+  for (const m of st.bible.milestones) delete m.trigger;
+  game.state = st;
+}
+
 async function milestone(t: Table, id: string): Promise<void> {
+  storyOnly();
   const provider = h!.provider as ReturnType<typeof scriptedProvider>;
   provider.queueDm(dmReply([{ type: "complete_milestone", milestone_id: id }]));
   const from = t.a.mark();

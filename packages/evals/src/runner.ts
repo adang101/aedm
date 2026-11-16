@@ -1,10 +1,10 @@
 import {
   applyDmActions, clampEnemy, enemyRangesForLevel, registerArchetype, rngFromState, type DmContext, type GameState,
 } from "@aedm/engine";
-import { buildEnemy, runDmTurn, type DmTurnResult, type ModelProvider } from "@aedm/llm";
-import { fixtures, type CharacterCreate, type DmAction } from "@aedm/schemas";
+import { bibleRequest, buildEnemy, parseText, runDmTurn, type DmTurnResult, type ModelProvider } from "@aedm/llm";
+import { fixtures, StoryBibleSchema, type CharacterCreate, type DmAction } from "@aedm/schemas";
 import { forgeCharacterAbilities } from "@aedm/server/src/forge";
-import type { CheckResult, DmOutcome, DmScenario, DmSetup, ForgeScenario, Scenario } from "./types";
+import type { BibleScenario, CheckResult, DmOutcome, DmScenario, DmSetup, ForgeScenario, Scenario } from "./types";
 
 export const DEFAULT_RUNS = 5;
 
@@ -78,10 +78,17 @@ async function playForge(provider: ModelProvider, s: ForgeScenario): Promise<Che
   return s.check(outcome);
 }
 
+/** One bible call, no repair: the check sees what the model wrote the first time. */
+async function playBible(provider: ModelProvider, s: BibleScenario): Promise<CheckResult> {
+  const reply = await provider.complete(bibleRequest(s.input));
+  const parsed = parseText(reply.text, StoryBibleSchema);
+  return s.check(parsed.ok ? { bible: parsed.data } : { errors: parsed.errors });
+}
+
 /** One run. Anything the model call or the pipeline throws is a failed run, not a crash. */
 export async function runOnce(provider: ModelProvider, s: Scenario): Promise<CheckResult> {
   try {
-    return s.kind === "dm" ? await playDm(provider, s) : await playForge(provider, s);
+    return s.kind === "dm" ? await playDm(provider, s) : s.kind === "bible" ? await playBible(provider, s) : await playForge(provider, s);
   } catch (err) {
     return { pass: false, reasons: [`threw: ${err instanceof Error ? err.message : String(err)}`] };
   }

@@ -5,7 +5,7 @@
  */
 import { MAX_TILEDEFS } from "@aedm/schemas";
 import type { InlineTileset, Material, MaterialRole, TileDef } from "@aedm/schemas";
-import { T } from "./layouts/grid";
+import { T, isPassable } from "./layouts/grid";
 import type { Grid } from "./layouts/grid";
 import { lum } from "./contrast";
 import { getMaterial, resolveMaterial, shiftColor } from "./materials";
@@ -114,6 +114,8 @@ export interface AssembleInput {
   seed: number;
   /** Decor tiles: cell index to the prop material drawn there. */
   decor: ReadonlyMap<number, Material>;
+  /** Materials that replace the usual choice for a wall or obstacle tile (landmark props and built walls). */
+  override?: ReadonlyMap<number, Material>;
 }
 
 export interface Assembled {
@@ -131,9 +133,12 @@ function pickWeighted(n: number, u: number, firstShare: number): number {
   return 1 + Math.min(n - 2, Math.floor(((u - firstShare) / (1 - firstShare)) * (n - 1)));
 }
 
+/** A tile's color variant from two smooth fields: broad, soft patches of lighter and darker ground instead of per-tile speckle. */
+const toneOf = (a: number, b: number): number => (a > 0.74 ? 1 : a < 0.24 ? 2 : b > 0.84 ? 3 : 0);
+
 const variantOf = (u: number, spread: number): number => (u < 1 - spread ? 0 : u < 1 - spread * 0.45 ? 1 : 2);
 
-export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembled {
+export function assemble({ grid, setting, seed, decor, override }: AssembleInput): Assembled {
   const { w, h } = grid;
   const n = w * h;
   const ground = new Array<number>(n).fill(0);
@@ -152,8 +157,9 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
 
   const floorAt = (x: number, y: number): number => {
     const list = mats.floor;
-    const m = list[pickWeighted(list.length, vnoise(seed, x, y, 5), list.length === 2 ? 0.68 : 0.58)]!;
-    return bank.gid(m, variantOf(hash(seed, x, y, 1), 0.16), "ground");
+    // the zone (contiguous regions chosen by the layout and `paintGround`) picks the material; variants stay a per-tile texture
+    const m = list[Math.min(list.length - 1, grid.zone[grid.idx(x, y)]!)]!;
+    return bank.gid(m, toneOf(grid.wander2[grid.idx(x, y)]!, grid.wander[grid.idx(x, y)]!), "ground");
   };
   const liquidDepth = (x: number, y: number): boolean => {
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
@@ -161,6 +167,11 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
       if (c !== T.LIQUID) return false;
     }
     return true;
+  };
+
+  const nearOpen = (x: number, y: number): boolean => {
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (isPassable(grid.get(x + dx, y + dy))) return true;
+    return false;
   };
 
   for (let y = 0; y < h; y++) {
@@ -175,7 +186,7 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           // Coherent patches (smooth noise), not per-tile picks, so a secondary path material forms
           // whole stretches instead of speckling the main road; few variants keep roads calm.
           const m = mats.path[pickWeighted(mats.path.length, vnoise(seed, x, y, 9), 0.8)]!;
-          ground[i] = bank.gid(m, variantOf(u, 0.1), "ground");
+          ground[i] = bank.gid(m, toneOf(grid.wander[i]!, grid.wander2[i]!), "ground");
           break;
         }
         case T.BRIDGE:
@@ -193,14 +204,39 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           ground[i] = shallow.length > 0 ? bank.gid(shallow[pickWeighted(shallow.length, u, 0.7)]!, 0, "ground", "liquid") : floorAt(x, y);
           break;
         case T.WALL: {
-          const m = mats.wall[pickWeighted(mats.wall.length, u, 0.78)]!;
-          walls[i] = bank.gid(m, variantOf(hash(seed, x, y, 3), 0.3), "walls");
+          const blk = grid.block[i]!;
+          const ov = override?.get(i);
+          if (ov) {
+            walls[i] = bank.gid(ov, blk > 0 && hash(seed, blk, 1, 12) < 0.3 ? 1 : 0, "walls");
+          } else if (blk > 0) {
+            // one building, one roof: the material and tone follow the building, not the tile
+            const m = mats.wall[pickWeighted(mats.wall.length, hash(seed, blk, 0, 11), 0.5)]!;
+            walls[i] = bank.gid(m, hash(seed, blk, 1, 12) < 0.3 ? 1 : 0, "walls");
+          } else if (!nearOpen(x, y)) {
+            // the solid mass between rooms is one material; the others only trim the faces people see
+            walls[i] = bank.gid(mats.wall[0]!, variantOf(hash(seed, x, y, 3), 0.3), "walls");
+          } else {
+            const m = mats.wall[pickWeighted(mats.wall.length, vnoise(seed, x, y, 7), 0.62)]!;
+            walls[i] = bank.gid(m, variantOf(hash(seed, x, y, 3), 0.3), "walls");
+          }
           break;
         }
         case T.OBSTACLE: {
           ground[i] = floorAt(x, y);
           const list = mats.obstacle;
-          const m = list[pickWeighted(list.length, u, 0.5)]!;
+          const code = grid.veg[i]!;
+          let m: Material;
+          const ov = override?.get(i);
+          if (ov) m = ov;
+          else if (code === 0) m = list[pickWeighted(list.length, u, 0.5)]!;
+          else {
+            // layouts mark groves by species and rocks apart, so a grove is one kind of tree, not a mix of everything
+            const trees = list.filter((o) => o.tags.includes("tree"));
+            const rocks = list.filter((o) => !o.tags.includes("tree"));
+            if (code === 3) m = rocks[0] ?? list[list.length - 1]!;
+            else if (trees.length > 0) m = trees[u < 0.12 && trees.length > 2 ? 2 : Math.min(code - 1, trees.length - 1)]!;
+            else m = list[Math.min(code - 1, list.length - 1)]!;
+          }
           walls[i] = bank.gid(m, hash(seed, x, y, 3) < 0.2 ? 1 : 0, "walls");
           if (m.tags.includes("tree") && hash(seed, x, y, 4) < 0.22) {
             const top: Material = { ...m, id: `${m.id.slice(0, 24)}_canopy`, blocks_sight: false, walkable: true };

@@ -49,11 +49,13 @@ export function drawLights(ctx: Ctx, mood: Mood, lights: readonly Light[], sc: n
   for (const l of lights) {
     const x = l.x * sc + ox, y = l.y * sc + oy, r = l.r * sc * (1 + 0.03 * Math.sin(now / 170 + l.x));
     if (x < -r || y < -r || x > ctx.canvas.width + r || y > ctx.canvas.height + r) continue;
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, `rgba(245,166,91,${k})`);
-    g.addColorStop(1, "rgba(245,166,91,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    // three stepped rings instead of a smooth gradient: the pool of light keeps the banded look of the art
+    ctx.fillStyle = `rgba(245,166,91,${k * 0.42})`;
+    for (const f of [1, 0.66, 0.36]) {
+      ctx.beginPath();
+      ctx.ellipse(x, y, r * f, r * f * 0.82, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.restore();
 }

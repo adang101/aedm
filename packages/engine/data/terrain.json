@@ -1,0 +1,212 @@
+{
+  "version": 1,
+  "notes": "Tunable numbers for the natural-terrain generators (packages/engine/src/map/nature.ts, fields.ts). Scales are in tiles; shares are fractions of the playable interior; level arrays are indexed by the setting's density level 0..3.",
+  "fields": {
+    "elevation": {
+      "scale": 17,
+      "octaves": 3,
+      "gain": 0.5
+    },
+    "moisture": {
+      "scale": 9,
+      "octaves": 3,
+      "gain": 0.5
+    },
+    "grove": {
+      "scale": 7.5,
+      "octaves": 3,
+      "gain": 0.5
+    },
+    "wander": {
+      "scale": 4.5,
+      "octaves": 3,
+      "gain": 0.5
+    },
+    "wander2": {
+      "scale": 8,
+      "octaves": 2,
+      "gain": 0.5
+    },
+    "moistureFromLowGround": 0.45
+  },
+  "ground": {
+    "outdoor": {
+      "secondaryShare": 0.3,
+      "tertiaryShare": 0.12,
+      "minPatch": 7,
+      "smoothPasses": 2,
+      "tertiaryFromGrove": 0.7
+    },
+    "built": {
+      "secondaryShare": 0.2,
+      "tertiaryShare": 0.0,
+      "minPatch": 9,
+      "smoothPasses": 2,
+      "tertiaryFromGrove": 0.0
+    },
+    "shore": {
+      "radius": 2,
+      "radiusWobble": 0.9
+    },
+    "worn": {
+      "radius": 2,
+      "radiusWobble": 1.3
+    }
+  },
+  "rooms": {
+    "wobble": 0.24,
+    "fieldScale": 0.6
+  },
+  "water": {
+    "lakeShare": [
+      0,
+      0.022,
+      0.05,
+      0.085
+    ],
+    "lakeCount": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "lakeMin": 7,
+    "tinyWater": 4,
+    "lakeRoundness": 0.18,
+    "roomClearance": 2,
+    "borderMargin": 3,
+    "smoothPasses": 3,
+    "shallowRingNear": 1,
+    "shallowRingFar": 2,
+    "shallowFarThreshold": 0.8,
+    "riverChance": [
+      0,
+      0.3,
+      0.6,
+      0.85
+    ],
+    "riverMinSpan": 24,
+    "riverAmp": 0.2,
+    "riverCandidates": 6,
+    "riverNoiseCost": 9,
+    "riverRoomCost": 40,
+    "riverRoomPad": 3,
+    "riverRadiusBase": 0.85,
+    "riverRadiusExtra": 0.45,
+    "riverBankMoisture": 0.35,
+    "riverEdgeWobble": 0.5,
+    "riverSmooth": 6,
+    "pondAspect": [
+      0.65,
+      1.0
+    ],
+    "pondWobble": 0.7
+  },
+  "paths": {
+    "baseCost": 1,
+    "noiseCost": 9,
+    "noiseExponent": 2,
+    "obstacleCost": 9,
+    "wallCost": 14,
+    "liquidCost": 16,
+    "shallowCost": 2.6,
+    "pathCost": 0.5,
+    "nearWaterCost": 0.8,
+    "wideFieldThreshold": 0.66,
+    "wideChance": 0.7,
+    "junctionNeighbors": 3,
+    "junctionChance": 0.9,
+    "landmarkRadius": [
+      1.6,
+      2.4
+    ],
+    "landmarkWobble": 0.7,
+    "startRadius": 2.2,
+    "exitJitter": 4,
+    "waypointAmp": 0.16,
+    "waypointMax": 3,
+    "waypointSpacing": 9
+  },
+  "vegetation": {
+    "groveShare": [
+      0,
+      0.2,
+      0.36,
+      0.52
+    ],
+    "groveFill": 0.9,
+    "groveEdge": 0.22,
+    "scatter": [
+      0,
+      0.006,
+      0.012,
+      0.02
+    ],
+    "scatterRockShare": 0.55,
+    "outcropShare": [
+      0,
+      0.02,
+      0.04,
+      0.065
+    ],
+    "outcropFill": 0.75,
+    "clearingPad": 2,
+    "focalCore": 0.7,
+    "focalCoreMin": 2.4,
+    "roomCore": 1.5,
+    "cover": {
+      "ringMin": 0.55,
+      "ringMax": 0.8,
+      "count": [
+        2,
+        5
+      ],
+      "minFromCenter": 2.6
+    },
+    "denseShare": [
+      0.32,
+      0.48,
+      0.6,
+      0.72
+    ]
+  },
+  "treeline": {
+    "minThickness": 1,
+    "maxThickness": 3,
+    "thinBelow": 0.5,
+    "thickAbove": 0.92,
+    "fill": 0.94,
+    "feather": 0.4
+  },
+  "decor": {
+    "groveMin": 0.35,
+    "groveMax": 1.7,
+    "boost": { "swamp": 2.2, "desert": 2.4, "snowfield": 2.2, "beach": 1.6, "farmland": 1.4 }
+  },
+  "islands": {
+    "grow": [
+      1.2,
+      1.8
+    ],
+    "growWobble": 2.2,
+    "smoothPasses": 2,
+    "lagoonMin": 4,
+    "palmInset": 2,
+    "bridgeCost": 7,
+    "shallowCost": 1.2
+  },
+  "cave": {
+    "openShare": 0.5,
+    "stalagmiteScale": 0.45
+  },
+  "settlement": {
+    "streetNoise": 0.4,
+    "plazaScale": 0.5,
+    "streetProps": [
+      0,
+      0.03,
+      0.06,
+      0.1
+    ]
+  }
+}

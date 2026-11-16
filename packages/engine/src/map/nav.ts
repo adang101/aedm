@@ -24,6 +24,18 @@ export function getSpawn(map: GameMap, name: string): Point | null {
   return null;
 }
 
+/**
+ * Where a party arrives for an entry name: the spawn of that name, else the exit of that name (any letter case), so a
+ * party can come in by the way it left. Null when the map has neither.
+ */
+export function arrivalPoint(map: GameMap, name: string): (Point & { kind: "spawn" | "exit" }) | null {
+  const spawn = getSpawn(map, name);
+  if (spawn) return { kind: "spawn", ...spawn };
+  const want = name.trim().toLowerCase();
+  for (const o of getObjects(map)) if (o.type === "exit" && o.name.trim().toLowerCase() === want) return { kind: "exit", x: o.x, y: o.y };
+  return null;
+}
+
 export function inBounds(map: GameMap, x: number, y: number): boolean {
   return Number.isInteger(x) && Number.isInteger(y) && x >= 0 && y >= 0 && x < map.width && y < map.height;
 }

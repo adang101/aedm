@@ -4,8 +4,8 @@ import { SETTING_PRESET_DATA } from "./settings";
 
 type RoomSpec = [id: string, type: Room["type"], size: Room["size"], connects: string[]];
 
-/** Room plans per layout; the first room is where the party starts. */
-const PLANS: Record<Layout, { rooms: RoomSpec[]; poi: string[]; enemies: string; boss: string; loot: string; npc: string }> = {
+/** Room plans per layout; the first room is where the party starts. `poi`, `enemies`, `boss`, `loot` and `npc` name the rooms those things usually go in. */
+export const PLANS: Record<Layout, { rooms: RoomSpec[]; poi: string[]; enemies: string; boss: string; loot: string; npc: string }> = {
   rooms_and_corridors: {
     rooms: [["entry", "chamber", "small", ["hall"]], ["hall", "hall", "medium", ["entry", "main", "side"]], ["main", "chamber", "large", ["hall", "vault"]], ["vault", "chamber", "small", ["main"]], ["side", "chamber", "medium", ["hall"]]],
     poi: ["main", "hall", "vault", "entry"], enemies: "hall", boss: "main", loot: "vault", npc: "entry",

@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "limits": {
+    "minLocations": 3,
+    "maxLocations": 8,
+    "maxConnections": 4,
+    "maxCast": 12,
+    "maxCastPerLocation": 6,
+    "maxEncounters": 10,
+    "maxKeyItems": 8,
+    "maxUnitsPerEncounter": 8,
+    "maxBossCount": 1
+  },
+  "checkable": {
+    "minPct": 50,
+    "finalStageMin": 1
+  },
+  "map": {
+    "defaultSizeClass": "medium",
+    "forwardSides": ["east", "north", "south", "west"],
+    "backSides": ["west", "south", "north", "east"],
+    "maxSlotCount": 6
+  },
+  "route": {
+    "layerGap": 120,
+    "rowGap": 80
+  },
+  "fallback": {
+    "lairFromPct": 60,
+    "presets": {
+      "hub": ["town", "market", "farmland"],
+      "wild": ["forest", "swamp", "mountain_pass", "snowfield", "desert", "beach", "ruins"],
+      "lair": ["cave", "crypt", "temple", "castle", "ruins", "dungeon", "sewer"]
+    },
+    "namePrefixes": ["Old", "Lower", "Hollow", "Grey", "Last", "Sunken", "Quiet", "Broken", "Drowned", "Hidden", "Upper", "Forgotten"],
+    "castFirstNames": ["Marta", "Odo", "Brisa", "Tam", "Wren", "Hale", "Ysolde", "Corin", "Pell", "Neve", "Dunstan", "Isolde"],
+    "castLastNames": ["Vane", "Marrow", "Thorn", "Ashby", "Greaves", "Fenwick", "Hollis", "Rook"],
+    "castRoles": {
+      "hub": { "role": "quest_giver", "concept": "A worried local who knows where the trouble began and needs the party's help.", "voice": "plain, anxious, speaks in short sentences" },
+      "mid": { "role": "ally", "concept": "A wary guide who knows {place} and will help those who earn their trust.", "voice": "dry, careful, never wastes a word" }
+    },
+    "keyItemNames": ["Brass Key", "Sealed Letter", "Waxed Map", "Silver Locket", "Lantern Glass", "Old Signet"],
+    "encounterNames": { "minion": "Skirmishers", "standard": "Guards", "elite": "Elite guard", "boss": "The final stand" },
+    "enemyConcepts": {
+      "minion": "A hired thug sworn to the cause, hardened by {place}.",
+      "standard": "A trained fighter loyal to the one behind the trouble.",
+      "elite": "A cunning lieutenant who commands the others.",
+      "boss": "The ruthless leader behind it all, patient and dangerous."
+    },
+    "groups": {
+      "easy": [{ "role": "minion", "count": 2 }],
+      "standard": [{ "role": "minion", "count": 2 }, { "role": "standard", "count": 1 }],
+      "hard": [{ "role": "standard", "count": 2 }, { "role": "elite", "count": 1 }],
+      "deadly": [{ "role": "minion", "count": 2 }, { "role": "boss", "count": 1 }],
+      "final": [{ "role": "standard", "count": 2 }, { "role": "boss", "count": 1 }]
+    },
+    "ending": {
+      "success": "The party sees it through, and {title} is finally at peace.",
+      "failure": "The threat endures, and {title} pays the price."
+    }
+  }
+}

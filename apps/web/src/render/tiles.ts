@@ -116,6 +116,41 @@ export class MapStyle {
     return f;
   }
 
+  /** The base pattern of a tile def on a fresh 48 x 48 canvas (no role treatment): texture source for the terrain renderer. */
+  patternCanvas(def: TileDef): Canvas {
+    const c = makeCanvas(TILE, TILE);
+    this.drawPattern(def, ctxOf(c), "base");
+    return c;
+  }
+
+  private motifs = new Map<number, Canvas[]>();
+  private doors = new Map<number, Canvas>();
+
+  /** The motif of a hazard tile alone (transparent background), 2 frames; null for a gid that is not drawn procedurally. */
+  hazardMotif(gid: number, frame: number): Canvas | null {
+    const def = this.defs.get(gid);
+    if (!def || def.image_asset_id) return null;
+    let f = this.motifs.get(gid);
+    if (!f) {
+      f = [0, 1].map((k) => { const c = makeCanvas(TILE, TILE); drawHazardMotif(new Pen(ctxOf(c)), def, k); return c; });
+      this.motifs.set(gid, f);
+    }
+    return f[frame % 2]!;
+  }
+
+  /** A doorway tile alone (transparent where the floor shows). */
+  doorOverlay(gid: number): Canvas | null {
+    const def = this.defs.get(gid);
+    if (!def) return null;
+    let c = this.doors.get(gid);
+    if (!c) {
+      c = makeCanvas(TILE, TILE);
+      drawDoor(new Pen(ctxOf(c)), def);
+      this.doors.set(gid, c);
+    }
+    return c;
+  }
+
   private overlay(gid: number): Canvas | null {
     const def = this.defs.get(gid);
     if (!def) return null;
@@ -153,6 +188,7 @@ export class MapStyle {
       this.drawPattern(front, g, "base");
       g.restore();
     });
+    pen.rect(0, 40, TILE, 6, "rgba(27,22,38,0.16)"); // the foot of the face sits in shade
     pen.rect(0, 31, TILE, 1, OUTLINE);
     pen.rect(0, 32, TILE, 1, t.hi);
     pen.rect(0, 33, TILE, 1, def.color);

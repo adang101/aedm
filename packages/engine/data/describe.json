@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "caps": { "exits": 4, "objects": 6, "containers": 4, "creatures": 8, "party": 6, "inventory": 24 },
+  "caps": { "landmarks": 5, "exits": 4, "objects": 6, "containers": 4, "creatures": 8, "party": 6, "inventory": 24 },
   "more": "and {n} more",
   "list": { "sep": ", ", "last": " and " },
   "exitEdgeMargin": 1,
@@ -9,6 +9,8 @@
     "placeMood": "You are in {place}. It feels {mood}.",
     "place": "You are in {place}.",
     "noPlace": "You look around.",
+    "at": "You are at {name}: {description}",
+    "landmarks": "Landmarks: {list}.",
     "exits": "Ways out: {list}.",
     "exit": "{name}",
     "exitSide": "{name} ({side})",

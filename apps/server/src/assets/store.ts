@@ -21,6 +21,8 @@ export interface AssetStore {
   /** Adds a record (replacing one with the same kind and key). */
   put(record: AssetRecord): Promise<void>;
   list(kind?: AssetKind): Promise<AssetRecord[]>;
+  /** Resolves when every queued write has finished. Stores that write nothing may omit it. */
+  flush?(): Promise<void>;
 }
 
 interface AssetsFile { v: 1; assets: AssetRecord[] }

@@ -32,6 +32,15 @@ function setup(harness: Harness, t: Table, opts: { wallAt?: number; doorAt?: [nu
   const game = gameOf(harness);
   let st = cloneState(game.state);
   const mapId = st.currentMapId!;
+  {
+    // the tests place creatures along row 7, so make that stretch open ground whatever the generator put there
+    const map = structuredClone(st.maps[mapId]!);
+    for (const l of map.layers) {
+      if (l.type !== "tilelayer" || (l.name !== "walls" && l.name !== "above")) continue;
+      for (let y = 5; y <= 9; y++) for (let x = 12; x <= 28; x++) l.data[y * map.width + x] = 0;
+    }
+    st.maps[mapId] = map;
+  }
   if (opts.wallAt !== undefined) {
     const map = structuredClone(st.maps[mapId]!);
     const walls = map.layers.find((l) => l.name === "walls");

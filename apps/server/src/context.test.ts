@@ -3,10 +3,10 @@ import {
   restoreState, addCharacter, addMap, applyDmActions, createGameState, currentMap, findFreeTileNear, generateMap, occupiedTiles, placePartyOnMap,
   registerArchetype, rngFromState, RULES, startCombat, STARTER_BRIEFS, type GameState,
 } from "@aedm/engine";
-import { chorister } from "@aedm/engine/testkit";
+import { CAMPAIGN_BIBLE, chorister, makeWorld } from "@aedm/engine/testkit";
 import { buildDmContext, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS } from "@aedm/llm";
 import { fixtures, type NpcRecord } from "@aedm/schemas";
-import { buildContextPack, presentCharacterIds } from "./context";
+import { buildContextPack, objectiveContext, presentCharacterIds } from "./context";
 
 function world(): GameState {
   let s = createGameState({ seed: 7, bible: LANTERN_MARSH_BIBLE, facts: LANTERN_MARSH_FACTS.map((f) => ({ ...f })), contentRating: "teen" });
@@ -97,7 +97,8 @@ describe("buildContextPack", () => {
     const arch = registerArchetype(s0, { ...chorister, role: "elite", concept: "c".repeat(150) });
     if (!arch.ok) throw new Error(arch.errors.join(";"));
     const map = currentMap(arch.state)!;
-    const at = (n: number) => findFreeTileNear(map, 20 + n, 10, occupiedTiles(arch.state, map.id))!;
+    const here = arch.state.entities.ch_brindle!;
+    const at = (n: number) => findFreeTileNear(map, here.x + 2 + n, here.y, occupiedTiles(arch.state, map.id))!;
     const ctx = { presentCharacterIds: ["ch_brindle", "ch_tamsin"], partyLevel: 1 };
     const spawned = applyDmActions(arch.state, rngFromState(arch.state), [
       { type: "spawn_entity", archetype_id: arch.archetype.id as string, map_id: map.id, x: at(0).x, y: at(0).y, count: 1 },
@@ -240,5 +241,91 @@ describe("buildContextPack", () => {
     expect(scene).toMatch(/- trap_h trap @\d+,\d+ armed hidden/);
     expect(scene).toMatch(/- trap_v trap @\d+,\d+ harmless$/m);
     expect(scene).toMatch(/chest @\d+,\d+ closed hidden/);
+  });
+});
+
+describe("objectiveContext (the campaign plan for this beat)", () => {
+  /** The party stands in Lantern Marsh (plan location l_marsh, bound to the test map), at the frustration stage. */
+  function marsh(over: (s: GameState) => void = () => {}): GameState {
+    const { state } = makeWorld(7, { bible: CAMPAIGN_BIBLE });
+    const s: GameState = { ...structuredClone({ ...state, maps: {} }), maps: state.maps };
+    for (const m of s.bible.milestones) if (m.id === "m1" || m.id === "m2") m.completed = true;
+    s.campaign = {
+      locations: { l_marsh: "m_lighthouse" }, cast: {}, encounters: {}, items: {}, visited: ["l_square", "l_dock", "l_marsh"], talked: [],
+    };
+    over(s);
+    return s;
+  }
+
+  it("is absent for a bible with no plan, and keeps the plain milestone list", () => {
+    const { state } = makeWorld(7);
+    expect(objectiveContext(state)).toBeUndefined();
+    const pack = buildContextPack({ state, players, intents: [] });
+    expect(pack.objective).toBeUndefined();
+    expect(buildDmContext(pack).user).toContain("<milestones>");
+  });
+
+  it("lists the current stage's open milestones and who completes each, plus the ending", () => {
+    const o = objectiveContext(marsh())!;
+    expect(o.finished).toBe(false);
+    expect(o.open.map((m) => m.id)).toEqual(["m3", "m4"]);
+    expect(o.open[0]).toEqual({ id: "m3", hint: "Clear the sentries from the marsh", who: "engine", target: "Marsh sentries at Lantern Marsh" });
+    expect(o.open[1]).toEqual({ id: "m4", hint: "The party decides who to trust.", who: "dm" });
+    expect(o.ending.goal).toBe("Silence the Quiet Choir.");
+  });
+
+  it("hands the DM a milestone the engine can no longer track", () => {
+    const o = objectiveContext(marsh((s) => {
+      s.campaign!.encounters.e_sentries = { mapId: "m_lighthouse", entityIds: [] };
+    }))!;
+    expect(o.open.find((m) => m.id === "m3")!.who).toBe("dm");
+  });
+
+  it("describes only the place the party is in: people, fights, items and where the exits lead", () => {
+    const o = objectiveContext(marsh())!;
+    expect(o.here).toEqual({
+      name: "Lantern Marsh",
+      summary: "Reeds, fog and sleepwalkers.",
+      cast: [{ name: "Wren Ashby", role: "ally" }],
+      fights: [{ name: "Marsh sentries", done: false }],
+      items: [{ name: "Choir Signet", heldBy: "Wren Ashby" }],
+      exits: [{ label: "To The Rotting Dock", to: "The Rotting Dock", been: true }, { label: "To The Drowned Crypt", to: "The Drowned Crypt", been: false }],
+    });
+    const text = JSON.stringify(o);
+    expect(text).not.toContain("Old Tam");
+    expect(text).not.toContain("The Choirmaster");
+  });
+
+  it("drops a dead cast member and a key item the party already holds", () => {
+    const o = objectiveContext(marsh((s) => {
+      s.campaign!.cast.c_wren = "npc_wren";
+      s.npcs.npc_wren = { id: "npc_wren", name: "Wren Ashby", concept: "guide", role: "ally", map_id: "m_lighthouse", x: 1, y: 1, sprite_tags: [], alive: false };
+      s.characters.ch_brindle!.inventory.push({ id: "it_sig", name: "Choir Signet", kind: "quest", value: 0 } as never);
+      s.campaign!.items.k_signet = "it_sig";
+    }))!;
+    expect(o.here!.cast).toEqual([]);
+    expect(o.here!.items).toEqual([]);
+  });
+
+  it("has no place on a detour map, and says the story is finished once every milestone is done", () => {
+    const detour = objectiveContext(marsh((s) => { s.campaign!.locations = {}; }))!;
+    expect(detour.here).toBeUndefined();
+    const end = objectiveContext(marsh((s) => { for (const m of s.bible.milestones) m.completed = true; }))!;
+    expect(end.finished).toBe(true);
+    expect(end.open).toEqual([]);
+  });
+
+  it("renders as one small block that replaces the milestone list", () => {
+    const pack = buildContextPack({ state: marsh(), players, intents: [] });
+    const user = buildDmContext(pack).user;
+    expect(pack.milestones).toHaveLength(6);
+    expect(user).not.toContain("<milestones>");
+    const block = user.split("<objective>")[1]!.split("</objective>")[0]!;
+    expect(block).toContain("- m3 [engine completes] Clear the sentries from the marsh (Marsh sentries at Lantern Marsh)");
+    expect(block).toContain("- m4 [you judge]");
+    expect(block).toContain("Here: Lantern Marsh. Reeds, fog and sleepwalkers.");
+    expect(block).toContain("People: Wren Ashby (ally)");
+    expect(block).toContain("Leads to: To The Rotting Dock -> The Rotting Dock (been); To The Drowned Crypt -> The Drowned Crypt");
+    expect(block.length).toBeLessThan(900);
   });
 });

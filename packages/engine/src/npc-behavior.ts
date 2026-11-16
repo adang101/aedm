@@ -4,7 +4,7 @@ import { RULES } from "./data.ts";
 import { canMove, hasCondition, isStanding, walkPath } from "./mutate.ts";
 import type { Rng } from "./rng.ts";
 import { currentMap, emit, occupiedTiles, placePartyInternal, rngFromState, run, sideOf, sightBlockers, tileKey, type Entity, type GameState, type Mut, type Result } from "./state.ts";
-import { findFreeTileNear, getSpawn, hasLineOfSight, isWalkable, type Point } from "./map/index.ts";
+import { arrivalPoint, findFreeTileNear, hasLineOfSight, isWalkable, type Point } from "./map/index.ts";
 
 // Out-of-combat behavior for hostile and allied creatures. Pure: nothing here reads a clock or rolls dice.
 
@@ -136,9 +136,10 @@ export function alliesWithParty(state: GameState, presentCharacterIds?: string[]
 export function moveAlliesToScene(m: Mut, allyIds: string[], mapId: string, spawnName: string): number {
   const s = m.s;
   const map = s.maps[mapId];
-  const spawn = map ? getSpawn(map, spawnName) : null;
+  const spawn = map ? arrivalPoint(map, spawnName) : null;
   if (!map || !spawn) return 0;
   const occupied = occupiedTiles(s, mapId);
+  if (spawn.kind === "exit") occupied.add(tileKey(spawn.x, spawn.y));
   let moved = 0;
   for (const id of allyIds) {
     const e = s.entities[id];

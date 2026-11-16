@@ -1,0 +1,32 @@
+/* ---------- route panel (a tab of the side panel) ---------- */
+.route-wrap > .route-pane { flex: 1; min-height: 0; }
+.route-pane { padding: 10px 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.route-graph { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px; }
+.route-svg { display: block; width: 100%; height: auto; max-height: 260px; }
+.route-edge { stroke: var(--stone-l); stroke-width: 3; stroke-linecap: round; }
+.route-edge.open { stroke-dasharray: 2 7; stroke: var(--stone-m); }
+.route-node { cursor: pointer; outline: none; }
+.route-dot { fill: var(--stone-m); stroke: var(--stone-x); stroke-width: 2; transition: fill .15s; }
+.route-node.visited .route-dot { fill: var(--grass-m); stroke: var(--grass-x); }
+.route-node.current .route-dot { fill: var(--sand-l); stroke: var(--sand-x); }
+.route-node.known .route-dot { fill: transparent; stroke: var(--stone-l); stroke-dasharray: 4 3; }
+.route-ring { fill: none; stroke: var(--sand-l); stroke-width: 2; opacity: .7; }
+.route-node.focus .route-dot, .route-node:focus-visible .route-dot { stroke: #fff; stroke-width: 3; }
+.route-label { fill: var(--text); font: 600 11px var(--font); paint-order: stroke; stroke: var(--bg-2); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.route-node.known .route-label { fill: var(--muted); font-weight: 500; }
+.route-flag circle { fill: var(--fire-l); stroke: var(--bg-2); stroke-width: 2; }
+.route-flag text { fill: #fff; font: 800 10px var(--font); pointer-events: none; }
+.route-detail { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-height: 96px; }
+.route-detail p { margin: 0; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.route-name { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font: 700 15px/1.3 var(--serif); color: var(--sand-x); }
+.route-state { font: 700 10px/1 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.route-state.current { color: var(--accent); }
+.route-summary { color: var(--text); }
+.route-objective { display: flex; gap: 6px; align-items: flex-start; color: var(--sand-x); }
+.route-bang { flex: none; width: 15px; height: 15px; border-radius: 50%; background: var(--fire-l); color: #fff; font: 800 10px/15px var(--font); text-align: center; }
+.route-advice { color: var(--accent); font-weight: 600; }
+@media (max-width: 760px) {
+  .route-pane { padding: 8px 10px 12px; }
+  .route-svg { max-height: 165px; }
+  .route-detail { min-height: 0; }
+}

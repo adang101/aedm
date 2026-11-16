@@ -14,6 +14,7 @@ import narrationJson from "../data/narration.json" with { type: "json" };
 import combatVoiceJson from "../data/combat-voice.json" with { type: "json" };
 import lootJson from "../data/loot.json" with { type: "json" };
 import interactJson from "../data/interact.json" with { type: "json" };
+import campaignJson from "../data/campaign.json" with { type: "json" };
 import enemyKitsJson from "../data/enemy-kits.json" with { type: "json" };
 import describeJson from "../data/describe.json" with { type: "json" };
 
@@ -279,7 +280,7 @@ export interface InteractData {
 
 export interface DescribeData {
   version: number;
-  caps: { exits: number; objects: number; containers: number; creatures: number; party: number; inventory: number };
+  caps: { landmarks: number; exits: number; objects: number; containers: number; creatures: number; party: number; inventory: number };
   /** Template for a list's overflow; `{n}` is the count left out. */
   more: string;
   list: { sep: string; last: string };
@@ -287,7 +288,7 @@ export interface DescribeData {
   exitEdgeMargin: number;
   sides: Record<"n" | "s" | "e" | "w", string>;
   scene: {
-    placeMood: string; place: string; noPlace: string; exits: string; exit: string; exitSide: string; objects: string;
+    placeMood: string; place: string; noPlace: string; at: string; landmarks: string; exits: string; exit: string; exitSide: string; objects: string;
     containers: string; creatures: string; party: string; nothing: string; moods: Record<string, string>;
   };
   /** By object kind, then state (or `any`). */
@@ -308,6 +309,39 @@ export interface DescribeData {
 export const DESCRIBE = describeJson as unknown as DescribeData;
 export const LOOT = lootJson as unknown as LootData;
 export const INTERACT = interactJson as unknown as InteractData;
+
+// ---------- campaign plan (data/campaign.json) ----------
+
+export interface CampaignGroupData { role: EnemyRole; count: number }
+export interface CampaignData {
+  version: number;
+  /** Thresholds `validateCampaign` checks. */
+  limits: {
+    minLocations: number; maxLocations: number; maxConnections: number; maxCast: number; maxCastPerLocation: number;
+    maxEncounters: number; maxKeyItems: number; maxUnitsPerEncounter: number; maxBossCount: number;
+  };
+  /** Share (percent) of milestones that must be machine-checkable, and how many the final stage needs. */
+  checkable: { minPct: number; finalStageMin: number };
+  /** How a plan location becomes a map brief. */
+  map: { defaultSizeClass: "small" | "medium" | "large"; forwardSides: string[]; backSides: string[]; maxSlotCount: number };
+  /** Route view layout, in abstract units (the client scales): the distance between layers (columns) and between rows in a layer. */
+  route: { layerGap: number; rowGap: number };
+  /** Content for the deterministic offline plan (`buildFallbackCampaign`). */
+  fallback: {
+    lairFromPct: number;
+    presets: Record<"hub" | "wild" | "lair", string[]>;
+    namePrefixes: string[];
+    castFirstNames: string[];
+    castLastNames: string[];
+    castRoles: Record<"hub" | "mid", { role: string; concept: string; voice: string }>;
+    keyItemNames: string[];
+    encounterNames: Record<EnemyRole, string>;
+    enemyConcepts: Record<EnemyRole, string>;
+    groups: Record<Difficulty | "final", CampaignGroupData[]>;
+    ending: { success: string; failure: string };
+  };
+}
+export const CAMPAIGN = campaignJson as unknown as CampaignData;
 
 // ---------- offline enemy builder (data/enemy-kits.json) ----------
 

@@ -3,7 +3,7 @@ import {
   type Ability, type AbilityDraft, type AbilityScoreKey, type Character, type CharacterCreate, type CharacterView,
   type CheckTag, type Condition, type Container, type ContainerSummary, type ContentRating, type Difficulty, type Disposition,
   type Enemy, type EntityView, type GameMap, type InteractableState, type Item, type Lock, type MapBrief, type MapObject, type PublicInteractableObject,
-  type NpcRecord, type Quest, type StoryThread, type SpriteRecipe, type StoryBible, type TerrainKind, type WorldFact, type DamageType,
+  type NpcRecord, type ObjectiveView, type RouteView, type Quest, type StoryThread, type SpriteRecipe, type StoryBible, type TerrainKind, type WorldFact, type DamageType,
 } from "@aedm/schemas";
 import type { EngineEvent } from "./events.ts";
 import { INTERACT, RULES } from "./data.ts";
@@ -11,8 +11,10 @@ import { abilityCost, validateCharacterAbilities } from "./cost.ts";
 import { createRng, fromState, type Rng } from "./rng.ts";
 import { hpMax as computeHpMax, levelFromGrowth, levelCaps, validatePointBuy } from "./rules.ts";
 import { enemyThreat, validateEnemy } from "./threat.ts";
-import { findFreeTileNear, getObjects, getSpawn } from "./map/index.ts";
+import { arrivalPoint, findFreeTileNear, getObjects } from "./map/index.ts";
 import { designSpriteOffline } from "./sprites.ts";
+import { objectiveView } from "./objective-view.ts";
+import { routeView } from "./route-view.ts";
 
 // ---------- types ----------
 
@@ -104,6 +106,33 @@ export interface InteractableOverride {
   usedBy?: string[];
 }
 
+/**
+ * How the story bible's campaign plan maps onto the running game: plan ids on the left, runtime ids on the right.
+ * Filled as each location's map is added (`installLocationContent`); the party's own progress (`visited`, `talked`) is
+ * remembered here so objectives can be judged from state alone. Absent in saves from before the plan (`campaignOf`).
+ */
+export interface CampaignBinding {
+  /** Plan location id to map id. */
+  locations: Record<string, string>;
+  /** Plan cast id to NPC entity id (the NPC record has the same id). */
+  cast: Record<string, string>;
+  /** Plan encounter id to the map it is on and the creatures it spawned (entity ids). */
+  encounters: Record<string, { mapId: string; entityIds: string[] }>;
+  /** Plan key item id to the runtime item id. */
+  items: Record<string, string>;
+  /** Plan location ids the party has been to. */
+  visited: string[];
+  /** Plan cast ids the party has talked to. */
+  talked: string[];
+}
+
+export const emptyCampaignBinding = (): CampaignBinding => ({ locations: {}, cast: {}, encounters: {}, items: {}, visited: [], talked: [] });
+
+/** The campaign binding of a state (an empty one for a save from before the plan). Do not mutate the result of a state you do not own. */
+export function campaignOf(s: GameState): CampaignBinding {
+  return s.campaign ?? emptyCampaignBinding();
+}
+
 export interface GameState {
   v: 1;
   seed: number;
@@ -137,6 +166,8 @@ export interface GameState {
   /** Door, lever and sign changes by `objectKey`. Missing in older saves. */
   interactables: Record<string, InteractableOverride>;
   session: SessionState;
+  /** Plan-to-runtime ids for the campaign plan. Missing in older saves and until the first location is installed. */
+  campaign?: CampaignBinding;
   log: EngineEvent[];
 }
 
@@ -599,10 +630,11 @@ export function placePartyInternal(m: Mut, mapId: string, spawnName: string, cha
   const s = m.s;
   const map = s.maps[mapId];
   if (!map) return false;
-  const spawn = getSpawn(map, spawnName);
+  const spawn = arrivalPoint(map, spawnName);
   if (!spawn) return false;
   const ids = characterIds ?? Object.keys(s.characters);
   const occupied = occupiedTiles(s, mapId, { includeWalls: true });
+  if (spawn.kind === "exit") occupied.add(tileKey(spawn.x, spawn.y)); // beside the exit, never on it
   for (const id of ids) {
     const c = s.characters[id];
     if (!c) continue;
@@ -668,6 +700,10 @@ export interface StateSnapshot {
   combat?: { round: number; order: { entity_id: string; initiative: number }[]; active_id: string };
   /** Containers on the current map. Contents are never in a snapshot; `container_view` carries them. */
   containers: ContainerSummary[];
+  /** The story's current objectives; absent for a bible without a plot. */
+  objective?: ObjectiveView;
+  /** What the party knows of the campaign's route; absent without a plan. */
+  route?: RouteView;
 }
 
 export function toWsCombat(c: CombatState): NonNullable<StateSnapshot["combat"]> {
@@ -689,6 +725,10 @@ export function toSnapshot(state: GameState): StateSnapshot | null {
     containers: containerSummaries(state, map.id),
   };
   if (state.combat) snap.combat = toWsCombat(state.combat);
+  const objective = objectiveView(state);
+  if (objective) snap.objective = objective;
+  const route = routeView(state);
+  if (route) snap.route = route;
   return snap;
 }
 

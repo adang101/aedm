@@ -1,7 +1,9 @@
 import { readdirSync } from "node:fs";
 import { DM_ACTION_TYPES, DmResponseSchema, CHECK_TAGS, CONDITIONS, LAYOUTS, PATTERNS, SETTING_PRESETS, SpriteSpecDraftSchema } from "@aedm/schemas";
 import { describe, expect, it } from "vitest";
+import { bibleSystem } from "./bible";
 import { buildDmSystem } from "./context";
+import { MAX_NARRATION_WORDS } from "./dm";
 import { buildSpriteDesignerPrompt } from "./sprite-designer";
 import { extractJson } from "./json";
 import { loadPrompt, registerPrompts, renderTemplate, templateKeys } from "./template";
@@ -44,6 +46,29 @@ describe("prompt files", () => {
     expect(custom).not.toContain("stone_floor,");
     expect(templateKeys(custom)).toEqual([]);
     expect(buildDmSystem({ materialIds: ["moon_dust", "glass_floor"] })).toBe(custom);
+  });
+
+  it("the DM prompt asks for short narration that points at the objective, and keeps engine milestones with the engine", () => {
+    const sys = buildDmSystem();
+    expect(sys).toContain("25 to 70 words for an ordinary beat, up to 110 only when high_stakes");
+    expect(sys).toContain("20 to 45 words about the moment");
+    expect(sys).not.toMatch(/40 to 150|40 to 60/);
+    expect(MAX_NARRATION_WORDS).toBeGreaterThanOrEqual(110);
+    expect(MAX_NARRATION_WORDS).toBeLessThan(150);
+    expect(sys).toContain("# DRIVING THE STORY");
+    expect(sys).toMatch(/knowing what they could do next toward an open objective/);
+    expect(sys).toMatch(/generate_map and create_enemy are for a real detour/);
+    expect(sys).toMatch(/\[engine completes\][^\n]*never propose/);
+    expect(sys).toContain("<objective>");
+  });
+
+  it("the story bible prompt asks for the whole campaign plan and fills in the engine's lists", () => {
+    const sys = bibleSystem();
+    expect(templateKeys(sys)).toEqual([]);
+    for (const k of ["locations", "cast", "encounters", "key_items", "ending", "hint", "trigger", "reach_location", "defeat_encounter", "obtain_item", "talk_to", "story"]) expect(sys, k).toContain(k);
+    for (const l of LAYOUTS) expect(sys).toContain(l);
+    for (const p of SETTING_PRESETS) expect(sys).toContain(p);
+    expect(sys).toMatch(/at least half of the milestones must have a machine trigger/i);
   });
 
   it("the sprite designer prompt renders fully and its example is a valid draft", () => {

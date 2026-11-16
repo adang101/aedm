@@ -1,5 +1,5 @@
 import type { WorldFact } from "@aedm/schemas";
-import type { DmContextPack, PartyMemberContext, PacingContext, SceneContainer, SceneEntity, SceneObject } from "../context";
+import type { DmContextPack, ObjectiveContext, PartyMemberContext, PacingContext, SceneContainer, SceneEntity, SceneObject } from "../context";
 import { makeLanternPack } from "../testing";
 
 /** Deterministic DM context fixtures for token budgets and compaction work. Pure data, no randomness. */
@@ -110,6 +110,24 @@ const PACING: PacingContext = {
   act: { index: 1, count: 3, act: { title: "The Drowned Bell", goal: "Find out who rings the bell beneath the marsh." } },
 };
 
+/** A plan-driven beat: two open milestones (one the engine completes, one the DM judges), and a place with people, a fight, an item and two exits. */
+const OBJECTIVE: ObjectiveContext = {
+  open: [
+    { id: "m3", hint: "Follow the sleepers out to the Sleepers' Causeway", who: "engine", target: "The Sleepers' Causeway" },
+    { id: "m4", hint: "Decide whether to trust Wren Ashby", who: "dm" },
+  ],
+  ending: { goal: "Silence Cantor Vael and break the Quiet Choir's hold on the marsh.", success: "The borrowed voices fall quiet and the sleepers wake." },
+  finished: false,
+  here: {
+    name: "Marrow Light",
+    summary: "Edda's lighthouse on the headland. The door is locked, the lamp is cold, and the cellar below smells of tar and smugglers.",
+    cast: [{ name: "Odalys Brand", role: "quest_giver" }, { name: "Wren Ashby", role: "ally" }],
+    fights: [{ name: "Tidewright smugglers", done: false }],
+    items: [{ name: "Edda's Logbook" }],
+    exits: [{ label: "To The Sleepers' Causeway", to: "The Sleepers' Causeway", been: false }, { label: "To Hollowmere Square", to: "Hollowmere Square", been: true }],
+  },
+};
+
 const growth = (party: PartyMemberContext[]) => Object.fromEntries(party.map((p) => [p.id, 40]));
 
 function pack(o: {
@@ -143,6 +161,7 @@ function pack(o: {
     quests: Array.from({ length: o.quests }, (_, i) => ({ id: `q_${i + 1}`, title: ["Find Edda Marrow", "Silence the bell", "Pay the ferryman"][i % 3]!, status: "active", notes: ["Last seen on the causeway.", "Odalys knows more than she says."].slice(0, i % 3) })),
     milestones: Array.from({ length: o.milestones }, (_, i) => ({ id: `ms_${i + 1}`, stage: `st_${(i % 3) + 1}`, completed: i < 2, description: `The party ${["learns the cult's name", "finds the ledger", "crosses the causeway", "frees a captive", "earns Odalys's trust", "reaches the chapel"][i % 6]!}.` })),
     pacing: o.pacing ? PACING : undefined,
+    objective: OBJECTIVE,
     recentTurns: turns(o.turns),
     engineLines: o.engineLines,
     partyLevel: 3,
@@ -153,7 +172,19 @@ function pack(o: {
 }
 
 export const CONTEXT_PACKS: Record<"opening" | "typical" | "heavy", DmContextPack> = {
-  opening: { ...makeLanternPack([{ characterId: "ch_brindle", characterName: "Brindle Ash", text: "I look around the square." }]), growthRemaining: { ch_brindle: 50, ch_tamsin: 50, ch_orrin: 50 } },
+  opening: {
+    ...makeLanternPack([{ characterId: "ch_brindle", characterName: "Brindle Ash", text: "I look around the square." }]),
+    growthRemaining: { ch_brindle: 50, ch_tamsin: 50, ch_orrin: 50 },
+    objective: {
+      open: [{ id: "m1", hint: "Ask Odalys Brand what the sleepwalkers are walking toward", who: "engine", target: "Odalys Brand at Hollowmere Square" }],
+      ending: OBJECTIVE.ending, finished: false,
+      here: {
+        name: "Hollowmere Square", summary: "A fogbound fishing village at dusk. The inn glows at one end of the square and the lighthouse road runs out of the other.",
+        cast: [{ name: "Odalys Brand", role: "quest_giver" }], fights: [], items: [],
+        exits: [{ label: "To Marrow Light", to: "Marrow Light", been: false }],
+      },
+    },
+  },
   typical: pack({
     players: 4, abilities: 4, items: 6, turns: 8, facts: 12, entities: 6, quests: 3, milestones: 6, summaries: 1, notes: 3, npcs: 4, threads: 2, cast: 0, pacing: true, containers: 4, objects: 4,
     engineLines: ["[engine: Brindle rolled 14 + 3 against DC 12, success]", "[engine: Reed Cultist 01 takes 7 fire damage, hp 5/12]"],

@@ -3,9 +3,9 @@ import {
   AbilityScoreKeySchema, AdvantageSchema, CheckTagSchema, ConditionSchema, DifficultySchema, DISPOSITIONS,
   EnemyRoleSchema, ItemKindSchema, NpcRoleSchema, QuestStatusSchema,
 } from "./enums";
-import { EnemyIdSchema, EntityIdSchema, MapIdSchema, countWords, maxWords, shortWord, text, wordRange } from "./common";
+import { EnemyIdSchema, EntityIdSchema, MapIdSchema, StageIdSchema, countWords, maxWords, shortWord, text, wordRange } from "./common";
 import { MapBriefSchema } from "./map";
-import { StageIdSchema } from "./world";
+
 import { AssetIdSchema } from "./asset";
 import { AppearanceSchema } from "./sprite";
 

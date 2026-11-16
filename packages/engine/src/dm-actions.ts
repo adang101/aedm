@@ -8,6 +8,9 @@ import { INTERACT, PLOTS, RULES } from "./data.ts";
 import type { EngineEvent } from "./events.ts";
 import { addGrowthM } from "./growth.ts";
 import { currentStage } from "./plot.ts";
+import { isMachineTrigger, triggerOf } from "./campaign.ts";
+import { milestoneHint } from "./objective-view.ts";
+import { completeMilestoneM, triggerBlocked } from "./objectives.ts";
 import { applyCondition, archetypeOf, isStanding, removeEntity } from "./mutate.ts";
 import type { Rng } from "./rng.ts";
 import { levelCaps, lootCap } from "./rules.ts";
@@ -15,8 +18,8 @@ import {
   cloneState, emit, finish, isFactTrue, newId, occupiedTiles, placePartyInternal, tileKey,
   type Entity, type GameState, type Mut,
 } from "./state.ts";
-import { designSpriteOffline, spriteSeed } from "./sprites.ts";
-import { allyStats, bossThreatCap, encounterBudget, enemyThreat } from "./threat.ts";
+import { createNpcM, spawnEnemyM } from "./spawn.ts";
+import { bossThreatCap, encounterBudget, enemyThreat } from "./threat.ts";
 import { findFreeTileNear, getObjects, isWalkable } from "./map/index.ts";
 import { alliesWithParty, moveAlliesToScene } from "./npc-behavior.ts";
 
@@ -100,41 +103,8 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
     }
 
     case "create_npc": {
-      const map = s.maps[a.map_id];
-      if (!map) return `unknown map ${a.map_id}`;
-      if (!isWalkable(map, a.x, a.y)) return `tile (${a.x},${a.y}) is not walkable`;
-      if (occupiedTiles(s, a.map_id).has(tileKey(a.x, a.y))) return `tile (${a.x},${a.y}) is occupied`;
-      const name = a.name.trim();
-      const living = Object.values(s.npcs).find((n) => n.alive !== false && norm(n.name) === norm(name));
-      if (living) return `an NPC named ${name} is already alive`;
-      if (Object.values(s.characters).some((c) => norm(c.name) === norm(name))) return `${name} is a player character`;
-      if (isFactTrue(s, name, "is_alive", "false")) return `the facts say ${name} is dead`;
-      const id = newId(s, "npc");
-      const disposition = RULES.npc.dispositionByRole[a.role];
-      const rec: NpcRecord = {
-        id, name, concept: a.concept, role: a.role, map_id: a.map_id, x: a.x, y: a.y, sprite_tags: a.sprite_tags,
-        ...(a.appearance ? { appearance: a.appearance } : {}),
-        alive: true, ...(disposition ? { disposition } : {}),
-        ...(a.voice ? { voice: a.voice } : {}),
-        last_seen_beat: s.turn,
-      };
-      s.npcs[id] = rec;
-      const stats = a.role === "ally" ? allyStats(ctx.partyLevel) : undefined;
-      if (stats) rec.stats = stats;
-      const ent: Entity = {
-        id, kind: "npc", name, mapId: a.map_id, x: a.x, y: a.y, hp: stats?.hp ?? 1, hpMax: stats?.hp ?? 1, conditions: [], shield: 0,
-        sprite: ctx.sprites?.[norm(name)] ?? designSpriteOffline(
-          { concept: `${a.concept} ${a.sprite_tags.join(" ")}`.trim(), ...(a.appearance ? { appearance: a.appearance } : {}), name, role: a.role, kind: "npc" },
-          spriteSeed(m.rng),
-        ), refId: id, cooldowns: {}, usesLeft: {}, checkBonuses: [],
-        ...(disposition ? { disposition } : {}),
-      };
-      s.entities[id] = ent;
-      if (!s.facts.some((f) => norm(f.subject) === norm(name) && f.predicate === "is_alive")) s.facts.push({ subject: name, predicate: "is_alive", object: "true" });
-      s.facts = s.facts.filter((f) => !(norm(f.subject) === norm(name) && f.predicate === "located_at"));
-      s.facts.push({ subject: name, predicate: "located_at", object: a.map_id });
-      emit(m, { type: "npc_created", entityId: id, name, role: a.role, x: a.x, y: a.y });
-      return undefined;
+      const r = createNpcM(m, a, { partyLevel: ctx.partyLevel, sprites: ctx.sprites });
+      return r.ok ? undefined : r.reason;
     }
 
     case "npc_say": {
@@ -197,21 +167,7 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
         const spot = findFreeTileNear(map, x, y, occupied);
         if (!spot) return "no room to place the creatures";
         occupied.add(tileKey(spot.x, spot.y));
-        const n = (s.spawnCounts[arch.id as string] ?? 0);
-        s.spawnCounts[arch.id as string] = n + 1;
-        const name = a.count > 1 || n > 0 ? `${arch.name} ${String.fromCharCode(65 + (n % 26))}` : arch.name;
-        const id = newId(s, "ei");
-        s.entities[id] = {
-          id, kind: "enemy", name, mapId: a.map_id, x: spot.x, y: spot.y, hp: arch.stats.hp, hpMax: arch.stats.hp,
-          conditions: [], shield: 0, sprite: arch.sprite ?? designSpriteOffline(
-            { concept: `${arch.concept} ${arch.sprite_tags.join(" ")}`.trim(), ...(arch.appearance ? { appearance: arch.appearance } : {}), name: arch.name, role: arch.role, kind: "enemy" },
-            spriteSeed(m.rng),
-          ), refId: arch.id as string,
-          disposition: "hostile", cooldowns: {},
-          usesLeft: Object.fromEntries(arch.abilities.filter((ab) => ab.id && ab.uses_per_rest !== undefined).map((ab) => [ab.id as string, ab.uses_per_rest as number])),
-          checkBonuses: [],
-        };
-        emit(m, { type: "entity_spawned", entityId: id, name, archetypeId: arch.id as string, x: spot.x, y: spot.y, mapId: a.map_id });
+        spawnEnemyM(m, arch, a.map_id, spot.x, spot.y, a.count > 1);
       }
       return undefined;
     }
@@ -427,17 +383,11 @@ function handle(m: Mut, a: DmAction, ctx: DmContext, out: Out): string | undefin
         const idx = s.bible.plot!.stages.findIndex((st) => st.id === ms.stage);
         if (idx > before.index) return `milestone ${a.milestone_id} belongs to the later stage ${ms.stage}; finish the earlier stage ${before.stage.id} first`;
       }
-      ms.completed = true;
-      emit(m, { type: "milestone_completed", milestoneId: ms.id, description: ms.description });
-      const after = currentStage(s.bible);
-      if (before && after && !before.finished && after.index > before.index) {
-        emit(m, { type: "stage_advanced", stageId: after.stage.id, stageName: after.data.name, title: after.stage.title });
+      const t = triggerOf(ms);
+      if (isMachineTrigger(t) && !triggerBlocked(s, t)) {
+        return `milestone ${a.milestone_id} is tracked by the engine and completes by itself (${milestoneHint(s.bible, ms)}); do not complete it`;
       }
-      for (const id of present) {
-        const c = s.characters[id] as NonNullable<(typeof s.characters)[string]>;
-        addGrowthM(m, id, RULES.growth.milestoneAward);
-        emit(m, { type: "growth_awarded", characterId: id, name: c.name, amount: RULES.growth.milestoneAward, reason: "milestone", growth: c.growth });
-      }
+      completeMilestoneM(m, ms, present);
       return undefined;
     }
 

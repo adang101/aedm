@@ -37,7 +37,7 @@
       "layout": "settlement", "environment": "outdoor", "mood": "neutral",
       "density": { "obstacles": 1, "liquid": 1, "hazards": 0 },
       "materials": {
-        "floor": ["meadow_grass", "dirt"], "path": ["cobble_road", "brick_road"], "wall": ["plaster_wall", "brick_wall", "wooden_wall"],
+        "floor": ["meadow_grass", "dirt"], "path": ["cobble_road", "flagstone_path"], "wall": ["plaster_wall", "brick_wall", "wooden_wall"],
         "obstacle": ["oak_tree", "barrel", "crate", "market_stall"], "liquid": ["water", "shallow_water"], "hazard": ["loose_rubble"],
         "decor": ["wildflowers", "banner", "lantern_post", "stone_well", "signpost", "cargo_sacks"], "door": ["wooden_door"]
       },
@@ -59,7 +59,7 @@
       "layout": "cave", "environment": "underground", "mood": "dark",
       "density": { "obstacles": 2, "liquid": 1, "hazards": 1 },
       "materials": {
-        "floor": ["cave_rock", "moss", "gravel"], "path": ["worn_stone", "dirt_path"], "wall": ["cave_wall"],
+        "floor": ["cave_rock", "moss", "gravel"], "path": ["dirt_path", "worn_stone"], "wall": ["cave_wall"],
         "obstacle": ["stalagmite", "boulder", "giant_mushroom"], "liquid": ["water", "shallow_water"], "hazard": ["caustic_seep", "loose_rubble"],
         "decor": ["mushrooms", "glow_crystals", "scattered_bones", "puddle"], "door": ["wooden_door"]
       },
@@ -70,7 +70,7 @@
       "layout": "open_field", "environment": "outdoor", "mood": "dim",
       "density": { "obstacles": 2, "liquid": 3, "hazards": 1 },
       "materials": {
-        "floor": ["peat", "mud", "moss"], "path": ["mud_track", "plank_walkway"], "wall": ["hedge_wall"],
+        "floor": ["peat", "mud", "moss"], "path": ["plank_walkway", "stepping_stones"], "wall": ["hedge_wall"],
         "obstacle": ["willow_tree", "mangrove", "dead_tree"], "liquid": ["swamp_water", "marsh_shallows"], "hazard": ["quicksand", "poison_gas"],
         "decor": ["reeds", "mushrooms", "puddle", "fallen_log", "scattered_bones"], "door": ["wooden_door"]
       },
@@ -81,7 +81,7 @@
       "layout": "open_field", "environment": "outdoor", "mood": "bright",
       "density": { "obstacles": 2, "liquid": 1, "hazards": 1 },
       "materials": {
-        "floor": ["snow", "ice"], "path": ["snow_trail"], "wall": ["ice_wall"],
+        "floor": ["snow", "ice"], "path": ["dirt_path"], "wall": ["ice_wall"],
         "obstacle": ["snowy_pine", "snow_drift", "boulder", "ice_spire"], "liquid": ["water", "shallow_water"], "hazard": ["frost_vent", "spike_trap"],
         "decor": ["ice_crystals", "scattered_bones", "campfire", "fallen_log", "rubble"], "door": ["wooden_door"]
       },
@@ -103,7 +103,7 @@
       "layout": "open_field", "environment": "outdoor", "mood": "dim",
       "density": { "obstacles": 2, "liquid": 1, "hazards": 1 },
       "materials": {
-        "floor": ["rubble_floor", "forest_grass", "moss"], "path": ["worn_stone"], "wall": ["mossy_stone_wall"],
+        "floor": ["rubble_floor", "forest_grass", "moss"], "path": ["flagstone_path"], "wall": ["mossy_stone_wall"],
         "obstacle": ["broken_pillar", "boulder", "oak_tree", "statue"], "liquid": ["water", "shallow_water"], "hazard": ["loose_rubble", "thorn_patch", "arcane_sigil"],
         "decor": ["rubble", "scattered_bones", "stone_altar", "fallen_log", "candles"], "door": ["stone_arch", "iron_door"]
       },
@@ -191,7 +191,7 @@
       "layout": "settlement", "environment": "outdoor", "mood": "bright",
       "density": { "obstacles": 2, "liquid": 0, "hazards": 0 },
       "materials": {
-        "floor": ["dirt", "cobblestone"], "path": ["cobble_road", "brick_road"], "wall": ["plaster_wall", "wooden_wall"],
+        "floor": ["dirt", "cobblestone"], "path": ["cobble_road", "flagstone_path"], "wall": ["plaster_wall", "wooden_wall"],
         "obstacle": ["market_stall", "crate", "barrel"], "liquid": ["water"], "hazard": ["loose_rubble"],
         "decor": ["banner", "cargo_sacks", "lantern_post", "fountain", "signpost"], "door": ["wooden_door", "curtain_door"]
       },

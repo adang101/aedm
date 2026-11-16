@@ -1,9 +1,9 @@
 import {
-  addAbilityToCharacter, addCharacter, aggroCheck, buildEnemyOffline, followStep, placePartyWithAllies, planAggroEngagement, addGrowth, addMap, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
+  addAbilityToCharacter, addCharacter, aggroCheck, buildEnemyOffline, followStep, placePartyWithAllies, planAggroEngagement, addGrowth, addMap, campaignNeighbors, campaignOf, locationExits, advanceBeat, applyDmActions, barkFor, basicAttack, clampEnemy, cloneState, combatOutcome, combatRefusal,
   classifyIntent, closeContainer, computePartyLevel, containerDiff, containerForObject, containerView, createGameState, createRng, currentMap, describeEvent, digestEvents, getObjects, hasDramaticBeat,
   altarText, creatureVoice, isContainerHidden, isDmVictoryRole, isHidden, knownTrapTiles, searchedText, spotCheck, tileKey, trapBlockedText, trapEventText, wakeIfWiped, narrateCombatEnd, narrateCombatStart, planEngagement, startCombat, victoryNeedsDm,
   narrateEvents, NARRATION, endCombat, endTurn, enemyRangesForLevel,
-  dropItem, enemyTakeTurn, entitiesOnMap, giveItem, labelOf, openContainer, performAct, takeAll, takeItem, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
+  dropItem, enemyTakeTurn, ensureCampaignPlan, entitiesOnMap, giveItem, hasCampaignPlan, locationEnemyRequests, milestoneHint, objectiveView, resolveExit, routeView, startLocation, trackObjectives, validateCampaign, labelOf, openContainer, performAct, takeAll, takeItem, findFreeTileNear, findPath, generateMap, inferPreset, isWalkable, levelUpView, moveEntity, occupiedTiles,
   pickPlot, placePartyOnMap, registerArchetype, remainingBudget, replaceAbility, resolveCheck, rest, rngFromState, setAbsent,
   skipAbilityPick, spendScorePoint, STARTER_BRIEFS, toCharacterView,
   toEntityView, toSnapshot, toWsCombat, useAbility, useItem,
@@ -14,7 +14,8 @@ import {
   buildEnemy, clampNarration, generateStoryBible, LANTERN_MARSH_BIBLE, LANTERN_MARSH_FACTS, LlmError, runDmTurn,
   type DmTurnResult,
 } from "@aedm/llm";
-import type { Ability, ActVerb, DmAction, DmResponse, Enemy, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe } from "@aedm/schemas";
+import type { Ability, ActVerb, DmAction, DmResponse, Enemy, EntityView, GameMap, LevelUpChoice, PlayerStatus, SettingPreset, SpriteRecipe, StoryBible } from "@aedm/schemas";
+import { applyPrepared, buildLocationMap, type BuiltGroup, type PreparedLocation } from "./campaign";
 import { bibleCampaign, ForgeError, forgeOneAbility, partyAbilities } from "./forge";
 import { buildContextPack, presentCharacterIds, type RecentTurn } from "./context";
 import { absorbTurns, EMPTY_MEMORY, type StoryMemory } from "./memory";
@@ -84,6 +85,13 @@ const STEP_NOTABLE = new Set<EngineEvent["type"]>(["trap_sprung", "spotted"]);
 
 const DIRS: Record<"n" | "s" | "e" | "w", [number, number]> = { n: [0, -1], s: [0, 1], e: [1, 0], w: [-1, 0] };
 
+/** A small stable text hash (FNV-1a), for seeds derived from ids. */
+function hashText(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return h | 0;
+}
+
 export class GameSession {
   state!: GameState;
   /** Broadcast sequence number shared by every state_snapshot and state_diff. */
@@ -126,6 +134,20 @@ export class GameSession {
   private lastChips: string[] = [];
   private closed = false;
   private handles = new Set<unknown>();
+  /** Plan locations being built or built ahead of the party, by location id. Preparing never touches the live state. */
+  private prep = new Map<string, Promise<PreparedLocation | null>>();
+  /** Every preparation still running, even one a restore dropped from `prep`; `close` waits for them. */
+  private building = new Set<Promise<unknown>>();
+  /** The plan location the party is walking to (its map may still be building). */
+  private travelling: string | null = null;
+  /** Entity and tile of the exit last acted on, so a refused exit is not retried on every commit. */
+  private exitKey = "";
+  private lastObjectiveKey = "";
+  private lastRouteKey = "";
+  private endingTold = false;
+  /** What the opening DM turn is told about the start. */
+  private openingNote = "The session is just beginning: set the scene for the party and invite them to act.";
+  private startLines: string[] = [];
 
   constructor(private readonly room: Room, private readonly deps: Deps) {}
 
@@ -176,6 +198,9 @@ export class GameSession {
     this.closed = true;
     for (const h of this.handles) this.deps.timers.clearTimeout(h);
     this.handles.clear();
+    // locations still being built in the background write sprites: let them settle (bounded) before the data folder goes away
+    const building = Promise.allSettled([...this.building]);
+    await Promise.race([building, new Promise<void>((resolve) => { this.deps.timers.setTimeout(resolve, 3000); })]);
     await this.saveChain;
   }
 
@@ -228,35 +253,260 @@ export class GameSession {
     const seed = Math.floor(deps.random() * 0x7fffffff);
     const plot = pickPlot({ pattern: room.settings.plot_pattern, arc: room.settings.plot_arc, pitch, seed });
     const bible = await generateStoryBible(deps.provider, { pitch, partyBriefs: briefs, contentRating: room.settings.content_rating, plot });
-    const facts = bible.digest === LANTERN_MARSH_BIBLE.digest ? LANTERN_MARSH_FACTS.map((f) => ({ ...f })) : [];
-    let state = createGameState({ seed, bible, facts, contentRating: room.settings.content_rating, campaignId: `cmp_${room.id}` });
-    state.nextId = room.scratch.nextId;
-    for (const p of participants) {
-      const ch = room.scratch.characters[p.characterId ?? ""];
-      if (!ch) continue;
-      const r = addCharacter(state, ch, p.id);
-      if (!r.ok) throw new Error(`character ${ch.name} was refused: ${r.errors.join("; ")}`);
-      state = r.state;
+    const build = (b: StoryBible): GameState => {
+      const facts = b.digest === LANTERN_MARSH_BIBLE.digest ? LANTERN_MARSH_FACTS.map((f) => ({ ...f })) : [];
+      let st = createGameState({ seed, bible: b, facts, contentRating: room.settings.content_rating, campaignId: `cmp_${room.id}` });
+      st.nextId = room.scratch.nextId;
+      for (const p of participants) {
+        const ch = room.scratch.characters[p.characterId ?? ""];
+        if (!ch) continue;
+        const r = addCharacter(st, ch, p.id);
+        if (!r.ok) throw new Error(`character ${ch.name} was refused: ${r.errors.join("; ")}`);
+        st = r.state;
+      }
+      return st;
+    };
+
+    // A bible with a plot gets an engine-ready campaign plan (the model's, or the engine's fallback) and its first location is built from it.
+    const planned = await this.planStart(bible, seed);
+    let state = build(planned?.bible ?? bible);
+    let started = false;
+    if (planned) {
+      const applied = applyPrepared(state, planned.prep);
+      const placed = "error" in applied ? null : placePartyOnMap(applied.state, planned.prep.map.id, "party_start");
+      if ("error" in applied || !placed?.value) {
+        deps.logger.warn("[campaign] the start location could not be installed; using a keyword start:", "error" in applied ? applied.error : "no party_start");
+        state = build(bible);
+      } else {
+        const tracked = trackObjectives(placed.state);
+        state = tracked.state;
+        const loc = startLocation(planned.bible);
+        const view = tracked.value.objective;
+        const next = view?.milestones.find((m) => !m.done)?.hint ?? view?.stage.goal;
+        this.sceneNote = `The party begins at ${loc?.name ?? planned.prep.map.meta.setting.name}${loc ? `: ${loc.summary}` : ""}`.slice(0, 300);
+        this.openingNote = `The session is just beginning at ${loc?.name ?? "the starting place"}${next ? `. First objective: ${next}` : ""}. Set the scene for the party and invite them to act.`.slice(0, 400);
+        this.startLines = tracked.value.lines;
+        this.state = state;
+        started = true;
+      }
     }
-    const preset = pickSetting(pitch);
-    const startBrief = STARTER_BRIEFS[preset];
-    const rng = rngFromState(state);
-    const map = generateMap(startBrief, { seed: rng.int(1, 0x7ffffffe), id: "m_start", generatedAt: new Date(deps.clock()).toISOString() }).map;
-    state = addMap(state, map).state;
-    state = placePartyOnMap(state, map.id, "party_start").state;
+    if (!started) {
+      const preset = pickSetting(pitch);
+      const startBrief = STARTER_BRIEFS[preset];
+      const rng = rngFromState(state);
+      const map = generateMap(startBrief, { seed: rng.int(1, 0x7ffffffe), id: "m_start", generatedAt: new Date(deps.clock()).toISOString() }).map;
+      state = addMap(state, map).state;
+      state = placePartyOnMap(state, map.id, "party_start").state;
+      this.state = state;
+      this.sceneNote = startingNote(bible.digest, startBrief.setting.name);
+    }
     state = spotCheck(state).state; // what the party can already see at the start is known from the first snapshot
     this.state = state;
-    this.sceneNote = startingNote(bible.digest, startBrief.setting.name);
     this.refreshAbsent();
+  }
+
+  // ---------- campaign plan: building locations ----------
+
+  /** The bible with a valid plan and its prepared start location, or null (no plot, an invalid plan, or the map could not be built). */
+  private async planStart(bible: StoryBible, seed: number): Promise<{ bible: StoryBible; prep: PreparedLocation } | null> {
+    const ensured = ensureCampaignPlan(bible, seed);
+    if (ensured.source === "none") return null;
+    const reasons = validateCampaign(ensured.bible);
+    if (reasons.length > 0) {
+      this.deps.logger.warn("[campaign] the plan is invalid, so the keyword start is used:", reasons.slice(0, 3).join("; "));
+      return null;
+    }
+    const start = startLocation(ensured.bible);
+    if (!start) return null;
+    const prep = await this.prepareLocation({ seed, bible: ensured.bible, level: 1 }, start.id);
+    return prep ? { bible: ensured.bible, prep } : null;
+  }
+
+  /** Build a plan location ahead of the party, once. Resolves with the prepared pieces, or null (a failure is not cached). */
+  private prepare(locationId: string): Promise<PreparedLocation | null> {
+    const hit = this.prep.get(locationId);
+    if (hit) return hit;
+    const st = this.state;
+    const level = computePartyLevel(st, Object.keys(st.characters));
+    const p: Promise<PreparedLocation | null> = this.prepareLocation({ seed: st.seed, bible: st.bible, level }, locationId).then((r) => {
+      if (!r && this.prep.get(locationId) === p) this.prep.delete(locationId);
+      return r;
+    });
+    this.prep.set(locationId, p);
+    this.building.add(p);
+    void p.finally(() => this.building.delete(p));
+    return p;
+  }
+
+  /**
+   * The model-backed half of building a location: its map (pure, from the plan), a creature per encounter group through the
+   * enemy builder (with the offline builder as the fallback when the real model fails) and a look per cast member.
+   * Reads nothing mutable, so it may run while the game goes on. Never rejects.
+   */
+  private async prepareLocation(ctx: { seed: number; bible: StoryBible; level: number }, locationId: string): Promise<PreparedLocation | null> {
+    try {
+      const map = buildLocationMap({ seed: ctx.seed, bible: ctx.bible }, locationId, new Date(this.deps.clock()).toISOString());
+      if (!map) return null;
+      const loc = ctx.bible.locations?.find((l) => l.id === locationId);
+      const notes = loc ? `${loc.name}: ${loc.summary}`.slice(0, 400) : "";
+      const groups: Record<string, BuiltGroup[]> = {};
+      const sprites: Record<string, SpriteRecipe> = {};
+      await Promise.all([
+        ...locationEnemyRequests(ctx.bible, locationId).map(async (r) => {
+          const req = { concept: r.concept, role: r.role, setting_notes: notes };
+          // a seed of its own (game seed, encounter and group), so background work never reads the live state
+          const enemy = await this.designEnemy(req, ctx.level, Math.imul(ctx.seed | 0, 2654435761) ^ hashText(`${r.encounterId}:${r.group}`));
+          (groups[r.encounterId] ??= [])[r.group] = { enemy, count: r.count };
+        }),
+        ...(ctx.bible.cast ?? []).filter((c) => c.location === locationId).map(async (c) => {
+          try {
+            const look = await this.deps.sprites.getOrCreateSprite({ concept: c.concept, name: c.name, role: c.role, kind: "npc" });
+            sprites[c.name.trim().toLowerCase()] = look.spec;
+          } catch (err) {
+            this.deps.logger.warn("[sprite] cast design failed:", err instanceof Error ? err.message : String(err));
+          }
+        }),
+      ]);
+      return { locationId, map, groups, sprites };
+    } catch (err) {
+      this.deps.logger.warn(`[campaign] could not prepare ${locationId}:`, err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  }
+
+  /** Start building the locations next to the party's own in the background. Never blocks play or touches the queue. */
+  private prefetchNeighbors(): void {
+    if (this.closed || !hasCampaignPlan(this.state.bible)) return;
+    const b = campaignOf(this.state);
+    const here = Object.keys(b.locations).find((k) => b.locations[k] === this.state.currentMapId);
+    if (!here) return;
+    for (const n of campaignNeighbors(this.state.bible, here)) if (!b.locations[n]) void this.prepare(n);
+  }
+
+  /** A PC standing on an exit that leads to a plan location takes the party there (once per arrival on the tile). */
+  private checkExit(): void {
+    const st = this.state;
+    if (st.combat || this.travelling || this.closed || !st.campaign) return;
+    const map = currentMap(st);
+    const exits = map ? getObjects(map).filter((o) => o.type === "exit") : [];
+    for (const c of Object.values(st.characters)) {
+      const ent = st.entities[c.id];
+      const ex = map && ent && ent.mapId === map.id && ent.hp > 0 ? exits.find((o) => o.x === ent.x && o.y === ent.y) : undefined;
+      if (!map || !ent || !ex || ex.type !== "exit") continue;
+      const dest = resolveExit(st, map.id, ex.name);
+      if (!dest) continue;
+      const key = `${ent.id}@${map.id}:${ex.x},${ex.y}`;
+      if (key === this.exitKey) return;
+      this.exitKey = key;
+      this.travel(dest.locationId, map.id);
+      return;
+    }
+    this.exitKey = "";
+  }
+
+  /**
+   * Take the party to a plan location. A location that is already built is entered at once; otherwise its pieces come from
+   * the background preparation (or are made now), and only then does the party move, inside the session's queue.
+   */
+  private travel(locationId: string, fromMapId: string): void {
+    this.travelling = locationId;
+    const built = campaignOf(this.state).locations[locationId];
+    const ready = built ? Promise.resolve(null) : this.prepare(locationId);
+    void ready.then((prep) => this.enqueue(() => this.arrive(locationId, fromMapId, prep)));
+  }
+
+  private arrive(locationId: string, fromMapId: string, prep: PreparedLocation | null): void {
+    this.travelling = null;
+    if (this.state.combat || currentMap(this.state)?.id !== fromMapId) return; // the party has moved on; they can use the exit again
+    let mapId = campaignOf(this.state).locations[locationId];
+    if (!mapId) {
+      const name = this.state.bible.locations?.find((l) => l.id === locationId)?.name ?? "that place";
+      const applied = prep ? applyPrepared(this.state, prep) : { error: "it could not be built" };
+      if ("error" in applied) {
+        this.deps.logger.warn(`[campaign] travel to ${locationId} failed:`, applied.error);
+        this.sys(`The way to ${name} is blocked for now. Step away from the exit and try again.`);
+        return;
+      }
+      this.commit(applied.state);
+      this.publish(applied.events, { toDm: false });
+      for (const s of applied.summary.skipped) this.deps.logger.warn(`[campaign] ${s.kind} ${s.id} skipped: ${s.reason}`);
+      if (applied.overBudget.length > 0) this.deps.logger.info(`[campaign] encounters over budget at the party's level: ${applied.overBudget.join(", ")}`);
+      mapId = prep!.map.id;
+      this.prep.delete(locationId);
+    }
+    // A place the party has been to before is entered by the way that leads back to where it came from; a first visit uses the
+    // map's own arrival area, which the generator keeps clear.
+    const b = campaignOf(this.state);
+    const from = Object.keys(b.locations).find((id) => b.locations[id] === fromMapId);
+    const back = from && b.visited.includes(locationId) ? locationExits(this.state.bible, locationId).find((e) => e.to === from)?.label : undefined;
+    this.moveToMap(mapId, back);
+    this.track();
+    this.autosave();
+    this.prefetchNeighbors();
+  }
+
+  // ---------- campaign plan: objectives ----------
+
+  /**
+   * Let the engine judge the story's objectives after anything that can change progress. Completed milestones are shown to the
+   * table as engine lines and handed to the DM on its next call; `objective_update` goes out whenever the view changed.
+   */
+  private track(input: { events?: EngineEvent[]; talkedTo?: string[] } = {}): void {
+    const r = trackObjectives(this.state, { ...input, presentCharacterIds: this.presentIds() });
+    const progress = r.value;
+    if (r.events.length > 0 || progress.completed.length > 0 || r.state !== this.state) {
+      this.commit(r.state);
+      // the completion lines below replace the milestone and stage events; growth and level-ups still go out as events
+      this.publish(r.events.filter((e) => e.type !== "milestone_completed" && e.type !== "stage_advanced"));
+    }
+    const lines = [...progress.lines];
+    for (const line of lines) this.room.broadcast("log", { kind: "engine", text: line.slice(0, 4000) });
+    this.pushPending(lines.map((l) => `[engine: ${l}]`));
+    // milestones the DM completed itself (complete_milestone) are in the events it just got
+    const seen = new Set(progress.completed.map((c) => c.id));
+    const byDm = (input.events ?? []).flatMap((e) => {
+      if (e.type !== "milestone_completed" || seen.has(e.milestoneId)) return [];
+      const ms = this.state.bible.milestones.find((m) => m.id === e.milestoneId);
+      return ms ? [{ id: ms.id, hint: milestoneHint(this.state.bible, ms), done: true as const }] : [];
+    });
+    this.syncObjective([...progress.completed, ...byDm].map((c) => ({ id: c.id, hint: c.hint, done: true as const })));
+  }
+
+  /** Broadcast `objective_update` when the view differs from the one the table last saw; tell the DM once when the story is finished. */
+  private syncObjective(completed: { id: string; hint: string; done: true }[] = []): void {
+    this.syncRoute();
+    const view = objectiveView(this.state);
+    if (!view) return;
+    const key = JSON.stringify(view);
+    if (key !== this.lastObjectiveKey || completed.length > 0) {
+      this.lastObjectiveKey = key;
+      this.room.broadcast("objective_update", { ...view, ...(completed.length > 0 ? { completed } : {}) });
+    }
+    if (view.finished && !this.endingTold) {
+      this.endingTold = true;
+      const end = this.state.bible.ending;
+      this.pushPending([`[engine: every objective of the story is complete${end ? ` (the ending: ${end.success.slice(0, 160)})` : ""}; bring the campaign to its ending now instead of opening new threads]`]);
+    }
+  }
+
+  /** Broadcast `route_update` when what the party knows of the route differs from what the table last saw. */
+  private syncRoute(): void {
+    const view = routeView(this.state);
+    if (!view) return;
+    const key = JSON.stringify(view);
+    if (key === this.lastRouteKey) return;
+    this.lastRouteKey = key;
+    this.room.broadcast("route_update", view);
   }
 
   /** Begin play: snapshot, then the opening DM turn. */
   begin(): void {
     this.broadcastSnapshot();
-    this.enqueue(() => this.dmTurn({
-      intents: [], engineLines: [], allowFollowup: true, tick: false,
-      note: "The session is just beginning: set the scene for the party and invite them to act.",
-    }));
+    for (const line of this.startLines) this.room.broadcast("log", { kind: "engine", text: line.slice(0, 4000) });
+    this.pushPending(this.startLines.map((l) => `[engine: ${l}]`));
+    this.startLines = [];
+    this.enqueue(() => this.dmTurn({ intents: [], engineLines: [], allowFollowup: true, tick: false, note: this.openingNote }));
+    this.prefetchNeighbors();
   }
 
   /** Restore from a save file (host action). Characters are re-bound to the players now in the room. */
@@ -269,6 +519,10 @@ export class GameSession {
     this.dmNotes = save.dm_notes ?? [];
     this.pendingLines = [];
     this.beat = null;
+    this.prep.clear();
+    this.travelling = null;
+    this.exitKey = "";
+    this.endingTold = false;
     this.rebindOwners(save.room.player_user_ids);
     this.refreshAbsent();
     if (this.state.combat) this.lastNarratedRound = this.state.combat.round;
@@ -277,6 +531,7 @@ export class GameSession {
       this.room.broadcast("combat_state", toWsCombat(this.state.combat));
       this.enqueue(() => this.advanceCombat());
     }
+    this.prefetchNeighbors();
   }
 
   /** `savedAccounts` maps the saving room's player ids to account ids, so logged-in players get their own characters back. */
@@ -349,7 +604,11 @@ export class GameSession {
       return;
     }
     const payload = this.snapshotPayload(++this.seq);
-    if (payload) this.room.broadcast("state_snapshot", payload);
+    if (payload) {
+      if (payload.objective) this.lastObjectiveKey = JSON.stringify(payload.objective);
+      if (payload.route) this.lastRouteKey = JSON.stringify(payload.route);
+      this.room.broadcast("state_snapshot", payload);
+    }
   }
 
   /** Everything a (re)connecting player needs to be current. */
@@ -416,6 +675,7 @@ export class GameSession {
     } else if (prev.combat && next.combat && (prev.combat.active_id !== next.combat.active_id || prev.combat.round !== next.combat.round)) {
       this.room.broadcast("combat_state", toWsCombat(next.combat));
     }
+    if (!next.combat) this.checkExit();
   }
 
   /** Send engine events to the players and remember them for the DM's next turn. */
@@ -644,6 +904,7 @@ export class GameSession {
       if (!name) return reply("error", "not_found", "There is nothing like that here.");
       const phrase = verb === "talk" ? `I talk to ${name}` : verb === "examine" ? `I examine ${name}` : verb === "interact" ? `I interact with ${name}` : `I ${verb.replace("_", " ")} ${name}`;
       reply("ok");
+      if (verb === "talk" && targetId !== undefined) this.track({ talkedTo: [targetId] });
       this.recordIntent(player, `${phrase} (${targetId}).`);
       return;
     }
@@ -652,6 +913,7 @@ export class GameSession {
     if (!first.ok) return reply("error", "invalid_state", cap(first.error ?? "That did not work."));
     this.commit(first.state);
     this.publish(first.events);
+    this.track(verb === "talk" && targetId !== undefined ? { talkedTo: [targetId] } : {});
     this.recoverIfWiped();
     after(first);
     reply("ok");
@@ -693,6 +955,7 @@ export class GameSession {
     if (!r.ok) return reply("error", "invalid_state", cap(r.error ?? "That did not work."));
     this.commit(r.state);
     this.publish(r.events);
+    this.track();
     onOk?.(r);
     reply("ok");
   }
@@ -1006,6 +1269,7 @@ export class GameSession {
         : `[engine: ${ent.name} is already beside ${verdict.label} at (${dest.at.x},${dest.at.y}) (${quote})]`);
       mechanical.push(i);
     }
+    if (mechanical.length > 0) this.track();
     return { narrative, mechanical, engaged, lines };
   }
 
@@ -1170,6 +1434,7 @@ export class GameSession {
     if (!r.ok) return reply("error", "invalid_state", cap(r.error ?? "That did not work."));
     this.commit(r.state);
     this.publish(r.events);
+    this.track();
     opts.onOk?.(r);
     reply("ok");
     if (opts.endsTurn || combatOutcome(this.state) !== null || this.reactionDue || this.barkQueue.length > 0) this.enqueue(() => this.advanceCombat());
@@ -1431,6 +1696,7 @@ export class GameSession {
         if (r.ok) {
           this.commit(r.state);
           this.publish(r.events);
+          this.track();
         } else {
           const e = endTurn(this.state, this.rng(), active.id);
           if (!e.ok) return;
@@ -1491,6 +1757,7 @@ export class GameSession {
     if (!r.ok) return;
     this.commit(r.state);
     this.publish(r.events);
+    this.track();
     if (engineCloses) {
       const text = narrateCombatEnd(summary, this.flavorRng());
       if (text) {
@@ -1706,6 +1973,7 @@ export class GameSession {
     let sceneChanged = false;
 
     let conditionsApplied = 0;
+    const events: EngineEvent[] = [];
     for (const action of resp.actions) {
       try {
         // A refused action skips the server pre-passes (they cost model calls) and falls through to the engine, which rejects it.
@@ -1730,6 +1998,7 @@ export class GameSession {
         conditionsApplied += r.applied.filter((x) => x.type === "apply_condition").length;
         this.commit(r.state);
         this.publish(r.events);
+        events.push(...r.events);
         checks.push(...r.pendingChecks);
         if (a.type === "change_scene" && r.applied.length > 0) sceneChanged = true;
         for (const rej of r.rejected) if (this.cfg.devLog) this.deps.logger.info(`[dm] ${rej.action.type} refused: ${rej.reason}`);
@@ -1740,6 +2009,7 @@ export class GameSession {
 
     if (newMapId && !sceneChanged && !this.state.combat) this.moveToMap(newMapId);
     else if (sceneChanged) this.afterSceneChange();
+    this.track({ events });
 
     const lines: string[] = [];
     const settled: string[] = [];
@@ -1803,9 +2073,16 @@ export class GameSession {
     return hit?.recipe;
   }
 
-  private async createEnemy(a: CreateEnemyAction): Promise<string | null> {
-    if (a.ref && this.state.archetypes[a.ref]) return a.ref;
-    const level = this.dmContext().partyLevel;
+  /**
+   * The enemy builder and a designed look, clamped to the party level (the engine owns the numbers). Throws when the builder
+   * fails; the caller decides what that means. Does not register the archetype.
+   */
+  private async designEnemy(
+    a: { concept: string; role: Enemy["role"]; setting_notes: string; appearance?: string | undefined; asset_ref?: string | undefined; ref?: string | undefined },
+    level: number,
+    /** Seed for the engine's builder. The default reads the live state; background work passes its own. */
+    seed: number = Math.imul(this.state.seed | 0, 2654435761) ^ Object.keys(this.state.archetypes).length,
+  ): Promise<Enemy> {
     const r = enemyRangesForLevel(level, a.role);
     const ranges = {
       hp: [r.hp.min, r.hp.max] as [number, number],
@@ -1813,46 +2090,52 @@ export class GameSession {
       attackBonus: [r.attack.min, r.attack.max] as [number, number],
       damagePerRound: [r.damageHundredths.min / 100, r.damageHundredths.max / 100] as [number, number],
     };
-    try {
-      let built: { enemy: Enemy } | undefined;
-      if (this.cfg.enemyBuilder === "model") {
-        try {
-          built = await buildEnemy(this.deps.provider, { concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ranges }, {
-            finalize: (draft) => {
-              try {
-                const c = clampEnemy(draft, level);
-                return { ok: true as const, enemy: c.enemy, notes: c.notes };
-              } catch (err) {
-                return { ok: false as const, errors: [err instanceof Error ? err.message : "invalid enemy"] };
-              }
-            },
-          });
-        } catch (err) {
-          this.deps.logger.warn("[dm] enemy builder model failed, building offline:", err instanceof LlmError ? err.kind : (err as Error)?.name);
-        }
+    let built: { enemy: Enemy } | undefined;
+    if (this.cfg.enemyBuilder === "model") {
+      try {
+        built = await buildEnemy(this.deps.provider, { concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ranges }, {
+          finalize: (draft) => {
+            try {
+              const c = clampEnemy(draft, level);
+              return { ok: true as const, enemy: c.enemy, notes: c.notes };
+            } catch (err) {
+              return { ok: false as const, errors: [err instanceof Error ? err.message : "invalid enemy"] };
+            }
+          },
+        });
+      } catch (err) {
+        this.deps.logger.warn("[dm] enemy builder model failed, building offline:", err instanceof LlmError ? err.kind : (err as Error)?.name);
       }
-      // the engine's own builder: the default, and the fallback when the model call fails. The seed comes from the game, never a clock.
-      built ??= buildEnemyOffline({
-        concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ...(a.ref ? { ref: a.ref } : {}),
-        seed: Math.imul(this.state.seed | 0, 2654435761) ^ Object.keys(this.state.archetypes).length,
-      });
-      const enemy = { ...built.enemy };
-      const castLook = this.castLook(a.asset_ref, "enemy");
-      if (castLook) {
-        enemy.sprite = castLook;
+    }
+    // the engine's own builder: the default, and the fallback when the model call fails. The seed comes from the game, never a clock.
+    built ??= buildEnemyOffline({
+      concept: a.concept, role: a.role, settingNotes: a.setting_notes, partyLevel: level, ...(a.ref ? { ref: a.ref } : {}), seed,
+    });
+    const enemy = { ...built.enemy };
+    const castLook = this.castLook(a.asset_ref, "enemy");
+    if (castLook) {
+      enemy.sprite = castLook;
+      if (a.appearance) enemy.appearance = a.appearance;
+    } else {
+      try {
+        const look = await this.deps.sprites.getOrCreateSprite({
+          concept: a.concept, ...(a.appearance ?? enemy.appearance ? { appearance: (a.appearance ?? enemy.appearance) as string } : {}),
+          name: enemy.name, role: a.role, kind: "enemy",
+        });
+        enemy.sprite = look.spec;
         if (a.appearance) enemy.appearance = a.appearance;
-      } else {
-        try {
-          const look = await this.deps.sprites.getOrCreateSprite({
-            concept: a.concept, ...(a.appearance ?? enemy.appearance ? { appearance: (a.appearance ?? enemy.appearance) as string } : {}),
-            name: enemy.name, role: a.role, kind: "enemy",
-          });
-          enemy.sprite = look.spec;
-          if (a.appearance) enemy.appearance = a.appearance;
-        } catch (err) {
-          this.deps.logger.warn("[sprite] enemy design failed:", err instanceof Error ? err.message : String(err));
-        }
+      } catch (err) {
+        this.deps.logger.warn("[sprite] enemy design failed:", err instanceof Error ? err.message : String(err));
       }
+    }
+    return enemy;
+  }
+
+  private async createEnemy(a: CreateEnemyAction): Promise<string | null> {
+    if (a.ref && this.state.archetypes[a.ref]) return a.ref;
+    const level = this.dmContext().partyLevel;
+    try {
+      const enemy = await this.designEnemy(a, level);
       if (a.ref && !this.state.archetypes[a.ref]) enemy.id = a.ref;
       else delete enemy.id;
       const reg = registerArchetype(this.state, enemy, level);
@@ -1894,8 +2177,9 @@ export class GameSession {
     }
   }
 
-  private moveToMap(mapId: string): void {
-    const r = placePartyWithAllies(this.state, mapId, "party_start", this.presentIds());
+  private moveToMap(mapId: string, entry?: string): void {
+    let r = entry ? placePartyWithAllies(this.state, mapId, entry, this.presentIds()) : null;
+    if (!r?.value) r = placePartyWithAllies(this.state, mapId, "party_start", this.presentIds());
     if (!r.value) return;
     this.commit(r.state);
     this.publish(r.events);
@@ -1904,6 +2188,7 @@ export class GameSession {
 
   /** A scene change is a safe break: the engine's rest restores HP and abilities. Also refreshes the scene note. */
   private afterSceneChange(): void {
+    this.walks.clear(); // a walk planned on the old map must not continue on the new one
     const map = currentMap(this.state);
     if (map) this.sceneNote = `The party has just reached ${map.meta.setting.name}${map.meta.theme_tags.length ? ` (${map.meta.theme_tags.join(", ")})` : ""}.`;
     if (this.state.combat) return;

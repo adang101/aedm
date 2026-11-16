@@ -2,6 +2,7 @@
 import type { ExitSide, Room } from "@aedm/schemas";
 import type { MapRng } from "../prng";
 import type { ResolvedSetting } from "../settings";
+import { TERRAIN } from "../fields";
 
 /** Terrain codes. The assembler turns each into a material and a tile layer. */
 export const T = { FLOOR: 0, PATH: 1, WALL: 2, OBSTACLE: 3, LIQUID: 4, HAZARD: 5, DOOR: 6, SHALLOW: 7, BRIDGE: 8 } as const;
@@ -36,8 +37,28 @@ export class Grid {
   readonly crit: Uint8Array;
   /** For HAZARD tiles: which hazard material of the setting. */
   readonly haz: Uint8Array;
+  /** Smooth seeded fields in [0, 1] (see nature.ts `computeFields`); all zero until computed. */
+  readonly elev: Float32Array;
+  readonly moist: Float32Array;
+  readonly grove: Float32Array;
+  readonly wander: Float32Array;
+  readonly wander2: Float32Array;
+  /** Which floor material a ground tile takes: 0 the characteristic one, 1 and 2 the secondary ones (see nature.ts `paintGround`). */
+  readonly zone: Uint8Array;
+  /** For OBSTACLE tiles: 0 any, 1 and 2 a tree species, 3 a rock (the assembler maps these onto the setting's obstacle materials). */
+  readonly veg: Uint8Array;
+  /** For WALL tiles of a settlement building: its number (1 and up), so one building is drawn as one roof. 0 elsewhere. */
+  readonly block: Uint16Array;
 
   constructor(readonly w: number, readonly h: number) {
+    this.elev = new Float32Array(w * h);
+    this.moist = new Float32Array(w * h);
+    this.grove = new Float32Array(w * h);
+    this.wander = new Float32Array(w * h);
+    this.wander2 = new Float32Array(w * h);
+    this.zone = new Uint8Array(w * h);
+    this.veg = new Uint8Array(w * h);
+    this.block = new Uint16Array(w * h);
     this.t = new Uint8Array(w * h);
     this.room = new Int16Array(w * h).fill(-1);
     this.crit = new Uint8Array(w * h);
@@ -167,6 +188,15 @@ export interface LayoutInput {
   rng: MapRng;
   /** The setting has a walkable liquid (shallows) to ring ponds with. */
   hasShallow: boolean;
+  /** Where the brief will put things, so a layout can leave room for them. */
+  hints?: LayoutHints;
+}
+
+export interface LayoutHints {
+  /** Room ids that hold enemies or a boss: they get open ground with a little cover. */
+  combatRooms: ReadonlySet<string>;
+  /** Room ids that hold points of interest: they are focal areas and get worn ground. */
+  focalRooms: ReadonlySet<string>;
 }
 
 export interface LayoutOutput {
@@ -192,13 +222,18 @@ function shapeTiles(grid: Grid, rng: MapRng, blobby: boolean, x0: number, y0: nu
     for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) tiles.push({ x, y });
     return tiles;
   }
+  // smooth, irregular outline: the radius swings with a few angular harmonics, so there are no ragged single-tile spurs
+  const wobble = TERRAIN.rooms.wobble;
+  const ph = [rng.next() * Math.PI * 2, rng.next() * Math.PI * 2, rng.next() * Math.PI * 2] as const;
   const cand = new Set<number>();
   for (let y = y0; y < y0 + h; y++) {
     for (let x = x0; x < x0 + w; x++) {
       const dx = (x - cx) / (w / 2);
       const dy = (y - cy) / (h / 2);
-      const d = dx * dx + dy * dy;
-      if (d < 0.45 || d < 0.55 + rng.next() * 0.55) cand.add(grid.idx(x, y));
+      const d = Math.sqrt(dx * dx + dy * dy);
+      const a = Math.atan2(dy, dx);
+      const r = 0.96 + wobble * (0.5 * Math.sin(a + ph[0]) + 0.3 * Math.sin(2 * a + ph[1]) + 0.2 * Math.sin(3 * a + ph[2]));
+      if (d < 0.5 || d <= r) cand.add(grid.idx(x, y));
     }
   }
   const seed = grid.idx(Math.round(cx), Math.round(cy));
@@ -259,7 +294,7 @@ export function rectShape(grid: Grid, id: string, type: Room["type"], x0: number
 }
 
 /** Places every brief room in its own cell of a serpentine grid over the map, sized by `size` and `type`. */
-export function arrangeRooms(grid: Grid, rooms: readonly Room[], rng: MapRng, mode: ShapeMode): RoomShape[] {
+export function arrangeRooms(grid: Grid, rooms: readonly Room[], rng: MapRng, mode: ShapeMode, scale = 1): RoomShape[] {
   const n = rooms.length;
   const { w: gw, h: gh } = grid;
   const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt((n * gw) / gh))));
@@ -271,7 +306,7 @@ export function arrangeRooms(grid: Grid, rooms: readonly Room[], rng: MapRng, mo
     const c = r % 2 === 0 ? i % cols : cols - 1 - (i % cols);
     const maxW = Math.max(2, cw - 2);
     const maxH = Math.max(2, ch - 2);
-    const frac = { small: 0.5, medium: 0.7, large: 0.95 }[room.size];
+    const frac = { small: 0.5, medium: 0.7, large: 0.95 }[room.size] * scale;
     const jit = () => 0.85 + rng.next() * 0.15;
     let rw = Math.max(3, Math.round(maxW * frac * jit()));
     let rh = Math.max(3, Math.round(maxH * frac * jit()));

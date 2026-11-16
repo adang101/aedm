@@ -12,6 +12,7 @@ export * from "./container";
 export * from "./asset";
 export * from "./workshop";
 export * from "./dm";
+export * from "./campaign";
 export * from "./world";
 export * from "./ws";
 export * as fixtures from "./fixtures/index";

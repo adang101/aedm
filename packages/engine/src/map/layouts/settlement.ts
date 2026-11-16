@@ -1,4 +1,6 @@
-import { DIRS4, OBSTACLE_RATE, T, arrangeRooms, carveShapes, connectRooms, level, pond, scatterObstacles } from "./grid";
+import { TERRAIN } from "../fields";
+import { addShallows, carveLakes, carveRiver, growTreeline, growVegetation, linkRooms, openExit, roomDistance, widenPaths } from "../nature";
+import { DIRS4, T, arrangeRooms, carveShapes, level } from "./grid";
 import type { Grid, LayoutFn, Pt } from "./grid";
 
 const PLAZA_TYPES = new Set(["outdoor", "courtyard", "street", "deck", "hall", "chamber", "vault"]);
@@ -26,34 +28,42 @@ function pathDistance(grid: Grid): Int16Array {
 }
 
 /** Plazas and streets of paving over open ground, with walled buildings whose doors face the nearest street. */
-export const settlement: LayoutFn = ({ grid, setting, rooms, rng, hasShallow }) => {
+export const settlement: LayoutFn = ({ grid, setting, rooms, exits, rng, hasShallow, hints }) => {
   grid.fill(T.FLOOR);
-  const lq = level(setting.density.liquid);
-  const ponds = lq === 0 ? 0 : rng.int(1, lq);
-  for (let k = 0; k < ponds; k++) {
-    pond(grid, rng, rng.int(4, grid.w - 5), rng.int(4, grid.h - 5), rng.int(2, 2 + lq), hasShallow, (i) => grid.t[i] === T.FLOOR);
-  }
-
-  const shapes = arrangeRooms(grid, rooms, rng, "rect");
+  const shapes = arrangeRooms(grid, rooms, rng, "rect", TERRAIN.settlement.plazaScale);
   carveShapes(grid, shapes);
   shapes.forEach((s) => {
     if (!PLAZA_TYPES.has(s.type)) return;
-    for (const t of s.tiles) grid.t[grid.idx(t.x, t.y)] = T.PATH;
+    for (const t of s.tiles) {
+      // plazas are squares with softened corners, not stamped rectangles
+      const corner = (t.x === s.x0 || t.x === s.x0 + s.w - 1) && (t.y === s.y0 || t.y === s.y0 + s.h - 1);
+      if (!(corner && s.w >= 5 && s.h >= 5)) grid.t[grid.idx(t.x, t.y)] = T.PATH;
+    }
   });
-  connectRooms(grid, shapes, rooms, rng, Math.min(grid.w, grid.h) >= 30 ? 2 : 1, true);
 
+  // water in low ground, kept off the plazas; a river through the town is crossed by its streets
+  const lq = level(setting.density.liquid);
+  const rd = roomDistance(grid);
+  carveLakes(grid, rng, lq, (i) => grid.t[i] === T.FLOOR && rd[i]! > TERRAIN.water.roomClearance);
+  carveRiver(grid, rng, lq, (i) => grid.t[i] === T.FLOOR, rd);
+  if (hasShallow) addShallows(grid);
+
+  // streets: gently winding routes, two tiles wide in bigger towns
+  linkRooms(grid, shapes, rooms, TERRAIN.settlement.streetNoise);
   const target = Math.max(2, Math.floor((grid.w * grid.h) / 120) + level(setting.density.obstacles) - 1);
   let placed = 0;
   let dist = pathDistance(grid);
-  for (let attempt = 0; attempt < 200 && placed < target; attempt++) {
-    const bw = rng.int(4, 7);
-    const bh = rng.int(4, 6);
+  for (let attempt = 0; attempt < 400 && placed < target; attempt++) {
+    const small = attempt >= 120;
+    const pad = attempt >= 300 && placed === 0 ? 0 : 1;
+    const bw = small ? rng.int(3, 5) : rng.int(4, 7);
+    const bh = small ? rng.int(3, 4) : rng.int(4, 6);
     const x = rng.int(2, grid.w - bw - 3);
     const y = rng.int(2, grid.h - bh - 4);
     if (x < 2 || y < 2) continue;
     let ok = true;
-    for (let yy = y - 1; yy <= y + bh && ok; yy++) {
-      for (let xx = x - 1; xx <= x + bw && ok; xx++) {
+    for (let yy = y - pad; yy < y + bh + pad && ok; yy++) {
+      for (let xx = x - pad; xx < x + bw + pad && ok; xx++) {
         const i = grid.idx(xx, yy);
         if (!grid.inside(xx, yy) || grid.border(xx, yy) || grid.t[i] !== T.FLOOR || grid.crit[i] || grid.room[i]! >= 0) ok = false;
       }
@@ -73,7 +83,7 @@ export const settlement: LayoutFn = ({ grid, setting, rooms, rng, hasShallow }) 
       if (d >= 0 && d < bestD) { bestD = d; best = s; }
     }
     if (!best || bestD > 9) continue;
-    for (let yy = y; yy < y + bh; yy++) for (let xx = x; xx < x + bw; xx++) grid.t[grid.idx(xx, yy)] = T.WALL;
+    for (let yy = y; yy < y + bh; yy++) for (let xx = x; xx < x + bw; xx++) { grid.t[grid.idx(xx, yy)] = T.WALL; grid.block[grid.idx(xx, yy)] = placed + 1; }
     grid.t[grid.idx(best.door.x, best.door.y)] = T.DOOR;
     grid.crit[grid.idx(best.door.x, best.door.y)] = 1;
     // a short lane from the door to the street, following the distance field downhill
@@ -97,7 +107,28 @@ export const settlement: LayoutFn = ({ grid, setting, rooms, rng, hasShallow }) 
     dist = pathDistance(grid);
   }
 
-  const free = (i: number) => grid.t[i] === T.FLOOR && !grid.crit[i] && grid.room[i]! < 0 && !grid.border(i % grid.w, Math.floor(i / grid.w));
-  scatterObstacles(grid, rng, OBSTACLE_RATE[level(setting.density.obstacles)] * 1.3, free);
-  return { shapes };
+  // exits and street widening come after the buildings, so they do not crowd them out
+  const exitPoints: Pt[] = [];
+  for (const e of exits) exitPoints.push(openExit(grid, rng, e.side, shapes, exitPoints));
+  if (Math.min(grid.w, grid.h) >= 30) {
+    const base = grid.t.slice();
+    for (let i = 0; i < base.length; i++) {
+      if (base[i] !== T.PATH) continue;
+      const x = i % grid.w;
+      const y = Math.floor(i / grid.w);
+      const j = grid.idx(x + (grid.wander2[i]! > 0.5 ? 1 : 0), y + (grid.wander2[i]! > 0.5 ? 0 : 1));
+      if (grid.inside(x + 1, y + 1) && !grid.border(j % grid.w, Math.floor(j / grid.w)) && grid.t[j] === T.FLOOR && grid.room[j]! < 0) { grid.t[j] = T.PATH; grid.crit[j] = 1; }
+    }
+  }
+  widenPaths(grid);
+
+  // parks and orchards in clusters, stalls and crates beside the streets, and a treeline round the edge
+  growVegetation(grid, rng, { level: level(setting.density.obstacles), shapes, noRocks: true, open: new Set(shapes.map((s) => s.id)), ...(hints ? { focal: hints.focalRooms } : {}) });
+  const props = TERRAIN.settlement.streetProps[level(setting.density.obstacles)]!;
+  for (let i = 0; i < grid.t.length; i++) {
+    if (grid.t[i] !== T.FLOOR || grid.crit[i] || grid.room[i]! >= 0 || grid.border(i % grid.w, Math.floor(i / grid.w))) continue;
+    if (dist[i]! === 1 && rng.chance(props)) grid.t[i] = T.OBSTACLE;
+  }
+  if (setting.environment === "outdoor") growTreeline(grid, rng);
+  return { shapes, exitPoints };
 };

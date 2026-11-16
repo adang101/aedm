@@ -167,7 +167,16 @@ describe("in combat", () => {
     const reg = registerArchetype(st, FOE);
     if (!reg.ok) throw new Error(reg.errors.join("; "));
     const m = st.maps[map]!;
-    const at = findFreeTileNear(m, 1, 1, occupiedTiles(reg.state, map))!;
+    const pc = st.entities[Object.keys(st.characters)[0]!]!;
+    // away from the party, wherever this run's map has room (the game seed, and so the map, differs from run to run)
+    const occ = occupiedTiles(reg.state, map);
+    let at: { x: number; y: number } | null = null;
+    for (let d = 6; d < Math.max(m.width, m.height) && !at; d++) {
+      for (let y = pc.y - d; y <= pc.y + d && !at; y++) for (let x = pc.x - d; x <= pc.x + d && !at; x++) {
+        if (Math.max(Math.abs(x - pc.x), Math.abs(y - pc.y)) === d) at = findFreeTileNear(m, x, y, occ);
+      }
+    }
+    if (!at) throw new Error("no free tile away from the party");
     const spawned = applyDmActions(reg.state, createRng(1), [{ type: "spawn_entity", archetype_id: reg.archetype.id as string, map_id: map, x: at.x, y: at.y, count: 1 }], {
       presentCharacterIds: Object.keys(st.characters), partyLevel: 1,
     });

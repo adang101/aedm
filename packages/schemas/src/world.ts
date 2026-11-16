@@ -3,7 +3,10 @@ import {
   ContentRatingSchema, DispositionSchema, ItemKindSchema, NpcRoleSchema, PlotArcSchema, PlotPatternSchema, QuestStatusSchema,
 } from "./enums";
 import { AppearanceSchema } from "./sprite";
-import { EnemyStatsSchema, EntityIdSchema, MapIdSchema, shortWord, text } from "./common";
+import { EnemyStatsSchema, EntityIdSchema, MapIdSchema, StageIdSchema, shortWord, text } from "./common";
+import {
+  CastMemberSchema, EndingSchema, HINT_MAX, KeyItemSchema, MilestoneTriggerSchema, PlanEncounterSchema, PlanLocationSchema,
+} from "./campaign";
 
 export { ContentRatingSchema };
 export type { ContentRating } from "./enums";
@@ -24,15 +27,16 @@ export const ItemSchema = z.strictObject({
 });
 export type Item = z.infer<typeof ItemSchema>;
 
-/** A plot stage id (snake_case, from packages/engine/data/plots.json). */
-export const StageIdSchema = z.string().trim().min(1).max(40).regex(/^[a-z][a-z0-9_]*$/, "stage ids are snake_case");
-
 export const MilestoneSchema = z.strictObject({
   id: EntityIdSchema,
   description: text(300),
   completed: z.boolean(),
   /** Plot stage this milestone belongs to. Optional so saves from before story structure still parse. */
   stage: StageIdSchema.optional(),
+  /** Short imperative shown to players ("Find the ferryman at the dock"). Optional; the engine derives one from the trigger. */
+  hint: text(HINT_MAX).optional(),
+  /** What completes it. Absent means `story`: the DM judges it. Machine-checkable triggers are tracked by the engine. */
+  trigger: MilestoneTriggerSchema.optional(),
 });
 export type Milestone = z.infer<typeof MilestoneSchema>;
 
@@ -72,6 +76,12 @@ export const StoryBibleSchema = z.strictObject({
   acts: z.array(ActSchema).max(10).optional(),
   /** Optional so older saves still parse. */
   plot: PlotSchema.optional(),
+  /** The campaign plan (all optional so older saves parse): places, cast, encounters, key items and the ending. */
+  locations: z.array(PlanLocationSchema).max(12).optional(),
+  cast: z.array(CastMemberSchema).max(16).optional(),
+  encounters: z.array(PlanEncounterSchema).max(16).optional(),
+  key_items: z.array(KeyItemSchema).max(16).optional(),
+  ending: EndingSchema.optional(),
   milestones: z.array(MilestoneSchema).max(30),
   quests: z.array(QuestSchema).max(50),
 });
