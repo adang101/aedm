@@ -50,16 +50,33 @@ async function until(pred: () => boolean, ms = 6000): Promise<void> {
   expect(pred()).toBe(true);
 }
 
-/** Walk a character to a tile with a click-to-move and wait until it gets there (or the map changes). */
+/**
+ * Walk a character to a tile with a click-to-move and wait until it gets there (or the map changes). A walk can stop short on
+ * its own (a trap is noticed on the way, on whatever map this run's seed made), so ask again, as a player would.
+ */
 async function walkTo(t: Table, charId: string, x: number, y: number): Promise<void> {
   const mapId = stateOf(h!).currentMapId;
-  const r = await t.a.request("move_intent", { x, y });
-  expect(r.type, JSON.stringify(r)).toBe("presence");
-  await until(() => {
+  const arrived = (): boolean => {
     const st = stateOf(h!);
     const e = st.entities[charId];
     return st.currentMapId !== mapId || (!!e && e.x === x && e.y === y);
-  });
+  };
+  for (let attempt = 0; attempt < 6 && !arrived(); attempt++) {
+    const r = await t.a.request("move_intent", { x, y });
+    if (arrived()) break;
+    expect(r.type, JSON.stringify(r)).toBe("presence");
+    // wait while the character keeps moving; stop waiting once it has stood still for a while
+    let last = "";
+    let still = 0;
+    for (let i = 0; i < 300 && !arrived() && still < 25; i++) {
+      await sleep(20);
+      const e = stateOf(h!).entities[charId];
+      const pos = e ? `${e.x},${e.y}` : "";
+      still = pos === last ? still + 1 : 0;
+      last = pos;
+    }
+  }
+  expect(arrived()).toBe(true);
 }
 
 const exitOf = (st: GameState, name: RegExp) => getObjects(st.maps[st.currentMapId as string]!).find((o) => o.type === "exit" && name.test(o.name))!;
@@ -181,6 +198,7 @@ describe("campaign travel and objectives", () => {
     t.b.send("say", { text: "So do I.", channel: "ic" });
     await t.a.wait("narration_chunk", (p) => p.done, { from: m });
     expect(stateOf(h!).currentMapId).toBe(dock); // answered while the marsh is not ready yet
+    await walkTo(t, pc.id, ex.x, ex.y); // finish the walk if a noticed trap stopped it short
     await until(() => stateOf(h!).currentMapId === campaignOf(stateOf(h!)).locations.l_marsh, 8000);
     expect(t.a.invalid).toEqual([]);
   });
