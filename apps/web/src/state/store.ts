@@ -2,6 +2,7 @@ import type {
   AuthUser, CampaignInfo, CastEntry, CharacterSummary, CombatState, CharacterView, ContainerSummary, ContainerView, EntityView, GameMap,
   InteractableView, LevelUpResult, LevelUpState, ObjectiveView, Quest, ServerMessage, WorkshopAsset,
 } from "@aedm/schemas";
+import { arrivalLine, isRawArrivalLine } from "./arrival";
 import { describeObjectiveChange, type ObjectiveEvent } from "./objective";
 
 type Msg<T extends ServerMessage["type"]> = Extract<ServerMessage, { type: T }>["payload"];
@@ -260,7 +261,11 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
     }
     case "state_snapshot": {
       const p = msg.payload;
-      if (s.map?.id !== p.map.id) s.containerView = null;
+      if (s.map?.id !== p.map.id) {
+        s.containerView = null;
+        // a scene change (not the first map of a game): say where the party is, by name
+        if (s.map) pushLog(s, { kind: "system", text: arrivalLine(p.map), done: true });
+      }
       s.seq = p.seq; s.needsResync = false; s.mode = p.mode; s.map = p.map;
       s.containers = indexContainers(p.containers);
       s.entities = Object.fromEntries(p.entities.map((e) => [e.id, e]));
@@ -313,6 +318,7 @@ export function applyServerMessage(s: AppState, msg: ServerMessage, now: number)
       return;
     case "log": {
       const k = msg.payload.kind;
+      if (k === "engine" && isRawArrivalLine(msg.payload.text)) return; // the client writes the named line itself
       pushLog(s, { kind: k === "roll" ? "engine" : k, text: msg.payload.text, done: true });
       return;
     }
