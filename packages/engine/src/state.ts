@@ -3,7 +3,7 @@ import {
   type Ability, type AbilityDraft, type AbilityScoreKey, type Character, type CharacterCreate, type CharacterView,
   type CheckTag, type Condition, type Container, type ContainerSummary, type ContentRating, type Difficulty, type Disposition,
   type Enemy, type EntityView, type GameMap, type InteractableState, type Item, type Lock, type MapBrief, type MapObject, type PublicInteractableObject,
-  type NpcRecord, type ObjectiveView, type Quest, type StoryThread, type SpriteRecipe, type StoryBible, type TerrainKind, type WorldFact, type DamageType,
+  type NpcRecord, type ObjectiveView, type RouteView, type Quest, type StoryThread, type SpriteRecipe, type StoryBible, type TerrainKind, type WorldFact, type DamageType,
 } from "@aedm/schemas";
 import type { EngineEvent } from "./events.ts";
 import { INTERACT, RULES } from "./data.ts";
@@ -14,6 +14,7 @@ import { enemyThreat, validateEnemy } from "./threat.ts";
 import { findFreeTileNear, getObjects, getSpawn } from "./map/index.ts";
 import { designSpriteOffline } from "./sprites.ts";
 import { objectiveView } from "./objective-view.ts";
+import { routeView } from "./route-view.ts";
 
 // ---------- types ----------
 
@@ -700,6 +701,8 @@ export interface StateSnapshot {
   containers: ContainerSummary[];
   /** The story's current objectives; absent for a bible without a plot. */
   objective?: ObjectiveView;
+  /** What the party knows of the campaign's route; absent without a plan. */
+  route?: RouteView;
 }
 
 export function toWsCombat(c: CombatState): NonNullable<StateSnapshot["combat"]> {
@@ -723,6 +726,8 @@ export function toSnapshot(state: GameState): StateSnapshot | null {
   if (state.combat) snap.combat = toWsCombat(state.combat);
   const objective = objectiveView(state);
   if (objective) snap.objective = objective;
+  const route = routeView(state);
+  if (route) snap.route = route;
   return snap;
 }
 

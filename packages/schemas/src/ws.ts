@@ -13,13 +13,14 @@ import {
   CastDecisionPayload, CastStatePayload, CustomCastSchema, DeleteSpriteAssetPayload, ListSpriteAssetsPayload, OfferToCastPayload,
   SaveSpriteAssetPayload, SpriteAssetsListPayload, SpriteRoleHintSchema,
 } from "./workshop";
-import { ObjectiveUpdatePayload, ObjectiveViewSchema } from "./campaign";
+import { ObjectiveUpdatePayload, ObjectiveViewSchema, RouteUpdatePayload, RouteViewSchema } from "./campaign";
 import { QuestSchema } from "./world";
 
 /**
  * 9: story objectives: state_snapshot gained the optional `objective` (ObjectiveView) and the server message `objective_update`
  *    was added (a fresh ObjectiveView plus the milestones just completed). Story bible milestones gained optional `hint`
  *    and `trigger`, and the bible gained the optional campaign plan; those are additive and do not change the envelope.
+ *    The route view (`route` in state_snapshot, the server message `route_update`) was added in the same version, before it shipped.
  * 8: map traps, searching and altars: `act` gained the verbs search and disarm and `target_id` became optional (required for every
  *    verb but search, forbidden for search); state_diff gained `interactables_revealed` (a trap or chest that was hidden and has been
  *    found, as a public interactable map object). Interactables gained the kind `trap` and optional hidden, trap and altar fields; the
@@ -203,6 +204,8 @@ export const StateSnapshotPayload = z.strictObject({
   containers: z.array(ContainerSummarySchema).max(200).optional(),
   /** The story's current objectives (absent for a campaign without a plot). */
   objective: ObjectiveViewSchema.optional(),
+  /** What the party knows of the campaign's geography (absent for a campaign without a plan). */
+  route: RouteViewSchema.optional(),
 });
 export const StateDiffPayload = z.strictObject({
   seq: z.number().int().min(0),
@@ -459,6 +462,7 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   server("state_snapshot", StateSnapshotPayload),
   server("state_diff", StateDiffPayload),
   server("objective_update", ObjectiveUpdatePayload),
+  server("route_update", RouteUpdatePayload),
   server("narration_chunk", NarrationChunkPayload),
   server("roll_result", RollResultPayload),
   server("combat_state", CombatStatePayload),

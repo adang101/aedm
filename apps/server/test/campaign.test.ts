@@ -221,6 +221,51 @@ describe("campaign travel and objectives", () => {
   });
 });
 
+describe("campaign route view", () => {
+  /** Every route view that went over the wire to this client, as raw JSON text. */
+  const routeWire = (c: Table["a"], from = 0): string[] => [
+    ...c.all("state_snapshot", from).flatMap((m) => (m.payload.route ? [JSON.stringify(m.payload.route)] : [])),
+    ...c.all("route_update", from).map((m) => JSON.stringify(m.payload)),
+  ];
+
+  it("starts with the first place current and its neighbour known; nothing further is on the wire", async () => {
+    const t = await planTable(planProvider());
+    const route = t.a.lastSnapshot()!.route!;
+    expect(route.nodes.map((n) => `${n.name}:${n.state}`)).toEqual(["Hollowmere Square:current", "The Rotting Dock:known"]);
+    expect(route.current).toBe(route.nodes[0]!.id);
+    expect(route.markers).toEqual([{ milestone_id: "m1", node: route.nodes[0]!.id }]);
+    expect(route.nodes[1]!.exit).toMatchObject({ label: "To The Rotting Dock" });
+    for (const c of [t.a, t.b]) {
+      const wire = routeWire(c).join("\n");
+      expect(wire).not.toBe("");
+      for (const secret of ["Lantern Marsh", "Drowned Crypt", "Choir", "l_marsh", "l_crypt", "l_dock", "Lens", "Signet", "e_boss"]) expect(wire).not.toContain(secret);
+    }
+  });
+
+  it("travelling updates the view for everyone, and places two steps away stay off the wire", async () => {
+    const t = await planTable(planProvider());
+    const pc = pcOf(t, stateOf(h!));
+    const tam = Object.values(stateOf(h!).entities).find((e) => e.name === "Old Tam")!;
+    await t.a.request("act", { verb: "talk", target_id: tam.id });
+    await gameOf(h!).idle();
+    const m0 = t.a.mark();
+    const mb = t.b.mark();
+    const ex = exitOf(stateOf(h!), /dock/i);
+    await walkTo(t, pc.id, ex.x, ex.y);
+    await t.a.wait("state_snapshot", (s) => s.map.id === campaignOf(stateOf(h!)).locations.l_dock, { from: m0 });
+    await gameOf(h!).idle();
+    for (const [c, from] of [[t.a, m0], [t.b, mb]] as const) {
+      const last = JSON.parse(routeWire(c, from).at(-1)!) as NonNullable<ReturnType<Table["a"]["lastSnapshot"]>>["route"];
+      expect(last!.nodes.map((n) => `${n.name}:${n.state}`)).toEqual(["Hollowmere Square:visited", "The Rotting Dock:current", "Lantern Marsh:known"]);
+      expect(last!.nodes[0]!.summary).toBeTruthy();
+      expect(last!.nodes[2]!.summary).toBeUndefined();
+      expect(last!.nodes[2]!.exit).toMatchObject({ label: "To Lantern Marsh" });
+      expect(routeWire(c, from).join("\n")).not.toMatch(/Drowned Crypt|Choir|l_crypt|e_boss/);
+    }
+    expect(t.a.invalid).toEqual([]);
+  });
+});
+
 describe("campaign saves", () => {
   it("restores the plan, the built locations and the objective, and keeps playing", async () => {
     const provider = planProvider();

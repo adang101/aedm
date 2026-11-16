@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MilestoneTriggerSchema, ObjectiveUpdatePayload, ObjectiveViewSchema, PlanEncounterSchema, PlanLocationSchema } from "./campaign";
+import { MilestoneTriggerSchema, ObjectiveUpdatePayload, ObjectiveViewSchema, PlanEncounterSchema, PlanLocationSchema, RouteViewSchema } from "./campaign";
 import { StoryBibleSchema } from "./world";
 import { ServerMessageSchema, StateSnapshotPayload, WS_VERSION } from "./ws";
 
@@ -50,5 +50,29 @@ describe("objective view and wire", () => {
     const env = { v: WS_VERSION, type: "objective_update", id: "s1", ts: 1, payload: view };
     expect(ServerMessageSchema.safeParse(env).success).toBe(true);
     expect(StateSnapshotPayload.shape.objective.safeParse(view).success).toBe(true);
+  });
+});
+
+describe("route view and wire", () => {
+  const route = {
+    nodes: [
+      { id: "r_a", name: "Hollowmere Square", state: "current", summary: "A fogbound square.", x: 0, y: 0 },
+      { id: "r_b", name: "The Rotting Dock", state: "known", x: 100, y: 0, exit: { side: "east", label: "To The Rotting Dock" } },
+    ],
+    edges: [{ a: "r_a", b: "r_b" }],
+    markers: [{ milestone_id: "m1", node: "r_a" }],
+    current: "r_a",
+  };
+  it("parses the view and is strict", () => {
+    expect(RouteViewSchema.safeParse(route).success).toBe(true);
+    expect(RouteViewSchema.safeParse({ ...route, current: null }).success).toBe(true);
+    expect(RouteViewSchema.safeParse({ ...route, trigger: 1 }).success).toBe(false);
+    expect(RouteViewSchema.safeParse({ ...route, nodes: [{ ...route.nodes[0], state: "hidden" }] }).success).toBe(false);
+    expect(RouteViewSchema.safeParse({ ...route, nodes: [{ ...route.nodes[0], stage: "call" }] }).success).toBe(false);
+  });
+  it("route_update is a server message, state_snapshot may carry the view, and the version stays 9", () => {
+    expect(WS_VERSION).toBe(9);
+    expect(ServerMessageSchema.safeParse({ v: WS_VERSION, type: "route_update", id: "s1", ts: 1, payload: route }).success).toBe(true);
+    expect(StateSnapshotPayload.shape.route.safeParse(route).success).toBe(true);
   });
 });

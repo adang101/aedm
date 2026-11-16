@@ -28,6 +28,7 @@ export * from "./campaign-map.ts";
 export * from "./campaign-install.ts";
 export * from "./objective-view.ts";
 export * from "./objectives.ts";
+export * from "./route-view.ts";
 export * from "./sprites.ts";
 export * from "./enemy-builder.ts";
 export * from "./pixel.ts";
