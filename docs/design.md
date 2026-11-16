@@ -210,6 +210,30 @@ A live playthrough showed that players got no direction (milestones were free pr
 
 **Choices worth knowing.** Triggers are judged from state, not only from events, so a missed event cannot lose progress: visited places and talked-to NPCs are remembered in the binding, items are read from inventories, and defeats from the entities. A visit or pickup made before its stage is current counts once the stage arrives. `adjust_plot` replaces the milestones of future stages with plain ones, so those become `story` milestones. Encounter creatures are spawned when the map is installed and are not budget-checked against the party at that moment (the server's enemy builder clamps them to the role); a DM `start_combat` still applies the usual budget check.
 
+## Story and map agreement (phase 0 started, the rest designed)
+
+**Problem.** The DM names buildings, signs, doors and chests the map does not have. The causes are in the flow of information, not the size of the task: the plan's prose is written before any map exists, a location hands the generator only four short free-text features (matched to landmark pieces by keyword, else decor), sign text is a generic template, the engine's landmark names reach the players but never the DM, quests are free text, and a build that falls back drops exits and slots without telling anyone.
+
+**Principle.** The model chooses among things the engine can build and names them; the engine builds, checks and reports back; the model then narrates only what it was shown. Where the story needs something new, the model asks the engine for it. Player freedom is kept by widening what the engine can do on request, never by letting narration stand in for state.
+
+**Phases.** Each ships alone behind a `ServerConfig` switch and is judged with the measure of phase 0.
+
+| Phase | Change |
+| --- | --- |
+| 0 | Measure. `scoreNarration` (`packages/engine/src/consistency.ts`, words in `data/place-words.json`) sorts each place or object noun in a text as on the map, elsewhere in the plan, or nowhere (built). Still to do: direction agreement, plan things present and reachable, HUD and DM name agreement, eval scenarios E35 to E43 and B03 to B05, and a baseline run. |
+| 1 | DM map digest: a `<map>` block in the DM context with each named place's direction and distance from the party, labelled doors, sign text and exits, from today's landmarks. Objective targets use the HUD's phrase. Fix: a repaired reply replaces narration already streamed. |
+| 2 | Narration lint, logging only: the phase 0 scorer with allowances for quoted speech and remembered places. |
+| 3 | Closed vocabulary and named places: a location lists `places` (id, landmark id from the catalog or an interactable kind, display name, optional sign text). One name on the map, minimap, HUD, signs and DM context. `features` goes; up to two decor-only flavour strings stay. The offline plan and the built-in bible follow the same contract. New catalog pieces as needed. |
+| 4 | Manifest and build report: everything the plan promises at a location must be on the built map and reachable, or the build fails; every location is dry-run at plan time, then one repair call, then an engine repair. A `BuildReport` records what was relaxed and the digest shows it. |
+| 5 | Place references as ids (`{place:p_3}`) resolved by the engine, across stream chunks. Unknown ids, hard lint hits and bad actions share the single repair call. |
+| 6 | `place_feature`: the DM asks the engine to add a chest, sign, door or shrine (contents from loot tables, caps in data). Quests are made from plan ids; `update_quest` changes status and notes only. |
+| 7 | Layout sketch: up to three relations per location from `near`, `far`, `edge`, `within`, met by scoring candidate positions. A relation the layout cannot honour is dropped with a note in the build report. |
+| 8 | Map-first prose: location summaries, milestone hints and arrival text are written after the map is built, with engine templates as the fallback. |
+
+**Decided.** The digest lists every place on the map, seen or not. A relation the layout cannot honour is dropped with a note, never a plan error. Token growth is paid for by trimming elsewhere, not by raising ceilings. Evals run on the free tier of the Gemini API, so runs are few and spaced with `--delay-ms`. Which catalog pieces to add is left to the implementer.
+
+**Open.** How much of an existing save must survive the schema changes of phase 3. A home base map with arcs planned one milestone at a time (rest and revival at the base) is a later idea that would sit on the contracts of phases 3 and 4.
+
 ## Capability check (as of this branch)
 
 | Request | Today | Gap |

@@ -38,6 +38,7 @@ export * from "./combat-voice.ts";
 export * from "./engage.ts";
 export * from "./intents.ts";
 export * from "./describe.ts";
+export * from "./consistency.ts";
 export { COMBAT_VOICE, DESCRIBE, NARRATION, PIXEL_RULES, RULES, LEVELS, COSTS, ENEMY_DATA, CONDITION_META, PLOTS, LOOT, INTERACT, ENEMY_KITS, CAMPAIGN } from "./data.ts";
 export * from "./npc-behavior.ts";
 export * from "./ai-nav.ts";
