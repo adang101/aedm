@@ -199,7 +199,7 @@ export function carveRiver(grid: Grid, rng: MapRng, lvl: number, ok: (i: number)
   const water = new Uint8Array(grid.w * grid.h);
   // the banks are a distance threshold around a smoothed centre line (not circles stamped on a staircase of cells), so
   // they curve; the radius swells and narrows with the wander field and the edge itself wobbles a little
-  const half = 3;
+  const half = W.riverSmooth;
   const pts = route.map((c, k) => {
     let sx = 0;
     let sy = 0;

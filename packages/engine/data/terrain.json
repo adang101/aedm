@@ -95,6 +95,7 @@
     "riverRadiusExtra": 0.45,
     "riverBankMoisture": 0.35,
     "riverEdgeWobble": 0.5,
+    "riverSmooth": 6,
     "pondAspect": [
       0.65,
       1.0

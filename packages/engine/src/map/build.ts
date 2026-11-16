@@ -16,6 +16,9 @@ import type { ResolvedSetting } from "./settings";
 import { signText } from "./signs";
 import { INTERACT } from "../data.ts";
 import { hideChests, placeTraps } from "./place-traps";
+import { planLandmarks, stampLandmarks } from "./landmark-stamp";
+import type { PlacedLandmark } from "./landmark-stamp";
+import { landmarkEvent } from "./landmarks";
 
 export interface BuildOptions {
   id: string;
@@ -261,6 +264,45 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
     if (e.type === "exit") for (const [dx, dy] of DIRS4) if (grid.inside(e.x + dx, e.y + dy)) grid.crit[grid.idx(e.x + dx, e.y + dy)] = 1;
   }
 
+  // landmarks: set pieces for the brief's features and focal rooms, on their own random stream
+  const lm = stampLandmarks({
+    grid, setting, seed: seed ^ 0x1a4d3a7c, shapes, start, taken, pocket,
+    plans: planLandmarks(brief, setting, (k) => { const ik = interactableKind(k); return ik !== null && ik !== "altar" && words(k).includes(ik); }),
+  });
+  const decor = new Map<number, Material>(lm.decor);
+  const anchorCells = new Set<number>();
+  for (const l of lm.placed) {
+    objects.push({ type: "trigger", id: l.id, radius: l.radius, on_enter: landmarkEvent(l.plan.piece.id, l.t), x: l.center.x, y: l.center.y });
+    taken.add(grid.idx(l.center.x, l.center.y));
+    for (const list of Object.values(l.anchors)) for (const q of list) anchorCells.add(grid.idx(q.x, q.y));
+  }
+  for (const l of lm.placed) for (const i of l.cells) if (!anchorCells.has(i)) taken.add(i);
+  const counters = new Map<string, number>();
+  for (const sg of lm.signs) {
+    const n = (counters.get("sign") ?? 0) + 1;
+    counters.set("sign", n);
+    objects.push({ type: "interactable", id: `sign_${n}`, kind: "sign", state: "closed", text: sg.text, x: sg.x, y: sg.y });
+    taken.add(grid.idx(sg.x, sg.y));
+  }
+  const bossLandmarks = new Set<string>();
+  const slotTile = (role: string, room: RoomShape | undefined): Pt | undefined => {
+    const kinds = role === "npc" ? (["stand", "item", "fight"] as const) : role === "loot" ? (["item", "stand", "fight"] as const) : (["fight", "stand", "item"] as const);
+    const near = (l: PlacedLandmark): number => Math.hypot(l.center.x - (room?.center.x ?? l.center.x), l.center.y - (room?.center.y ?? l.center.y));
+    const rank = (l: PlacedLandmark): number =>
+      (l.plan.roomId === room?.id ? 0 : 1000) + near(l) + (l.plan.piece.roles.includes(role as never) ? -50 : 0) - (role === "boss" ? l.plan.piece.weight * 300 : 0) + (role === "enemy" && bossLandmarks.has(l.id) ? 2000 : 0);
+    for (const l of [...lm.placed].sort((a, b) => rank(a) - rank(b) || (a.id < b.id ? -1 : 1))) {
+      for (const k of kinds) {
+        const free = l.anchors[k].find((q) => !taken.has(grid.idx(q.x, q.y)));
+        if (free) {
+          if (role === "boss") bossLandmarks.add(l.id);
+          return free;
+        }
+      }
+    }
+    return undefined;
+  };
+  const claimed = new Map(lm.placed.flatMap((l) => (l.plan.poi === undefined ? [] : [[l.plan.poi, l] as const])));
+
   const byId = new Map(shapes.filter((s) => !s.extra).map((s) => [s.id, s]));
   const natural = setting.layout === "open_field" || setting.layout === "trail";
   const freeTile = (shape: RoomShape | undefined): Pt => {
@@ -284,16 +326,18 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
     return rng.pick(cands);
   };
 
-  const decor = new Map<number, Material>();
   brief.entity_slots.forEach((s, k) => {
-    const p = freeTile(byId.get(s.room_id));
+    const p = slotTile(s.role, byId.get(s.room_id)) ?? freeTile(byId.get(s.room_id));
     taken.add(grid.idx(p.x, p.y));
     objects.push({ type: "entity_slot", id: `slot_${k + 1}`, role: s.role, count: s.count, x: p.x, y: p.y });
   });
-  const counters = new Map<string, number>();
   const signRooms = new Map<string, string>();
-  for (const poi of brief.points_of_interest) {
-    const p = freeTile(byId.get(poi.room_id));
+  for (const [pi, poi] of brief.points_of_interest.entries()) {
+    const owner = claimed.get(pi);
+    // a feature that became a landmark is not placed again, except an altar, which stays a real altar at the landmark's item spot
+    if (owner && interactableKind(poi.kind) !== "altar") continue;
+    const anchor = owner ? [...owner.anchors.item, ...owner.anchors.stand].find((q) => !taken.has(grid.idx(q.x, q.y))) : undefined;
+    const p = anchor ?? freeTile(byId.get(poi.room_id));
     const i = grid.idx(p.x, p.y);
     taken.add(i);
     const ik = interactableKind(poi.kind);
@@ -326,7 +370,7 @@ export function buildMap(brief: MapBrief, seed: number, opts: BuildOptions): Gam
     hideChests(objects, seed);
   }
 
-  const a = assemble({ grid, setting, seed, decor });
+  const a = assemble({ grid, setting, seed, decor, override: lm.override });
   return {
     v: 2,
     id: opts.id,
@@ -396,6 +440,8 @@ function placeHazards(grid: Grid, setting: ResolvedSetting, rng: MapRng, taken: 
 /** Hazards must never be the only way anywhere: where a target is cut off without crossing one, clear the shortest route. */
 function repairHazards(grid: Grid, objects: readonly MapObject[], startIdx: number): void {
   const targets = objects.filter((o) => o.type === "exit" || o.type === "entity_slot" || o.type === "interactable").map((o) => grid.idx(o.x, o.y));
+  // door tiles become door objects after this pass, so they count as targets too
+  for (let i = 0; i < grid.t.length; i++) if (grid.t[i] === T.DOOR) targets.push(i);
   const start = { x: startIdx % grid.w, y: Math.floor(startIdx / grid.w) };
   for (let round = 0; round <= targets.length; round++) {
     const seen = grid.reachable(start, (c) => isPassable(c) && c !== T.HAZARD);

@@ -4,9 +4,14 @@
  */
 import {
   BODY_PLANS, PART_CATALOG, PART_GROUPS, PATTERNS, RAMP_NAMES, SPRITE_POSES, SPRITE_SIZES,
-  type BodyPlan, type Part, type PartGroup, type SpritePalette, type SpritePose, type SpriteSpec, type TileDef,
+  type BodyPlan, type GameMap, type MapBrief, type Part, type PartGroup, type SpritePalette, type SpritePose, type SpriteSpec, type TileDef,
 } from "@aedm/schemas";
+import { LANDMARK_PIECES, LAYOUT_PLANS, STARTER_BRIEFS, generateMap, mapLandmarks } from "@aedm/engine";
 import { h } from "../util/dom";
+import { TILE } from "./camera";
+import { drawLights, drawMood, type Light } from "./mood";
+import { extractLayers, paintMapLayers } from "./renderer";
+import { makeCanvas } from "./px";
 import { RAMPS } from "./palette";
 import { PROP_KINDS } from "./props";
 import { POSE_SHADOW, composeSprite, effectivePose } from "./sprite-composer";
@@ -186,12 +191,54 @@ function propsSection(): HTMLElement {
   return h("section", null, h("h2", null, "Props (by material id) and hazard motifs"), canvas);
 }
 
+/** Every landmark set piece, stamped by the real generator into a small map of a setting that suits it, cropped around the piece. */
+function landmarksSection(): HTMLElement {
+  const params = new URLSearchParams(location.search);
+  const seed = Number(params.get("seed") ?? 1234) || 1234;
+  const only = params.get("lm");
+  const CW = 13, CH = 10, K = 0.6;
+  const cells = LANDMARK_PIECES.filter((p) => !only || p.id === only).map((piece, n) => {
+    const outdoor = piece.env.includes("outdoor");
+    const layout = piece.layouts?.[0] ?? (outdoor ? "open_field" : piece.env.includes("indoor") ? "rooms_and_corridors" : "cave");
+    const preset = piece.id === "market_stalls" || piece.id === "village_well" ? "town" : outdoor ? "forest" : layout === "cave" ? "cave" : "dungeon";
+    const base = STARTER_BRIEFS[preset];
+    const plan = LAYOUT_PLANS[layout];
+    const brief: MapBrief = {
+      ...base,
+      setting: { ...base.setting, layout, environment: outdoor ? "outdoor" : layout === "cave" ? "underground" : "indoor" },
+      size_class: "medium",
+      rooms: plan.rooms.map(([id, type, size, connects_to]) => ({ id, type, size, connects_to: [...connects_to] })),
+      points_of_interest: [{ kind: piece.name.slice(0, 24), room_id: plan.poi[0]! }],
+      entity_slots: [{ role: "npc", room_id: plan.npc, count: 1 }, { role: "enemy", room_id: plan.enemies, count: 2 }],
+    };
+    let map: GameMap;
+    try { map = generateMap(brief, { seed: seed + n * 13, id: "m_lm" }).map; } catch (e) { return cell(h("span", null, String(e)), piece.id); }
+    const lm = mapLandmarks(map).find((l) => l.piece === piece.id) ?? mapLandmarks(map)[0];
+    const L = extractLayers(map);
+    const full = makeCanvas(map.width * TILE, map.height * TILE);
+    const g = full.getContext("2d")!;
+    g.imageSmoothingEnabled = false;
+    const lights: Light[] = [];
+    paintMapLayers(g, L, { x0: 0, y0: 0, x1: map.width - 1, y1: map.height - 1 }, 0, { lights });
+    drawMood(g, L.mood, full.width, full.height, 0);
+    drawLights(g, L.mood, lights, 1, 0, 0, 0);
+    const cx = Math.max(0, Math.min(map.width - CW, (lm?.x ?? 0) - (CW >> 1)));
+    const cy = Math.max(0, Math.min(map.height - CH, (lm?.y ?? 0) - (CH >> 1)));
+    const c = h("canvas", { width: Math.round(CW * TILE * K), height: Math.round(CH * TILE * K) });
+    const cg = c.getContext("2d")!;
+    cg.imageSmoothingEnabled = true;
+    cg.drawImage(full, cx * TILE, cy * TILE, CW * TILE, CH * TILE, 0, 0, c.width, c.height);
+    return cell(c, `${piece.name} (${piece.id}, ${preset}/${layout})`, true);
+  });
+  return h("section", { id: "landmarks" }, h("h2", null, `Landmarks (${LANDMARK_PIECES.length} set pieces)`), h("div", { class: "gallery-grid" }, ...cells));
+}
+
 export function mountGallery(root: HTMLElement): void {
   document.body.style.overflow = "auto";
   const page = h("div", { class: "gallery-page" },
     h("h1", null, "Renderer gallery"),
     h("p", { class: "muted" }, `${BODY_PLANS.length} body plans, ${PART_CATALOG.length} parts, ${PATTERNS.length} patterns.`),
-    bodyPlanSection(), sizeSection(), partsSection(), partsOnBodies(), tilesSection(), propsSection());
+    landmarksSection(), bodyPlanSection(), sizeSection(), partsSection(), partsOnBodies(), tilesSection(), propsSection());
   root.replaceChildren(page);
   (window as unknown as { __galleryReady: boolean }).__galleryReady = true;
 }

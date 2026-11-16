@@ -280,7 +280,7 @@ export interface InteractData {
 
 export interface DescribeData {
   version: number;
-  caps: { exits: number; objects: number; containers: number; creatures: number; party: number; inventory: number };
+  caps: { landmarks: number; exits: number; objects: number; containers: number; creatures: number; party: number; inventory: number };
   /** Template for a list's overflow; `{n}` is the count left out. */
   more: string;
   list: { sep: string; last: string };
@@ -288,7 +288,7 @@ export interface DescribeData {
   exitEdgeMargin: number;
   sides: Record<"n" | "s" | "e" | "w", string>;
   scene: {
-    placeMood: string; place: string; noPlace: string; exits: string; exit: string; exitSide: string; objects: string;
+    placeMood: string; place: string; noPlace: string; at: string; landmarks: string; exits: string; exit: string; exitSide: string; objects: string;
     containers: string; creatures: string; party: string; nothing: string; moods: Record<string, string>;
   };
   /** By object kind, then state (or `any`). */

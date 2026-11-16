@@ -10,7 +10,8 @@ import { fromState } from "./rng.ts";
 import { createNpcM, spawnEnemyM } from "./spawn.ts";
 import { registerArchetype } from "./state.ts";
 import { campaignOf, emptyCampaignBinding, newId, occupiedTiles, run, tileKey, type Entity, type GameState, type Mut, type Result } from "./state.ts";
-import { findFreeTileNear, getObjects, getSpawn } from "./map/index.ts";
+import { findFreeTileNear, getObjects, getSpawn, landmarkFit, mapLandmarks } from "./map/index.ts";
+import type { Landmark, LandmarkRole } from "./map/index.ts";
 
 /** One creature group the enemy builder must make for a location. */
 export interface EnemyRequest {
@@ -119,11 +120,27 @@ export function installLocationContent(state: GameState, locationId: string, map
       return spot;
     };
 
+    // landmarks of the map: people stand at the one that suits them, a fight forms up at its own, items rest at one
+    const landmarks = mapLandmarks(map);
+    const claimed = new Map<string, number>();
+    const claim = (l: Landmark): void => { claimed.set(l.id, (claimed.get(l.id) ?? 0) + 1); };
+    const best = (list: Landmark[], text: string, role: LandmarkRole, bonus: (l: Landmark) => number = () => 0): Landmark | undefined => {
+      let top: Landmark | undefined;
+      let topScore = -Infinity;
+      for (const l of list) {
+        const score = landmarkFit(l, text, role) + bonus(l) - 2.5 * (claimed.get(l.id) ?? 0);
+        if (score > topScore) { top = l; topScore = score; }
+      }
+      return top;
+    };
+
     // cast
     const level = partyLevelOf(s);
     let n = 0;
     for (const c of (bible.cast ?? []).filter((x) => x.location === locationId && !b.cast[x.id])) {
-      const spot = place(slots("npc"), n++);
+      const home = best(landmarks.filter((l) => l.anchors.stand.length > 0), `${c.role} ${c.concept} ${c.name}`, "npc");
+      if (home) claim(home);
+      const spot = place(home ? [...home.anchors.stand, { x: home.x, y: home.y }] : slots("npc"), n++);
       if (!spot) { summary.skipped.push({ kind: "cast", id: c.id, reason: "no free tile on the map" }); continue; }
       const r = createNpcM(m, { map_id: mapId, x: spot.x, y: spot.y, name: c.name, concept: c.concept, role: c.role, sprite_tags: [], voice: c.voice }, { partyLevel: level, sprites: input.sprites });
       if (!r.ok) { occupied.delete(tileKey(spot.x, spot.y)); summary.skipped.push({ kind: "cast", id: c.id, reason: r.reason }); continue; }
@@ -137,9 +154,16 @@ export function installLocationContent(state: GameState, locationId: string, map
       if (!ids) continue;
       const entityIds: string[] = [];
       let k = 0;
+      // the whole encounter forms up at one landmark: the most imposing for a boss fight, else the best fit
+      const hasBoss = e.groups.some((g) => g.role === "boss");
+      const fightHere = best(
+        landmarks.filter((l) => l.anchors.fight.length > 0), `${e.name} ${e.groups.map((g) => g.concept).join(" ")}`, hasBoss ? "boss" : "enemy",
+        (l) => (hasBoss ? l.weight * 3 : 0),
+      );
+      if (fightHere) claim(fightHere);
       e.groups.forEach((g, gi) => {
         const arch = s.archetypes[ids[gi] as string] as Enemy;
-        const anchors = g.role === "boss" ? slots("boss", "enemy") : slots("enemy", "boss");
+        const anchors = fightHere ? [...fightHere.anchors.fight, { x: fightHere.x, y: fightHere.y }] : g.role === "boss" ? slots("boss", "enemy") : slots("enemy", "boss");
         for (let i = 0; i < g.count; i++) {
           const spot = place(anchors, k++);
           if (!spot) break;
@@ -174,7 +198,8 @@ export function installLocationContent(state: GameState, locationId: string, map
       } else {
         const piles = Object.values(s.containers).filter((c) => c.map_id === mapId && c.kind !== "pockets" && c.items.length < INTERACT.pileCap);
         const home = piles.find((c) => c.kind === "pile" && c.object_id) ?? piles.find((c) => c.kind === "chest");
-        const cache = home ? undefined : (place([], 0) ?? start);
+        const where = home ? undefined : best(landmarks.filter((l) => l.anchors.item.length > 0), `${k.name} ${k.id}`, "loot");
+        const cache = home ? undefined : (place(where ? [...where.anchors.item, { x: where.x, y: where.y }] : [], 0) ?? start);
         const target = home ?? createContainerM(m, { kind: "pile", mapId, x: cache!.x, y: cache!.y, label: "Hidden cache" });
         target.items.push(item);
         containerId = target.id;

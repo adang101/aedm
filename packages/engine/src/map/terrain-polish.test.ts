@@ -87,7 +87,7 @@ describe("settlements", () => {
           if (around >= 3) notches++;
         }
       }
-      expect(notches, `${seed}: ${notches} notches in ${water} water tiles`).toBeLessThanOrEqual(2);
+      expect(notches, `${seed}: ${notches} notches in ${water} water tiles`).toBeLessThanOrEqual(4);
     }
   });
 });

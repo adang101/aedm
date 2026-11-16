@@ -114,6 +114,8 @@ export interface AssembleInput {
   seed: number;
   /** Decor tiles: cell index to the prop material drawn there. */
   decor: ReadonlyMap<number, Material>;
+  /** Materials that replace the usual choice for a wall or obstacle tile (landmark props and built walls). */
+  override?: ReadonlyMap<number, Material>;
 }
 
 export interface Assembled {
@@ -136,7 +138,7 @@ const toneOf = (a: number, b: number): number => (a > 0.74 ? 1 : a < 0.24 ? 2 : 
 
 const variantOf = (u: number, spread: number): number => (u < 1 - spread ? 0 : u < 1 - spread * 0.45 ? 1 : 2);
 
-export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembled {
+export function assemble({ grid, setting, seed, decor, override }: AssembleInput): Assembled {
   const { w, h } = grid;
   const n = w * h;
   const ground = new Array<number>(n).fill(0);
@@ -203,7 +205,10 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           break;
         case T.WALL: {
           const blk = grid.block[i]!;
-          if (blk > 0) {
+          const ov = override?.get(i);
+          if (ov) {
+            walls[i] = bank.gid(ov, blk > 0 && hash(seed, blk, 1, 12) < 0.3 ? 1 : 0, "walls");
+          } else if (blk > 0) {
             // one building, one roof: the material and tone follow the building, not the tile
             const m = mats.wall[pickWeighted(mats.wall.length, hash(seed, blk, 0, 11), 0.5)]!;
             walls[i] = bank.gid(m, hash(seed, blk, 1, 12) < 0.3 ? 1 : 0, "walls");
@@ -221,7 +226,9 @@ export function assemble({ grid, setting, seed, decor }: AssembleInput): Assembl
           const list = mats.obstacle;
           const code = grid.veg[i]!;
           let m: Material;
-          if (code === 0) m = list[pickWeighted(list.length, u, 0.5)]!;
+          const ov = override?.get(i);
+          if (ov) m = ov;
+          else if (code === 0) m = list[pickWeighted(list.length, u, 0.5)]!;
           else {
             // layouts mark groves by species and rocks apart, so a grove is one kind of tree, not a mix of everything
             const trees = list.filter((o) => o.tags.includes("tree"));

@@ -10,6 +10,7 @@ import { addGrowthM } from "./growth.ts";
 import { isMachineTrigger, triggerOf } from "./campaign.ts";
 import { isStanding } from "./mutate.ts";
 import { milestoneHint, objectiveView } from "./objective-view.ts";
+import { planThingLandmark, type PlanThing } from "./campaign-place.ts";
 import { currentStage } from "./plot.ts";
 import { fromState } from "./rng.ts";
 import { campaignOf, emit, emptyCampaignBinding, run, type GameState, type Mut, type Result } from "./state.ts";
@@ -157,11 +158,12 @@ export function trackObjectives(state: GameState, input: ObjectiveInput = {}): R
       if ((currentStage(s.bible)?.index ?? 0) > cur.index) stageAdvanced = true;
     }
     const objective = objectiveView(s);
-    const lines = completed.map((ms) => `Objective complete: ${milestoneHint(s.bible, ms)}`);
+    const where = (kind: PlanThing, id: string) => planThingLandmark(s, kind, id);
+    const lines = completed.map((ms) => `Objective complete: ${milestoneHint(s.bible, ms, where)}`);
     if (stageAdvanced && objective && !objective.finished) lines.push(`New stage: ${objective.stage.title}. ${objective.stage.goal}`);
     if (completed.length > 0 && objective?.finished) lines.push("The campaign's goal is reached.");
     return {
-      completed: completed.map((ms) => ({ id: ms.id, hint: milestoneHint(s.bible, ms), done: true })),
+      completed: completed.map((ms) => ({ id: ms.id, hint: milestoneHint(s.bible, ms, where), done: true })),
       lines, objective, stageAdvanced,
     } satisfies ObjectiveProgress;
   });
